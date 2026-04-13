@@ -1,0 +1,12 @@
+.npm-cache
+.tmp
+auth
+.vercel
+.vercel-global
+__pycache__
+node_modules
+pydeps
+src
+scripts
+local-server.js
+package-lock.json

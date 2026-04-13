@@ -1,0 +1,17 @@
+.git
+.kiro
+.npm-cache
+.tmp
+.vercel
+.vercel-global
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.env.*
+auth/
+node_modules/
+pydeps/
+REPORT.md

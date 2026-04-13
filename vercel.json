@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api?route=health"
+    },
+    {
+      "source": "/v1/models",
+      "destination": "/api?route=models"
+    },
+    {
+      "source": "/v1/chat/completions",
+      "destination": "/api?route=chat"
+    }
+  ]
+}

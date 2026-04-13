@@ -1,0 +1,4 @@
+requests==2.32.5
+wasmtime==29.0.0
+curl_cffi==0.13.0
+cryptography==46.0.1

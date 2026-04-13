@@ -1,0 +1,400 @@
+try:
+    from py import (
+        deepseek_proxy,
+        gemini_web_proxy,
+        grok_proxy,
+        inflection_proxy,
+        kimi_proxy,
+        mimo_proxy,
+        openai_web_proxy,
+        perplexity_proxy,
+        phind_proxy,
+        pi_local_proxy,
+        qwen_ai_proxy,
+        uncloseai_proxy,
+        zai_proxy,
+    )
+    from py.http_helpers import cookie_value, env_or_header_token, env_token, header_token
+    from py.openai_stream import OpenAIStreamBuilder
+except ImportError:
+    import deepseek_proxy
+    import gemini_web_proxy
+    import grok_proxy
+    import inflection_proxy
+    import kimi_proxy
+    import mimo_proxy
+    import openai_web_proxy
+    import perplexity_proxy
+    import phind_proxy
+    import pi_local_proxy
+    import qwen_ai_proxy
+    import uncloseai_proxy
+    import zai_proxy
+    from http_helpers import cookie_value, env_or_header_token, env_token, header_token
+    from openai_stream import OpenAIStreamBuilder
+
+
+MODEL_SPECS = []
+
+
+def _add_models(provider_id: str, owned_by: str, models, requires_env):
+    for model in models:
+        MODEL_SPECS.append(
+            {
+                "id": model,
+                "object": "model",
+                "created": 0,
+                "owned_by": owned_by,
+                "provider": provider_id,
+                "requires_env": list(requires_env),
+            }
+        )
+
+
+_add_models("zai", "z.ai", zai_proxy.SUPPORTED_MODELS, ["ZAI_TOKEN"])
+_add_models("deepseek", deepseek_proxy.OWNED_BY, deepseek_proxy.SUPPORTED_MODELS, ["DEEPSEEK_TOKEN"])
+_add_models(
+    "gemini-web",
+    gemini_web_proxy.OWNED_BY,
+    gemini_web_proxy.SUPPORTED_MODELS,
+    ["GEMINI_WEB_SECURE_1PSID", "GEMINI_WEB_SECURE_1PSIDTS (optional)", "GEMINI_WEB_COOKIE (optional)"],
+)
+_add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
+_add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
+_add_models(
+    "mimo",
+    mimo_proxy.OWNED_BY,
+    mimo_proxy.SUPPORTED_MODELS,
+    ["MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN", "MIMO_COOKIE (optional)"],
+)
+_add_models("openai-web", openai_web_proxy.OWNED_BY, openai_web_proxy.SUPPORTED_MODELS, ["OPENAI_WEB_ACCESS_TOKEN"])
+_add_models("perplexity", perplexity_proxy.OWNED_BY, perplexity_proxy.SUPPORTED_MODELS, ["PERPLEXITY_COOKIE"])
+_add_models("phind", phind_proxy.OWNED_BY, phind_proxy.SUPPORTED_MODELS, ["PHIND_COOKIE", "PHIND_NONCE (optional)"])
+_add_models(
+    "inflection",
+    inflection_proxy.OWNED_BY,
+    inflection_proxy.SUPPORTED_MODELS,
+    ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"],
+)
+_add_models("pi-local", pi_local_proxy.OWNED_BY, pi_local_proxy.SUPPORTED_MODELS, [])
+_add_models("qwen-ai", qwen_ai_proxy.OWNED_BY, qwen_ai_proxy.SUPPORTED_MODELS, ["QWEN_AI_COOKIE"])
+_add_models("uncloseai", uncloseai_proxy.OWNED_BY, uncloseai_proxy.SUPPORTED_MODELS, [])
+
+
+def models_payload():
+    return {"object": "list", "data": MODEL_SPECS}
+
+
+def resolve_provider_id(model: str) -> str:
+    if zai_proxy.supports_model(model):
+        return "zai"
+    if deepseek_proxy.supports_model(model):
+        return "deepseek"
+    if gemini_web_proxy.supports_model(model):
+        return "gemini-web"
+    if grok_proxy.supports_model(model):
+        return "grok"
+    if kimi_proxy.supports_model(model):
+        return "kimi"
+    if mimo_proxy.supports_model(model):
+        return "mimo"
+    if openai_web_proxy.supports_model(model):
+        return "openai-web"
+    if perplexity_proxy.supports_model(model):
+        return "perplexity"
+    if phind_proxy.supports_model(model):
+        return "phind"
+    if inflection_proxy.supports_model(model):
+        return "inflection"
+    if pi_local_proxy.supports_model(model):
+        return "pi-local"
+    if qwen_ai_proxy.supports_model(model):
+        return "qwen-ai"
+    if uncloseai_proxy.supports_model(model):
+        return "uncloseai"
+    return ""
+
+
+def provider_error_hint(provider_id: str) -> str:
+    if provider_id == "zai":
+        return "Configure ZAI_TOKEN in server env or pass the Z.ai JWT as Bearer token / x-zai-token header"
+    if provider_id == "deepseek":
+        return "Configure DEEPSEEK_TOKEN in server env or pass the DeepSeek userToken as Bearer token"
+    if provider_id == "gemini-web":
+        return "Configure GEMINI_WEB_SECURE_1PSID plus optional GEMINI_WEB_SECURE_1PSIDTS or GEMINI_WEB_COOKIE in server env"
+    if provider_id == "grok":
+        return "Configure GROK_COOKIE in server env or pass GROK_SSO plus optional GROK_CF_CLEARANCE"
+    if provider_id == "kimi":
+        return "Configure KIMI_TOKEN in server env or pass the Kimi access token as Bearer token"
+    if provider_id == "mimo":
+        return "Configure MIMO_SERVICE_TOKEN, MIMO_USER_ID, and MIMO_PH_TOKEN in server env, or pass x-mimo-* headers / MIMO_COOKIE"
+    if provider_id == "openai-web":
+        return "Configure OPENAI_WEB_ACCESS_TOKEN or OPENAI_WEB_COOKIE in server env, or pass x-openai-web-token / x-openai-web-cookie"
+    if provider_id == "perplexity":
+        return "Configure PERPLEXITY_COOKIE or PERPLEXITY_SESSION_TOKEN in server env"
+    if provider_id == "phind":
+        return "Configure PHIND_COOKIE and optionally PHIND_NONCE in server env or pass x-phind-cookie / x-phind-nonce headers"
+    if provider_id == "inflection":
+        return "Configure INFLECTION_API_KEY (or PI_INFLECTION_API_KEY) from https://developers.inflection.ai/keys, or pass x-inflection-api-key"
+    if provider_id == "pi-local":
+        return "Run scripts\\launch-pi-auth.ps1, log in to pi.ai, and use the local Python server with the saved pi-edge-profile"
+    if provider_id == "qwen-ai":
+        return "Configure QWEN_AI_COOKIE and either QWEN_AI_TOKEN or the token cookie in server env"
+    if provider_id == "uncloseai":
+        return "UncloseAI public endpoints do not require credentials"
+    return "Provider credentials are not configured"
+
+
+def resolve_credentials(handler, provider_id: str):
+    def _normalized(value):
+        text = str(value or "").strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            return text[1:-1]
+        return text
+
+    if provider_id == "zai":
+        token = env_or_header_token(handler, ["ZAI_TOKEN"], ["x-zai-token"])
+        return {"token": token} if token else None
+
+    if provider_id == "deepseek":
+        token = env_or_header_token(handler, ["DEEPSEEK_TOKEN"], ["x-deepseek-token"])
+        return {"token": token} if token else None
+
+    if provider_id == "gemini-web":
+        cookie = env_token("GEMINI_WEB_COOKIE") or header_token(handler, "x-gemini-web-cookie")
+        secure_1psid = env_token("GEMINI_WEB_SECURE_1PSID") or header_token(handler, "x-gemini-web-secure-1psid")
+        secure_1psidts = env_token("GEMINI_WEB_SECURE_1PSIDTS") or header_token(handler, "x-gemini-web-secure-1psidts")
+
+        if cookie:
+            secure_1psid = secure_1psid or cookie_value(cookie, "__Secure-1PSID")
+            secure_1psidts = secure_1psidts or cookie_value(cookie, "__Secure-1PSIDTS")
+
+        if not cookie and secure_1psid:
+            parts = [f"__Secure-1PSID={secure_1psid}"]
+            if secure_1psidts:
+                parts.append(f"__Secure-1PSIDTS={secure_1psidts}")
+            cookie = "; ".join(parts)
+
+        if not secure_1psid and not cookie:
+            return None
+
+        return {
+            "cookie": cookie,
+            "secure_1psid": secure_1psid,
+            "secure_1psidts": secure_1psidts,
+        }
+
+    if provider_id == "grok":
+        cookie = env_token("GROK_COOKIE")
+        if not cookie:
+            cookie = handler.headers.get("x-grok-cookie", "").strip()
+
+        sso = env_or_header_token(handler, ["GROK_SSO"], ["x-grok-sso"])
+        if not sso and cookie:
+            sso = cookie_value(cookie, "sso") or cookie_value(cookie, "sso-rw")
+
+        cf_clearance = env_token("GROK_CF_CLEARANCE")
+        if not cf_clearance and cookie:
+            cf_clearance = cookie_value(cookie, "cf_clearance")
+
+        if not cookie and sso:
+            parts = [f"sso={sso}", f"sso-rw={sso}"]
+            if cf_clearance:
+                parts.append(f"cf_clearance={cf_clearance}")
+            cookie = "; ".join(parts)
+
+        return {"cookie": cookie, "sso": sso, "cf_clearance": cf_clearance} if cookie else None
+
+    if provider_id == "kimi":
+        token = env_or_header_token(handler, ["KIMI_TOKEN"], ["x-kimi-token"])
+        return {"token": token} if token else None
+
+    if provider_id == "mimo":
+        cookie = env_token("MIMO_COOKIE") or header_token(handler, "x-mimo-cookie")
+        service_token = env_token("MIMO_SERVICE_TOKEN") or header_token(handler, "x-mimo-service-token")
+        user_id = env_token("MIMO_USER_ID") or header_token(handler, "x-mimo-user-id")
+        ph_token = env_token("MIMO_PH_TOKEN") or header_token(handler, "x-mimo-ph-token")
+
+        if cookie:
+            service_token = service_token or cookie_value(cookie, "serviceToken")
+            user_id = user_id or cookie_value(cookie, "userId")
+            ph_token = ph_token or cookie_value(cookie, "xiaomichatbot_ph")
+
+        service_token = _normalized(service_token)
+        user_id = _normalized(user_id)
+        ph_token = _normalized(ph_token)
+
+        if not service_token or not user_id or not ph_token:
+            return None
+
+        if not cookie:
+            cookie = f"serviceToken={service_token}; userId={user_id}; xiaomichatbot_ph={ph_token}"
+
+        return {
+            "service_token": service_token,
+            "user_id": user_id,
+            "ph_token": ph_token,
+            "cookie": cookie,
+        }
+
+    if provider_id == "openai-web":
+        access_token = env_or_header_token(handler, ["OPENAI_WEB_ACCESS_TOKEN"], ["x-openai-web-token"])
+        cookie = env_token("OPENAI_WEB_COOKIE") or header_token(handler, "x-openai-web-cookie")
+        account_id = env_token("OPENAI_WEB_ACCOUNT_ID") or header_token(handler, "x-openai-web-account-id")
+        device_id = env_token("OPENAI_WEB_DEVICE_ID") or header_token(handler, "x-openai-web-device-id")
+        if not access_token and not cookie:
+            return None
+        return {"access_token": access_token, "cookie": cookie, "account_id": account_id, "device_id": device_id}
+
+    if provider_id == "perplexity":
+        cookie = env_token("PERPLEXITY_COOKIE")
+        session_token = env_or_header_token(handler, ["PERPLEXITY_SESSION_TOKEN"], ["x-perplexity-session"])
+        if not session_token and cookie:
+            session_token = cookie_value(cookie, "__Secure-next-auth.session-token")
+        if not cookie and session_token:
+            cookie = f"__Secure-next-auth.session-token={session_token}"
+        return {"cookie": cookie, "session_token": session_token} if cookie else None
+
+    if provider_id == "phind":
+        cookie = env_token("PHIND_COOKIE")
+        if not cookie:
+            cookie = handler.headers.get("x-phind-cookie", "").strip()
+        nonce = env_token("PHIND_NONCE")
+        if not nonce:
+            nonce = handler.headers.get("x-phind-nonce", "").strip()
+        return {"cookie": cookie, "nonce": nonce} if cookie else None
+
+    if provider_id == "inflection":
+        token = env_or_header_token(handler, ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"], ["x-inflection-api-key"])
+        return {"token": token} if token else None
+
+    if provider_id == "pi-local":
+        return {"local": True}
+
+    if provider_id == "qwen-ai":
+        cookie = env_token("QWEN_AI_COOKIE")
+        token = env_or_header_token(handler, ["QWEN_AI_TOKEN"])
+        if not token and cookie:
+            token = cookie_value(cookie, "token")
+        if not token:
+            return None
+        return {"token": token, "cookie": cookie}
+
+    if provider_id == "uncloseai":
+        return {"public": True}
+
+    return None
+
+
+def _buffered_stream_chunks(result):
+    created = result.get("created", 0)
+    model = result.get("model", "")
+    response_id = result.get("id", "")
+    message = ((result.get("choices") or [{}])[0].get("message") or {})
+    finish_reason = ((result.get("choices") or [{}])[0].get("finish_reason")) or "stop"
+    builder = OpenAIStreamBuilder(response_id, model)
+    builder.created = created
+
+    for chunk in builder.reasoning(message.get("reasoning_content") or ""):
+        yield chunk
+
+    content = message.get("content") or ""
+    if content:
+        for chunk in builder.content(content):
+            yield chunk
+    elif not builder.role_sent:
+        role_chunk = builder.ensure_role("content")
+        if role_chunk is not None:
+            yield role_chunk
+
+    yield builder.finish(finish_reason=finish_reason)
+
+
+def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
+    if provider_id == "zai":
+        return zai_proxy.complete_non_stream(credentials["token"], payload)
+    if provider_id == "deepseek":
+        return deepseek_proxy.complete_non_stream(credentials["token"], payload)
+    if provider_id == "gemini-web":
+        return gemini_web_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "grok":
+        return grok_proxy.complete_non_stream(credentials["cookie"], payload)
+    if provider_id == "kimi":
+        return kimi_proxy.complete_non_stream(credentials["token"], payload)
+    if provider_id == "mimo":
+        return mimo_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "openai-web":
+        return openai_web_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "perplexity":
+        return perplexity_proxy.complete_non_stream(credentials["cookie"], payload)
+    if provider_id == "phind":
+        return phind_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "inflection":
+        return inflection_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "pi-local":
+        return pi_local_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "qwen-ai":
+        return qwen_ai_proxy.complete_non_stream(credentials["token"], credentials.get("cookie", ""), payload)
+    if provider_id == "uncloseai":
+        return uncloseai_proxy.complete_non_stream(credentials, payload)
+    raise RuntimeError(f"Unsupported provider: {provider_id}")
+
+
+def stream_chunks(provider_id: str, credentials: dict, payload: dict):
+    if provider_id == "zai":
+        upstream, chat_id, model = zai_proxy.chat_completion(credentials["token"], payload)
+        try:
+            for chunk in zai_proxy.openai_stream_chunks(upstream, model, chat_id):
+                yield chunk
+        finally:
+            upstream.close()
+        return
+
+    if provider_id == "deepseek":
+        for chunk in deepseek_proxy.stream_chunks(credentials["token"], payload):
+            yield chunk
+        return
+
+    if provider_id == "grok":
+        for chunk in grok_proxy.stream_chunks(credentials["cookie"], payload):
+            yield chunk
+        return
+
+    if provider_id == "kimi":
+        for chunk in kimi_proxy.stream_chunks(credentials["token"], payload):
+            yield chunk
+        return
+
+    if provider_id == "openai-web":
+        for chunk in openai_web_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "perplexity":
+        for chunk in perplexity_proxy.stream_chunks(credentials["cookie"], payload):
+            yield chunk
+        return
+
+    if provider_id == "phind":
+        for chunk in phind_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "inflection":
+        for chunk in inflection_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "qwen-ai":
+        for chunk in qwen_ai_proxy.stream_chunks(credentials["token"], credentials.get("cookie", ""), payload):
+            yield chunk
+        return
+
+    if provider_id == "uncloseai":
+        for chunk in uncloseai_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    result, _meta = complete_non_stream(provider_id, credentials, payload)
+    for chunk in _buffered_stream_chunks(result):
+        yield chunk
