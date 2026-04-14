@@ -18,6 +18,7 @@ Use the exact env names expected by the adapters:
 | Grok | `GROK_COOKIE`, `GROK_SSO`, `GROK_CF_CLEARANCE` |
 | OpenAI Web | `OPENAI_WEB_ACCESS_TOKEN`, `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` |
 | Qwen International | `QWEN_AI_COOKIE`, `QWEN_AI_TOKEN` |
+| Mistral | `MISTRAL_COOKIE`, optional `MISTRAL_CSRF_TOKEN` |
 | Perplexity | `PERPLEXITY_COOKIE`, `PERPLEXITY_SESSION_TOKEN` |
 | Phind | `PHIND_COOKIE`, `PHIND_NONCE` |
 | Mimo | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN`, `MIMO_COOKIE` |
@@ -43,6 +44,7 @@ Local-only variables that should stay off Vercel:
 | Grok | Logged-in `grok.com` cookies. |
 | OpenAI Web | `chatgpt.com` session `accessToken`, plus optional cookie header/device id/account id. |
 | Qwen International | `chat.qwen.ai` cookies and token. |
+| Mistral | `console.mistral.ai` cookies and optional CSRF token. |
 | Perplexity | `perplexity.ai` cookies and session token. |
 | Phind | `phindai.org` cookies and nonce. |
 | Mimo | `xiaomimimo.com` or `aistudio.xiaomimimo.com` cookies and tokens. |
@@ -58,6 +60,8 @@ Preferred automatic path:
 - `scripts/get-provider-creds.py`
 
 This script reads the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*` and can automatically extract many provider tokens and cookies when the desktop sessions already exist.
+
+`Mistral` currently uses the manually exported `console.mistral.ai` cookie header plus the CSRF token from the same session; there is no bundled auto-extractor yet.
 
 Provider-specific helpers:
 

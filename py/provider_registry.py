@@ -5,6 +5,7 @@ try:
         grok_proxy,
         inflection_proxy,
         kimi_proxy,
+        mistral_proxy,
         mimo_proxy,
         openai_web_proxy,
         perplexity_proxy,
@@ -22,6 +23,7 @@ except ImportError:
     import grok_proxy
     import inflection_proxy
     import kimi_proxy
+    import mistral_proxy
     import mimo_proxy
     import openai_web_proxy
     import perplexity_proxy
@@ -61,6 +63,7 @@ _add_models(
 )
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
 _add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
+_add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE"])
 _add_models(
     "mimo",
     mimo_proxy.OWNED_BY,
@@ -96,6 +99,8 @@ def resolve_provider_id(model: str) -> str:
         return "grok"
     if kimi_proxy.supports_model(model):
         return "kimi"
+    if mistral_proxy.supports_model(model):
+        return "mistral"
     if mimo_proxy.supports_model(model):
         return "mimo"
     if openai_web_proxy.supports_model(model):
@@ -126,6 +131,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure GROK_COOKIE in server env or pass GROK_SSO plus optional GROK_CF_CLEARANCE"
     if provider_id == "kimi":
         return "Configure KIMI_TOKEN in server env or pass the Kimi access token as Bearer token"
+    if provider_id == "mistral":
+        return "Configure MISTRAL_COOKIE in server env or pass the Mistral console cookie header"
     if provider_id == "mimo":
         return "Configure MIMO_SERVICE_TOKEN, MIMO_USER_ID, and MIMO_PH_TOKEN in server env, or pass x-mimo-* headers / MIMO_COOKIE"
     if provider_id == "openai-web":
@@ -208,6 +215,17 @@ def resolve_credentials(handler, provider_id: str):
     if provider_id == "kimi":
         token = env_or_header_token(handler, ["KIMI_TOKEN"], ["x-kimi-token"])
         return {"token": token} if token else None
+
+    if provider_id == "mistral":
+        cookie = env_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
+        csrf_token = env_token("MISTRAL_CSRF_TOKEN") or header_token(handler, "x-mistral-csrf-token")
+        if not csrf_token and cookie:
+            for part in cookie.split(";"):
+                key, sep, value = part.partition("=")
+                if sep and key.strip().startswith("csrf_token_"):
+                    csrf_token = value.strip()
+                    break
+        return {"cookie": cookie, "csrf_token": csrf_token} if cookie else None
 
     if provider_id == "mimo":
         cookie = env_token("MIMO_COOKIE") or header_token(handler, "x-mimo-cookie")

@@ -29,6 +29,7 @@ Browser/session providers:
 - `OpenAI Web`
 - `Gemini Web`
 - `Qwen International`
+- `Mistral`
 - `Perplexity`
 - `Phind`
 - `Mimo`
