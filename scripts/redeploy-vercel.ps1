@@ -5,6 +5,7 @@ param(
   [string]$GeminiWebCredsFile = '',
   [string]$GrokCredsFile = '',
   [string]$MistralCredsFile = '',
+  [string]$InceptionCredsFile = '',
   [string]$OpenAIWebCredsFile = '',
   [string]$PhindCredsFile = '',
   [switch]$SyncEnv
@@ -21,6 +22,7 @@ $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
 $defaultMistralCredsFile = Join-Path $projectRoot 'auth\mistral-creds.json'
+$defaultInceptionCredsFile = Join-Path $projectRoot 'auth\inception-creds.json'
 $defaultOpenAIWebCredsFile = Join-Path $projectRoot 'auth\openai-web-creds.json'
 $defaultPhindCredsFile = Join-Path $projectRoot 'auth\phind-creds.json'
 
@@ -92,6 +94,8 @@ if ($SyncEnv) {
   Set-VercelEnv -Name 'GEMINI_WEB_COOKIE' -Value $creds.gemini_web_cookie
   Set-VercelEnv -Name 'GEMINI_WEB_SECURE_1PSID' -Value $creds.gemini_web_secure_1psid
   Set-VercelEnv -Name 'GEMINI_WEB_SECURE_1PSIDTS' -Value $creds.gemini_web_secure_1psidts
+  Set-VercelEnv -Name 'INCEPTION_COOKIE' -Value $creds.inception_cookie
+  Set-VercelEnv -Name 'INCEPTION_SESSION_TOKEN' -Value $creds.inception_session_token
   Set-VercelEnv -Name 'MISTRAL_COOKIE' -Value $creds.mistral_cookie
   Set-VercelEnv -Name 'MISTRAL_CSRF_TOKEN' -Value $creds.mistral_csrf_token
   Set-VercelEnv -Name 'MIMO_SERVICE_TOKEN' -Value $creds.mimo_service_token
@@ -110,6 +114,9 @@ if ($SyncEnv) {
   }
   if (-not $MistralCredsFile -and (Test-Path -LiteralPath $defaultMistralCredsFile)) {
     $MistralCredsFile = $defaultMistralCredsFile
+  }
+  if (-not $InceptionCredsFile -and (Test-Path -LiteralPath $defaultInceptionCredsFile)) {
+    $InceptionCredsFile = $defaultInceptionCredsFile
   }
   if (-not $OpenAIWebCredsFile -and (Test-Path -LiteralPath $defaultOpenAIWebCredsFile)) {
     $OpenAIWebCredsFile = $defaultOpenAIWebCredsFile
@@ -151,6 +158,16 @@ if ($SyncEnv) {
     $mistralCreds = Get-Content -LiteralPath $MistralCredsFile -Raw | ConvertFrom-Json
     Set-VercelEnv -Name 'MISTRAL_COOKIE' -Value $mistralCreds.mistral_cookie
     Set-VercelEnv -Name 'MISTRAL_CSRF_TOKEN' -Value $mistralCreds.mistral_csrf_token
+  }
+
+  if ($InceptionCredsFile) {
+    if (-not (Test-Path -LiteralPath $InceptionCredsFile)) {
+      throw "Inception credentials file not found: $InceptionCredsFile"
+    }
+
+    $inceptionCreds = Get-Content -LiteralPath $InceptionCredsFile -Raw | ConvertFrom-Json
+    Set-VercelEnv -Name 'INCEPTION_COOKIE' -Value $inceptionCreds.inception_cookie
+    Set-VercelEnv -Name 'INCEPTION_SESSION_TOKEN' -Value $inceptionCreds.inception_session_token
   }
 
   if ($OpenAIWebCredsFile) {

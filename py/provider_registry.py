@@ -2,6 +2,7 @@ try:
     from py import (
         deepseek_proxy,
         gemini_web_proxy,
+        inception_proxy,
         grok_proxy,
         inflection_proxy,
         kimi_proxy,
@@ -20,6 +21,7 @@ try:
 except ImportError:
     import deepseek_proxy
     import gemini_web_proxy
+    import inception_proxy
     import grok_proxy
     import inflection_proxy
     import kimi_proxy
@@ -63,6 +65,7 @@ _add_models(
 )
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
 _add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
+_add_models("inception", inception_proxy.OWNED_BY, inception_proxy.SUPPORTED_MODELS, ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"])
 _add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"])
 _add_models(
     "mimo",
@@ -99,6 +102,8 @@ def resolve_provider_id(model: str) -> str:
         return "grok"
     if kimi_proxy.supports_model(model):
         return "kimi"
+    if inception_proxy.supports_model(model):
+        return "inception"
     if mistral_proxy.supports_model(model):
         return "mistral"
     if mimo_proxy.supports_model(model):
@@ -131,6 +136,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure GROK_COOKIE in server env or pass GROK_SSO plus optional GROK_CF_CLEARANCE"
     if provider_id == "kimi":
         return "Configure KIMI_TOKEN in server env or pass the Kimi access token as Bearer token"
+    if provider_id == "inception":
+        return "Configure INCEPTION_SESSION_TOKEN in server env, optionally INCEPTION_COOKIE, or pass the Inception session cookie / x-session-token header"
     if provider_id == "mistral":
         return "Configure MISTRAL_COOKIE in server env, optionally MISTRAL_CSRF_TOKEN, or pass the Mistral console cookie header"
     if provider_id == "mimo":
@@ -215,6 +222,19 @@ def resolve_credentials(handler, provider_id: str):
     if provider_id == "kimi":
         token = env_or_header_token(handler, ["KIMI_TOKEN"], ["x-kimi-token"])
         return {"token": token} if token else None
+
+    if provider_id == "inception":
+        cookie = env_token("INCEPTION_COOKIE") or header_token(handler, "x-inception-cookie")
+        session_token = env_token("INCEPTION_SESSION_TOKEN") or header_token(handler, "x-inception-session-token")
+        if not session_token and cookie:
+            for part in cookie.split(";"):
+                key, sep, value = part.partition("=")
+                if sep and key.strip() == "session":
+                    session_token = value.strip()
+                    break
+        if not cookie and session_token:
+            cookie = f"session={session_token}"
+        return {"cookie": cookie, "session_token": session_token} if session_token else None
 
     if provider_id == "mistral":
         cookie = env_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
@@ -339,6 +359,8 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         return grok_proxy.complete_non_stream(credentials["cookie"], payload)
     if provider_id == "kimi":
         return kimi_proxy.complete_non_stream(credentials["token"], payload)
+    if provider_id == "inception":
+        return inception_proxy.complete_non_stream(credentials, payload)
     if provider_id == "mimo":
         return mimo_proxy.complete_non_stream(credentials, payload)
     if provider_id == "openai-web":
@@ -380,6 +402,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "kimi":
         for chunk in kimi_proxy.stream_chunks(credentials["token"], payload):
+            yield chunk
+        return
+
+    if provider_id == "inception":
+        for chunk in inception_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 

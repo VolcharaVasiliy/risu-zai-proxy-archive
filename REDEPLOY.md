@@ -42,6 +42,8 @@ Other provider-specific automation lives in:
 - `scripts/get-openai-web-creds.py`
 - `scripts/launch-gemini-auth.ps1`
 - `scripts/get-gemini-web-creds.py`
+- `scripts/launch-inception-auth.ps1`
+- `scripts/get-inception-creds.py`
 - `scripts/launch-mistral-auth.ps1`
 - `scripts/get-mistral-creds.py`
 - `scripts/launch-phind-auth.ps1`

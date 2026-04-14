@@ -18,6 +18,7 @@ Use the exact env names expected by the adapters:
 | Grok | `GROK_COOKIE`, `GROK_SSO`, `GROK_CF_CLEARANCE` |
 | OpenAI Web | `OPENAI_WEB_ACCESS_TOKEN`, `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` |
 | Qwen International | `QWEN_AI_COOKIE`, `QWEN_AI_TOKEN` |
+| Inception | `INCEPTION_SESSION_TOKEN`, `INCEPTION_COOKIE` |
 | Mistral | `MISTRAL_COOKIE`, optional `MISTRAL_CSRF_TOKEN` |
 | Perplexity | `PERPLEXITY_COOKIE`, `PERPLEXITY_SESSION_TOKEN` |
 | Phind | `PHIND_COOKIE`, `PHIND_NONCE` |
@@ -44,6 +45,7 @@ Local-only variables that should stay off Vercel:
 | Grok | Logged-in `grok.com` cookies. |
 | OpenAI Web | `chatgpt.com` session `accessToken`, plus optional cookie header/device id/account id. |
 | Qwen International | `chat.qwen.ai` cookies and token. |
+| Inception | `chat.inceptionlabs.ai` cookies and session token. |
 | Mistral | `console.mistral.ai` cookies and optional CSRF token. |
 | Perplexity | `perplexity.ai` cookies and session token. |
 | Phind | `phindai.org` cookies and nonce. |
@@ -60,6 +62,13 @@ Preferred automatic path:
 - `scripts/get-provider-creds.py`
 
 This script reads the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*` and can automatically extract many provider tokens and cookies when the desktop sessions already exist.
+
+`Inception` uses its own browser-profile extractor because it is not part of the Chat2API desktop layout:
+
+- `scripts/launch-inception-auth.ps1`
+- `scripts/get-inception-creds.py`
+
+Those scripts store `auth\inception-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` reads and pushes into `INCEPTION_COOKIE` and `INCEPTION_SESSION_TOKEN`.
 
 `Mistral` uses its own browser-profile extractor because it is not part of the Chat2API desktop layout:
 
