@@ -61,7 +61,12 @@ Preferred automatic path:
 
 This script reads the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*` and can automatically extract many provider tokens and cookies when the desktop sessions already exist.
 
-`Mistral` currently uses the manually exported `console.mistral.ai` cookie header plus the CSRF token from the same session; there is no bundled auto-extractor yet.
+`Mistral` uses its own browser-profile extractor because it is not part of the Chat2API desktop layout:
+
+- `scripts/launch-mistral-auth.ps1`
+- `scripts/get-mistral-creds.py`
+
+Those scripts store `auth\mistral-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` reads and pushes into `MISTRAL_COOKIE` and `MISTRAL_CSRF_TOKEN`.
 
 Provider-specific helpers:
 
@@ -72,6 +77,8 @@ Provider-specific helpers:
 - `scripts/get-openai-web-creds.py`
 - `scripts/launch-gemini-auth.ps1`
 - `scripts/get-gemini-web-creds.py`
+- `scripts/launch-mistral-auth.ps1`
+- `scripts/get-mistral-creds.py`
 - `scripts/launch-phind-auth.ps1`
 - `scripts/get-phind-creds.ps1`
 - `scripts/launch-pi-auth.ps1`

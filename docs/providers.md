@@ -12,7 +12,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Grok | `grok-3`, `grok-4`, `grok-4-thinking`, `grok-4.1-fast` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE` | Logged-in `grok.com` browser session | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py` | Cookie-based browser provider. |
 | OpenAI Web | `chatgpt-auto` and discovered ChatGPT web slugs | `OPENAI_WEB_ACCESS_TOKEN` | `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` | Logged-in `chatgpt.com` session | `scripts/launch-openai-auth.ps1`, `scripts/get-openai-web-creds.py` | Uses the web auth/session flow, not the public API. |
 | Qwen International | `Qwen3-Max`, `Qwen3.5-Plus`, `Qwen3-Coder`, `Qwen3-VL-235B-A22B` | `QWEN_AI_COOKIE` | `QWEN_AI_TOKEN` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py` | Cookie + token based. |
-| Mistral | `mistral-medium-latest` | `MISTRAL_COOKIE` | `MISTRAL_CSRF_TOKEN` | Logged-in `console.mistral.ai` session | Manual only | Uses the console playground conversation endpoint. |
+| Mistral | `mistral-small-2603`, `mistral-small-2506`, `mistral-medium-2508`, `mistral-large-2512`, `ministral-14b-2512`, `ministral-8b-2512`, `ministral-3b-2512`, `magistral-medium-2509`, `magistral-small-2509`, `devstral-2512`, `codestral-2508`, `labs-devstral-small-2512`, `labs-leanstral-2603`, `voxtral-mini-2507`, `voxtral-small-2507` | `MISTRAL_COOKIE` | `MISTRAL_CSRF_TOKEN` | Logged-in `console.mistral.ai` session | `scripts/launch-mistral-auth.ps1`, `scripts/get-mistral-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Current chat-capable models only; models with 2026 retirement notes are intentionally omitted. |
 | Perplexity | `Turbo`, `PPLX-Pro`, `GPT-5`, `Claude-Sonnet-4` | `PERPLEXITY_COOKIE` | `PERPLEXITY_SESSION_TOKEN` | Logged-in `perplexity.ai` session | `scripts/get-provider-creds.py` | Session cookie based. |
 | Phind | `phind-search`, `phind-chat` | `PHIND_COOKIE` | `PHIND_NONCE` | Logged-in `phindai.org` session | `scripts/launch-phind-auth.ps1`, `scripts/get-phind-creds.ps1`, `scripts/get-provider-creds.py` | WordPress nonce is auto-fetched when missing. |
 | Mimo | `mimo-v2-pro`, `mimo-v2-flash-studio`, `mimo-v2-omni` | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN` | `MIMO_COOKIE`, `MIMO_RESOLVE_IPS`, `MIMO_SKIP_TLS_VERIFY` | Logged-in `xiaomimimo.com` / `aistudio.xiaomimimo.com` session | `scripts/get-provider-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Auto-resolves public IPs if local DNS points to loopback. |
@@ -67,6 +67,13 @@ The project is already wired to the local Chat2API desktop storage layout:
 - `MIMO_COOKIE` / `MIMO_SERVICE_TOKEN` / `MIMO_USER_ID` / `MIMO_PH_TOKEN`
 - `QWEN_AI_COOKIE` / `QWEN_AI_TOKEN`
 - `PERPLEXITY_COOKIE` / `PERPLEXITY_SESSION_TOKEN`
+
+Mistral uses a separate browser-profile extractor:
+
+- `scripts/launch-mistral-auth.ps1`
+- `scripts/get-mistral-creds.py`
+
+The extractor stores `MISTRAL_COOKIE` and `MISTRAL_CSRF_TOKEN` in `auth\mistral-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` can push into Vercel.
 
 That is the preferred automatic path when the local Chat2API session already contains a logged-in provider.
 

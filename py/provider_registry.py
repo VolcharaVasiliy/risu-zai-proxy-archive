@@ -63,7 +63,7 @@ _add_models(
 )
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
 _add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
-_add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE"])
+_add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"])
 _add_models(
     "mimo",
     mimo_proxy.OWNED_BY,
@@ -132,7 +132,7 @@ def provider_error_hint(provider_id: str) -> str:
     if provider_id == "kimi":
         return "Configure KIMI_TOKEN in server env or pass the Kimi access token as Bearer token"
     if provider_id == "mistral":
-        return "Configure MISTRAL_COOKIE in server env or pass the Mistral console cookie header"
+        return "Configure MISTRAL_COOKIE in server env, optionally MISTRAL_CSRF_TOKEN, or pass the Mistral console cookie header"
     if provider_id == "mimo":
         return "Configure MIMO_SERVICE_TOKEN, MIMO_USER_ID, and MIMO_PH_TOKEN in server env, or pass x-mimo-* headers / MIMO_COOKIE"
     if provider_id == "openai-web":

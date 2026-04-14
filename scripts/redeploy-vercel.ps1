@@ -4,6 +4,7 @@ param(
   [string]$CredsFile = '',
   [string]$GeminiWebCredsFile = '',
   [string]$GrokCredsFile = '',
+  [string]$MistralCredsFile = '',
   [string]$OpenAIWebCredsFile = '',
   [string]$PhindCredsFile = '',
   [switch]$SyncEnv
@@ -19,6 +20,7 @@ $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\vc.js'
 $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
+$defaultMistralCredsFile = Join-Path $projectRoot 'auth\mistral-creds.json'
 $defaultOpenAIWebCredsFile = Join-Path $projectRoot 'auth\openai-web-creds.json'
 $defaultPhindCredsFile = Join-Path $projectRoot 'auth\phind-creds.json'
 
@@ -90,6 +92,8 @@ if ($SyncEnv) {
   Set-VercelEnv -Name 'GEMINI_WEB_COOKIE' -Value $creds.gemini_web_cookie
   Set-VercelEnv -Name 'GEMINI_WEB_SECURE_1PSID' -Value $creds.gemini_web_secure_1psid
   Set-VercelEnv -Name 'GEMINI_WEB_SECURE_1PSIDTS' -Value $creds.gemini_web_secure_1psidts
+  Set-VercelEnv -Name 'MISTRAL_COOKIE' -Value $creds.mistral_cookie
+  Set-VercelEnv -Name 'MISTRAL_CSRF_TOKEN' -Value $creds.mistral_csrf_token
   Set-VercelEnv -Name 'MIMO_SERVICE_TOKEN' -Value $creds.mimo_service_token
   Set-VercelEnv -Name 'MIMO_USER_ID' -Value $creds.mimo_user_id
   Set-VercelEnv -Name 'MIMO_PH_TOKEN' -Value $creds.mimo_ph_token
@@ -103,6 +107,9 @@ if ($SyncEnv) {
   }
   if (-not $GrokCredsFile -and (Test-Path -LiteralPath $defaultGrokCredsFile)) {
     $GrokCredsFile = $defaultGrokCredsFile
+  }
+  if (-not $MistralCredsFile -and (Test-Path -LiteralPath $defaultMistralCredsFile)) {
+    $MistralCredsFile = $defaultMistralCredsFile
   }
   if (-not $OpenAIWebCredsFile -and (Test-Path -LiteralPath $defaultOpenAIWebCredsFile)) {
     $OpenAIWebCredsFile = $defaultOpenAIWebCredsFile
@@ -134,6 +141,16 @@ if ($SyncEnv) {
     Set-VercelEnv -Name 'GROK_COOKIE' -Value $grokCreds.grok_cookie
     Set-VercelEnv -Name 'GROK_SSO' -Value $grokCreds.grok_sso
     Set-VercelEnv -Name 'GROK_CF_CLEARANCE' -Value $grokCreds.grok_cf_clearance
+  }
+
+  if ($MistralCredsFile) {
+    if (-not (Test-Path -LiteralPath $MistralCredsFile)) {
+      throw "Mistral credentials file not found: $MistralCredsFile"
+    }
+
+    $mistralCreds = Get-Content -LiteralPath $MistralCredsFile -Raw | ConvertFrom-Json
+    Set-VercelEnv -Name 'MISTRAL_COOKIE' -Value $mistralCreds.mistral_cookie
+    Set-VercelEnv -Name 'MISTRAL_CSRF_TOKEN' -Value $mistralCreds.mistral_csrf_token
   }
 
   if ($OpenAIWebCredsFile) {

@@ -17,8 +17,66 @@ except ImportError:
 OWNED_BY = "console.mistral.ai"
 BASE_URL = (os.environ.get("MISTRAL_BASE_URL", "").strip() or "https://console.mistral.ai").rstrip("/")
 CONVERSATION_URL = f"{BASE_URL}/api-ui/bora/v1/conversations"
-SUPPORTED_MODELS = [item.strip() for item in (os.environ.get("MISTRAL_MODELS", "").split(",") if os.environ.get("MISTRAL_MODELS") else ["mistral-medium-latest"]) if item.strip()]
-MODEL_ALIASES = {"mistral": "mistral-medium-latest", "mistral-chat": "mistral-medium-latest"}
+DEFAULT_MODEL = "mistral-medium-2508"
+DEFAULT_SUPPORTED_MODELS = [
+    "mistral-small-2603",
+    "mistral-large-2512",
+    "mistral-medium-2508",
+    "mistral-small-2506",
+    "ministral-14b-2512",
+    "ministral-8b-2512",
+    "ministral-3b-2512",
+    "magistral-medium-2509",
+    "magistral-small-2509",
+    "devstral-2512",
+    "codestral-2508",
+    "labs-devstral-small-2512",
+    "labs-leanstral-2603",
+    "voxtral-mini-2507",
+    "voxtral-small-2507",
+]
+SUPPORTED_MODELS = [
+    item.strip()
+    for item in (os.environ.get("MISTRAL_MODELS", "").split(",") if os.environ.get("MISTRAL_MODELS") else DEFAULT_SUPPORTED_MODELS)
+    if item.strip()
+]
+MODEL_ALIASES = {
+    "mistral": "mistral-medium-2508",
+    "mistral-chat": "mistral-medium-2508",
+    "mistral-latest": "mistral-medium-2508",
+    "mistral-small": "mistral-small-2603",
+    "mistral-small-latest": "mistral-small-2603",
+    "mistral-medium": "mistral-medium-2508",
+    "mistral-medium-latest": "mistral-medium-2508",
+    "mistral-large": "mistral-large-2512",
+    "mistral-large-latest": "mistral-large-2512",
+    "ministral": "ministral-8b-2512",
+    "ministral-latest": "ministral-8b-2512",
+    "ministral-3b": "ministral-3b-2512",
+    "ministral-3b-latest": "ministral-3b-2512",
+    "ministral-8b": "ministral-8b-2512",
+    "ministral-8b-latest": "ministral-8b-2512",
+    "ministral-14b": "ministral-14b-2512",
+    "ministral-14b-latest": "ministral-14b-2512",
+    "magistral": "magistral-medium-2509",
+    "magistral-latest": "magistral-medium-2509",
+    "magistral-medium": "magistral-medium-2509",
+    "magistral-medium-latest": "magistral-medium-2509",
+    "magistral-small": "magistral-small-2509",
+    "magistral-small-latest": "magistral-small-2509",
+    "devstral": "devstral-2512",
+    "devstral-latest": "devstral-2512",
+    "devstral-small": "labs-devstral-small-2512",
+    "devstral-small-latest": "labs-devstral-small-2512",
+    "codestral": "codestral-2508",
+    "codestral-latest": "codestral-2508",
+    "leanstral": "labs-leanstral-2603",
+    "leanstral-latest": "labs-leanstral-2603",
+    "voxtral-mini": "voxtral-mini-2507",
+    "voxtral-mini-latest": "voxtral-mini-2507",
+    "voxtral-small": "voxtral-small-2507",
+    "voxtral-small-latest": "voxtral-small-2507",
+}
 
 
 def supports_model(model: str) -> bool:
@@ -37,7 +95,7 @@ def map_model(model: str) -> str:
     for item in SUPPORTED_MODELS:
         if lowered == item.lower():
             return item
-    return SUPPORTED_MODELS[0]
+    return DEFAULT_MODEL
 
 
 def _get_cookie_value(cookie_header: str, cookie_name: str) -> str:

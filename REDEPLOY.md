@@ -14,6 +14,12 @@ Auto-extract credentials from local storage and Chat2API partitions:
 F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-provider-creds.py
 ```
 
+Extract the Mistral browser session into `auth\mistral-creds.json`:
+
+```powershell
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-mistral-creds.py --profile-root F:\Projects\risu-zai-proxy\auth\mistral-edge-profile --output F:\Projects\risu-zai-proxy\auth\mistral-creds.json
+```
+
 Deploy to Vercel with env sync:
 
 ```powershell
@@ -36,6 +42,8 @@ Other provider-specific automation lives in:
 - `scripts/get-openai-web-creds.py`
 - `scripts/launch-gemini-auth.ps1`
 - `scripts/get-gemini-web-creds.py`
+- `scripts/launch-mistral-auth.ps1`
+- `scripts/get-mistral-creds.py`
 - `scripts/launch-phind-auth.ps1`
 - `scripts/get-phind-creds.ps1`
 - `scripts/launch-pi-auth.ps1`
