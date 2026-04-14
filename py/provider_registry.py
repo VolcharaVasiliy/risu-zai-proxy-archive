@@ -3,6 +3,7 @@ try:
         deepseek_proxy,
         gemini_web_proxy,
         inception_proxy,
+        longcat_proxy,
         grok_proxy,
         inflection_proxy,
         kimi_proxy,
@@ -22,6 +23,7 @@ except ImportError:
     import deepseek_proxy
     import gemini_web_proxy
     import inception_proxy
+    import longcat_proxy
     import grok_proxy
     import inflection_proxy
     import kimi_proxy
@@ -66,6 +68,7 @@ _add_models(
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
 _add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
 _add_models("inception", inception_proxy.OWNED_BY, inception_proxy.SUPPORTED_MODELS, ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"])
+_add_models("longcat", longcat_proxy.OWNED_BY, longcat_proxy.SUPPORTED_MODELS, ["LONGCAT_COOKIE"])
 _add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"])
 _add_models(
     "mimo",
@@ -104,6 +107,8 @@ def resolve_provider_id(model: str) -> str:
         return "kimi"
     if inception_proxy.supports_model(model):
         return "inception"
+    if longcat_proxy.supports_model(model):
+        return "longcat"
     if mistral_proxy.supports_model(model):
         return "mistral"
     if mimo_proxy.supports_model(model):
@@ -138,6 +143,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure KIMI_TOKEN in server env or pass the Kimi access token as Bearer token"
     if provider_id == "inception":
         return "Configure INCEPTION_SESSION_TOKEN in server env, optionally INCEPTION_COOKIE, or pass the Inception session cookie / x-session-token header"
+    if provider_id == "longcat":
+        return "Configure LONGCAT_COOKIE in server env, or pass the LongCat session cookie header"
     if provider_id == "mistral":
         return "Configure MISTRAL_COOKIE in server env, optionally MISTRAL_CSRF_TOKEN, or pass the Mistral console cookie header"
     if provider_id == "mimo":
@@ -235,6 +242,10 @@ def resolve_credentials(handler, provider_id: str):
         if not cookie and session_token:
             cookie = f"session={session_token}"
         return {"cookie": cookie, "session_token": session_token} if session_token else None
+
+    if provider_id == "longcat":
+        cookie = env_token("LONGCAT_COOKIE") or header_token(handler, "x-longcat-cookie")
+        return {"cookie": cookie} if cookie else None
 
     if provider_id == "mistral":
         cookie = env_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
@@ -361,6 +372,8 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         return kimi_proxy.complete_non_stream(credentials["token"], payload)
     if provider_id == "inception":
         return inception_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "longcat":
+        return longcat_proxy.complete_non_stream(credentials, payload)
     if provider_id == "mimo":
         return mimo_proxy.complete_non_stream(credentials, payload)
     if provider_id == "openai-web":
@@ -407,6 +420,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "inception":
         for chunk in inception_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "longcat":
+        for chunk in longcat_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 

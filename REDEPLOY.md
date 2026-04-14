@@ -20,6 +20,12 @@ Extract the Mistral browser session into `auth\mistral-creds.json`:
 F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-mistral-creds.py --profile-root F:\Projects\risu-zai-proxy\auth\mistral-edge-profile --output F:\Projects\risu-zai-proxy\auth\mistral-creds.json
 ```
 
+Extract the LongCat browser session into `auth\longcat-creds.json`:
+
+```powershell
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-longcat-creds.py --profile-root F:\Projects\risu-zai-proxy\auth\longcat-edge-profile --output F:\Projects\risu-zai-proxy\auth\longcat-creds.json
+```
+
 Deploy to Vercel with env sync:
 
 ```powershell
@@ -44,6 +50,8 @@ Other provider-specific automation lives in:
 - `scripts/get-gemini-web-creds.py`
 - `scripts/launch-inception-auth.ps1`
 - `scripts/get-inception-creds.py`
+- `scripts/launch-longcat-auth.ps1`
+- `scripts/get-longcat-creds.py`
 - `scripts/launch-mistral-auth.ps1`
 - `scripts/get-mistral-creds.py`
 - `scripts/launch-phind-auth.ps1`
