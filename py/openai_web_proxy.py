@@ -41,6 +41,7 @@ CORES = [8, 16, 24, 32]
 NAV_KEYS = ["webdriver-false", "vendor-Google Inc.", "hardwareConcurrency-16", "cookieEnabled-true"]
 DOC_KEYS = ["location", "_reactListening"]
 WIN_KEYS = ["window", "document", "navigator", "location", "origin", "localStorage", "sessionStorage", "fetch"]
+MODEL_TRIM_CHARS = "\"'[]"
 
 
 class ScriptSrcParser(HTMLParser):
@@ -65,11 +66,16 @@ def configured_models():
         try:
             parsed = json.loads(raw)
         except Exception:
-            parsed = [item.strip() for item in raw.split(",") if item.strip()]
+            cleaned = raw.strip()
+            if cleaned.startswith("[") and cleaned.endswith("]"):
+                cleaned = cleaned[1:-1]
+            parsed = [item.strip().strip(MODEL_TRIM_CHARS) for item in cleaned.split(",") if item.strip().strip(MODEL_TRIM_CHARS)]
         if isinstance(parsed, list):
             for item in parsed:
                 if isinstance(item, str) and item.strip():
-                    found.append(item.strip())
+                    cleaned = item.strip().strip(MODEL_TRIM_CHARS)
+                    if cleaned:
+                        found.append(cleaned)
                 elif isinstance(item, dict):
                     value = str(item.get("slug") or item.get("id") or "").strip()
                     if value:

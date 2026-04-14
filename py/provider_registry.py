@@ -374,6 +374,8 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         return inception_proxy.complete_non_stream(credentials, payload)
     if provider_id == "longcat":
         return longcat_proxy.complete_non_stream(credentials, payload)
+    if provider_id == "mistral":
+        return mistral_proxy.complete_non_stream(credentials, payload)
     if provider_id == "mimo":
         return mimo_proxy.complete_non_stream(credentials, payload)
     if provider_id == "openai-web":
@@ -425,6 +427,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "longcat":
         for chunk in longcat_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "mistral":
+        for chunk in mistral_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 
