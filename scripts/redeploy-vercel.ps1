@@ -4,6 +4,7 @@ param(
   [string]$Scope = 'spichekkorobok500-1532s-projects',
   [string]$CredsFile = '',
   [string]$ArceeCredsFile = '',
+  [string]$QwenCredsFile = '',
   [string]$GeminiWebCredsFile = '',
   [string]$GrokCredsFile = '',
   [string]$MistralCredsFile = '',
@@ -23,6 +24,7 @@ $vercelBin = Join-Path $projectRoot 'node_modules\.bin\vercel.cmd'
 $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
 $defaultArceeCredsFile = Join-Path $projectRoot 'auth\arcee-creds.json'
+$defaultQwenCredsFile = Join-Path $projectRoot 'auth\qwen-creds.json'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
 $defaultMistralCredsFile = Join-Path $projectRoot 'auth\mistral-creds.json'
@@ -116,6 +118,9 @@ if ($SyncEnv) {
   if (-not $ArceeCredsFile -and (Test-Path -LiteralPath $defaultArceeCredsFile)) {
     $ArceeCredsFile = $defaultArceeCredsFile
   }
+  if (-not $QwenCredsFile -and (Test-Path -LiteralPath $defaultQwenCredsFile)) {
+    $QwenCredsFile = $defaultQwenCredsFile
+  }
   if (-not $GeminiWebCredsFile -and (Test-Path -LiteralPath $defaultGeminiWebCredsFile)) {
     $GeminiWebCredsFile = $defaultGeminiWebCredsFile
   }
@@ -145,6 +150,22 @@ if ($SyncEnv) {
 
     $arceeCreds = Get-Content -LiteralPath $ArceeCredsFile -Raw | ConvertFrom-Json
     Set-VercelEnv -Name 'ARCEE_ACCESS_TOKEN' -Value $arceeCreds.access_token
+  }
+
+  if ($QwenCredsFile) {
+    if (-not (Test-Path -LiteralPath $QwenCredsFile)) {
+      throw "Qwen credentials file not found: $QwenCredsFile"
+    }
+
+    $qwenCreds = Get-Content -LiteralPath $QwenCredsFile -Raw | ConvertFrom-Json
+    Set-VercelEnv -Name 'QWEN_AI_COOKIE' -Value $qwenCreds.qwen_ai_cookie
+    Set-VercelEnv -Name 'QWEN_AI_TOKEN' -Value $qwenCreds.qwen_ai_token
+    Set-VercelEnv -Name 'QWEN_AI_BX_UA' -Value $qwenCreds.qwen_ai_bx_ua
+    Set-VercelEnv -Name 'QWEN_AI_BX_UA_CREATE' -Value $qwenCreds.qwen_ai_bx_ua_create
+    Set-VercelEnv -Name 'QWEN_AI_BX_UA_CHAT' -Value $qwenCreds.qwen_ai_bx_ua_chat
+    Set-VercelEnv -Name 'QWEN_AI_BX_UMIDTOKEN' -Value $qwenCreds.qwen_ai_bx_umidtoken
+    Set-VercelEnv -Name 'QWEN_AI_BX_V' -Value $qwenCreds.qwen_ai_bx_v
+    Set-VercelEnv -Name 'QWEN_AI_TIMEZONE' -Value $qwenCreds.qwen_ai_timezone
   }
 
   if ($GeminiWebCredsFile) {

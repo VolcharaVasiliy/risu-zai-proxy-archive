@@ -23,6 +23,7 @@ const requiredFiles = [
   'REDEPLOY.md',
   'requirements.txt',
   'scripts/get-arcee-creds.py',
+  'scripts/get-qwen-creds.py',
   'scripts/get-grok-creds.py',
   'scripts/get-gemini-web-creds.py',
   'scripts/get-openai-web-creds.py',

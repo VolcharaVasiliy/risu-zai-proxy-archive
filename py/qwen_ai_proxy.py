@@ -69,6 +69,9 @@ DEFAULT_HEADERS = {
     "Origin": "https://chat.qwen.ai",
 }
 
+DEFAULT_BX_V = "2.5.36"
+DEFAULT_TIMEZONE = "Thu Apr 16 2026 00:34:21 GMT+0300"
+
 
 def supports_model(model: str) -> bool:
     lowered = str(model or "").lower()
@@ -128,23 +131,45 @@ def _prompt_from_messages(messages) -> str:
     return user_content
 
 
-def _headers(token: str, cookie: str = "", chat_id: str = ""):
+def _request_credentials(credentials: dict | None) -> dict:
+    data = dict(credentials or {})
+    data["cookie"] = str(data.get("cookie") or "").strip()
+    data["token"] = str(data.get("token") or "").strip()
+    data["bx_ua"] = str(data.get("bx_ua") or "").strip()
+    data["bx_ua_create"] = str(data.get("bx_ua_create") or data["bx_ua"]).strip()
+    data["bx_ua_chat"] = str(data.get("bx_ua_chat") or data["bx_ua"]).strip()
+    data["bx_umidtoken"] = str(data.get("bx_umidtoken") or "").strip()
+    data["bx_v"] = str(data.get("bx_v") or DEFAULT_BX_V).strip() or DEFAULT_BX_V
+    data["timezone"] = str(data.get("timezone") or DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE
+    return data
+
+
+def _headers(credentials: dict, chat_id: str = "", phase: str = "create"):
+    credentials = _request_credentials(credentials)
+    bx_ua = credentials["bx_ua_chat"] if phase == "chat" else credentials["bx_ua_create"]
     headers = {
         **DEFAULT_HEADERS,
-        "Authorization": f"Bearer {token}",
         "X-Request-Id": str(uuid.uuid4()),
+        "bx-v": credentials["bx_v"],
+        "Timezone": credentials["timezone"],
     }
+    if bx_ua:
+        headers["bx-ua"] = bx_ua
+    if credentials["bx_umidtoken"]:
+        headers["bx-umidtoken"] = credentials["bx_umidtoken"]
+    if credentials["token"]:
+        headers["Authorization"] = f"Bearer {credentials['token']}"
     if chat_id:
         headers["Referer"] = f"{QWEN_AI_BASE}/c/{chat_id}"
-    if cookie:
-        headers["Cookie"] = cookie
+    if credentials["cookie"]:
+        headers["Cookie"] = credentials["cookie"]
     return headers
 
 
-def create_chat(token: str, cookie: str, model_id: str, title: str = "OpenAI_API_Chat") -> str:
+def create_chat(credentials: dict, model_id: str, title: str = "OpenAI_API_Chat") -> str:
     response = requests.post(
         f"{QWEN_AI_BASE}/api/v2/chats/new",
-        headers=_headers(token, cookie),
+        headers=_headers(credentials, phase="create"),
         json={
             "title": title,
             "models": [model_id],
@@ -157,17 +182,19 @@ def create_chat(token: str, cookie: str, model_id: str, title: str = "OpenAI_API
     )
     response.raise_for_status()
     data = response.json()
+    if not data.get("success", True):
+        raise RuntimeError(f"Qwen AI create chat failed: {data}")
     chat_id = data.get("data", {}).get("id")
     if not chat_id:
         raise RuntimeError(f"Qwen AI create chat failed: {data}")
     return chat_id
 
 
-def chat_completion(token: str, cookie: str, payload: dict):
+def chat_completion(credentials: dict, payload: dict):
     request_model = payload.get("model", "Qwen3-Max")
     model_id = map_model(request_model)
     prompt = _prompt_from_messages(payload.get("messages") or [])
-    chat_id = create_chat(token, cookie, model_id)
+    chat_id = create_chat(credentials, model_id)
 
     lowered = str(request_model or "").lower()
     should_enable_thinking = bool(payload.get("enable_thinking") or payload.get("reasoning_effort"))
@@ -204,8 +231,9 @@ def chat_completion(token: str, cookie: str, payload: dict):
                     "output_schema": "phase",
                     "research_mode": "normal",
                     "auto_thinking": should_enable_thinking,
+                    "thinking_mode": payload.get("thinking_mode") or "Auto",
                     "thinking_format": "summary",
-                    "auto_search": False,
+                    "auto_search": bool(payload.get("auto_search", True)),
                 },
                 "extra": {"meta": {"subChatType": "t2t"}},
                 "sub_chat_type": "t2t",
@@ -217,7 +245,7 @@ def chat_completion(token: str, cookie: str, payload: dict):
 
     response = requests.post(
         f"{QWEN_AI_BASE}/api/v2/chat/completions?chat_id={chat_id}",
-        headers={**_headers(token, cookie, chat_id), "x-accel-buffering": "no"},
+        headers={**_headers(credentials, chat_id, phase="chat"), "x-accel-buffering": "no"},
         json=body,
         timeout=120,
         stream=True,
@@ -236,8 +264,8 @@ def _iter_sse_data(response):
             yield data
 
 
-def stream_chunks(token: str, cookie: str, payload: dict):
-    response, chat_id, request_model = chat_completion(token, cookie, payload)
+def stream_chunks(credentials: dict, payload: dict):
+    response, chat_id, request_model = chat_completion(credentials, payload)
     builder = OpenAIStreamBuilder(chat_id, request_model)
     reasoning_text = ""
     summary_text = ""
@@ -296,8 +324,8 @@ def stream_chunks(token: str, cookie: str, payload: dict):
     yield builder.finish()
 
 
-def complete_non_stream(token: str, cookie: str, payload: dict):
-    response, chat_id, request_model = chat_completion(token, cookie, payload)
+def complete_non_stream(credentials: dict, payload: dict):
+    response, chat_id, request_model = chat_completion(credentials, payload)
     response_id = ""
     reasoning_text = ""
     summary_text = ""

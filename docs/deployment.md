@@ -18,7 +18,7 @@ Use the exact env names expected by the adapters:
 | Gemini Web | `GEMINI_WEB_SECURE_1PSID`, `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS` |
 | Grok | `GROK_COOKIE`, `GROK_SSO`, `GROK_CF_CLEARANCE` |
 | OpenAI Web | `OPENAI_WEB_ACCESS_TOKEN`, `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` |
-| Qwen International | `QWEN_AI_COOKIE`, `QWEN_AI_TOKEN` |
+| Qwen International | `QWEN_AI_COOKIE`, `QWEN_AI_BX_UMIDTOKEN`, optional `QWEN_AI_TOKEN`, `QWEN_AI_BX_UA`, `QWEN_AI_BX_UA_CREATE`, `QWEN_AI_BX_UA_CHAT`, `QWEN_AI_BX_V`, `QWEN_AI_TIMEZONE` |
 | Inception | `INCEPTION_SESSION_TOKEN`, `INCEPTION_COOKIE` |
 | LongCat | `LONGCAT_COOKIE` |
 | Mistral | `MISTRAL_COOKIE`, optional `MISTRAL_CSRF_TOKEN` |
@@ -67,7 +67,7 @@ Named tunnel notes:
 | Gemini Web | Google login cookies from `gemini.google.com`, usually `__Secure-1PSID` and optional `__Secure-1PSIDTS`. |
 | Grok | Logged-in `grok.com` cookies. |
 | OpenAI Web | `chatgpt.com` session `accessToken`, plus optional cookie header/device id/account id. |
-| Qwen International | `chat.qwen.ai` cookies and token. |
+| Qwen International | `chat.qwen.ai` cookies plus `bx-ua` / `bx-umidtoken` from the live web requests, and optional token cookie. |
 | Inception | `chat.inceptionlabs.ai` cookies and session token. |
 | LongCat | `longcat.chat` cookie export. |
 | Mistral | `console.mistral.ai` cookies and optional CSRF token. |
@@ -106,6 +106,12 @@ Those scripts store `auth\longcat-creds.json`, which `scripts/redeploy-vercel.ps
 - `scripts/get-arcee-creds.py`
 
 That script stores `auth\arcee-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` now reads and pushes into `ARCEE_ACCESS_TOKEN`.
+
+`Qwen International` can use a dedicated extractor when the generic Chat2API partition path does not expose the live browser headers:
+
+- `scripts/get-qwen-creds.py`
+
+That script stores `auth\qwen-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` now reads and pushes into `QWEN_AI_COOKIE`, `QWEN_AI_BX_*`, optional `QWEN_AI_TOKEN`, and `QWEN_AI_TIMEZONE`.
 
 `Mistral` uses its own browser-profile extractor because it is not part of the Chat2API desktop layout:
 

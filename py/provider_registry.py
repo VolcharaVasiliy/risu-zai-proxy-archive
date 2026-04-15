@@ -167,7 +167,7 @@ def provider_error_hint(provider_id: str) -> str:
     if provider_id == "pi-local":
         return "Run scripts\\launch-pi-auth.ps1, log in to pi.ai, and use the local Python server with the saved pi-edge-profile"
     if provider_id == "qwen-ai":
-        return "Configure QWEN_AI_COOKIE and either QWEN_AI_TOKEN or the token cookie in server env"
+        return "Configure QWEN_AI_COOKIE plus QWEN_AI_BX_UMIDTOKEN and QWEN_AI_BX_UA/QWEN_AI_BX_UA_CREATE/QWEN_AI_BX_UA_CHAT in server env"
     if provider_id == "uncloseai":
         return "UncloseAI public endpoints do not require credentials"
     return "Provider credentials are not configured"
@@ -333,13 +333,30 @@ def resolve_credentials(handler, provider_id: str):
         return {"local": True}
 
     if provider_id == "qwen-ai":
-        cookie = env_token("QWEN_AI_COOKIE")
-        token = env_or_header_token(handler, ["QWEN_AI_TOKEN"])
+        cookie = env_token("QWEN_AI_COOKIE") or header_token(handler, "x-qwen-ai-cookie")
+        bx_umidtoken = env_token("QWEN_AI_BX_UMIDTOKEN") or header_token(handler, "x-qwen-ai-bx-umidtoken")
+        bx_ua = env_token("QWEN_AI_BX_UA") or header_token(handler, "x-qwen-ai-bx-ua")
+        bx_ua_create = env_token("QWEN_AI_BX_UA_CREATE") or header_token(handler, "x-qwen-ai-bx-ua-create")
+        bx_ua_chat = env_token("QWEN_AI_BX_UA_CHAT") or header_token(handler, "x-qwen-ai-bx-ua-chat")
+        token = env_or_header_token(handler, ["QWEN_AI_TOKEN"], ["x-qwen-ai-token"])
         if not token and cookie:
             token = cookie_value(cookie, "token")
-        if not token:
+        if not cookie:
             return None
-        return {"token": token, "cookie": cookie}
+        if not bx_umidtoken:
+            return None
+        if not (bx_ua or (bx_ua_create and bx_ua_chat)):
+            return None
+        return {
+            "token": token,
+            "cookie": cookie,
+            "bx_umidtoken": bx_umidtoken,
+            "bx_ua": bx_ua,
+            "bx_ua_create": bx_ua_create or bx_ua,
+            "bx_ua_chat": bx_ua_chat or bx_ua,
+            "bx_v": env_token("QWEN_AI_BX_V") or header_token(handler, "x-qwen-ai-bx-v"),
+            "timezone": env_token("QWEN_AI_TIMEZONE") or header_token(handler, "x-qwen-ai-timezone"),
+        }
 
     if provider_id == "uncloseai":
         return {"public": True}
@@ -403,7 +420,7 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     if provider_id == "pi-local":
         return pi_local_proxy.complete_non_stream(credentials, payload)
     if provider_id == "qwen-ai":
-        return qwen_ai_proxy.complete_non_stream(credentials["token"], credentials.get("cookie", ""), payload)
+        return qwen_ai_proxy.complete_non_stream(credentials, payload)
     if provider_id == "uncloseai":
         return uncloseai_proxy.complete_non_stream(credentials, payload)
     raise RuntimeError(f"Unsupported provider: {provider_id}")
@@ -475,7 +492,7 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
         return
 
     if provider_id == "qwen-ai":
-        for chunk in qwen_ai_proxy.stream_chunks(credentials["token"], credentials.get("cookie", ""), payload):
+        for chunk in qwen_ai_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 
