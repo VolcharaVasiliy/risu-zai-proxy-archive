@@ -109,15 +109,16 @@ def _headers(cookie: str, session_token: str) -> dict:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": user_agent,
-        "x-session-token": session_token,
     }
+    if session_token:
+        headers["x-session-token"] = session_token
     if cookie:
         headers["Cookie"] = cookie
     return headers
 
 
 def _refresh_session_token(session, cookie: str, session_token: str) -> str:
-    headers = _headers(cookie, session_token)
+    headers = _headers(cookie, "")
     response = session.get(
         SESSION_ENDPOINT,
         headers=headers,

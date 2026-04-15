@@ -385,8 +385,10 @@ function buildHeaders(env, baseUrl, cookie, sessionToken) {
     "User-Agent":
       envToken(env.INCEPTION_USER_AGENT) ||
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-    "x-session-token": sessionToken,
   });
+  if (sessionToken) {
+    headers.set("x-session-token", sessionToken);
+  }
 
   if (cookie) {
     headers.set("Cookie", cookie);
@@ -398,7 +400,7 @@ function buildHeaders(env, baseUrl, cookie, sessionToken) {
 async function refreshSessionToken(env, baseUrl, cookie, sessionToken) {
   const response = await fetch(`${baseUrl}/api/session`, {
     method: "GET",
-    headers: buildHeaders(env, baseUrl, cookie, sessionToken),
+    headers: buildHeaders(env, baseUrl, cookie, ""),
     redirect: "manual",
   });
 
@@ -434,11 +436,15 @@ async function browserBackedRequest(env, baseUrl, cookie, sessionToken, body) {
       "Accept-Language": envToken(env.INCEPTION_ACCEPT_LANGUAGE) || "ru,en;q=0.9",
     });
 
+    await page.goto(`${baseUrl}/`, {
+      waitUntil: "networkidle2",
+      timeout: 45000,
+    });
+
     const cookies = splitCookieHeader(cookie).map(({ name, value }) => ({
       name,
       value,
-      domain: hostname,
-      path: "/",
+      url: baseUrl,
       secure: true,
       httpOnly: name === "session" || name === "_vcrcs",
     }));
@@ -446,20 +452,36 @@ async function browserBackedRequest(env, baseUrl, cookie, sessionToken, body) {
       await page.setCookie(...cookies);
     }
 
-    await page.goto(`${baseUrl}/`, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+    await page.reload({
+      waitUntil: "networkidle2",
+      timeout: 45000,
     });
 
+    await page
+      .waitForFunction(
+        () => {
+          const title = String(document.title || "");
+          return !title.toLowerCase().includes("security checkpoint");
+        },
+        { timeout: 10000 },
+      )
+      .catch(() => {});
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const appliedCookies = await page.cookies(baseUrl);
+    const pageInfo = await page.evaluate(() => ({
+      href: location.href,
+      title: document.title || "",
+      text: (document.body?.innerText || "").slice(0, 200),
+    }));
+
     return await page.evaluate(
-      async ({ body: activeBody, sessionToken: initialToken }) => {
+      async ({ body: activeBody, sessionToken: initialToken, appliedCookieNames, pageInfo: initialPageInfo }) => {
         const sessionResponse = await fetch("/api/session", {
           method: "GET",
           credentials: "include",
-          headers: {
-            accept: "*/*",
-            "x-session-token": initialToken,
-          },
+          headers: { accept: "*/*" },
         });
         const sessionText = await sessionResponse.text();
         let activeToken = initialToken;
@@ -482,6 +504,11 @@ async function browserBackedRequest(env, baseUrl, cookie, sessionToken, body) {
         });
 
         return {
+          debug: {
+            appliedCookieNames,
+            hasInitialToken: Boolean(initialToken),
+            pageInfo: initialPageInfo,
+          },
           session: {
             status: sessionResponse.status,
             text: sessionText,
@@ -496,6 +523,8 @@ async function browserBackedRequest(env, baseUrl, cookie, sessionToken, body) {
       {
         body,
         sessionToken,
+        appliedCookieNames: appliedCookies.map((item) => item.name),
+        pageInfo,
       },
     );
   } finally {
@@ -523,15 +552,19 @@ async function inceptionResponse(request, env, payload) {
   let upstreamStatus = 0;
   let rawText = "";
   let contentType = "";
+  let browserDebug = null;
+  let browserErrorMessage = "";
 
   try {
     const browserResult = await browserBackedRequest(env, baseUrl, cookie, sessionToken, body);
+    browserDebug = browserResult.debug || null;
     if (browserResult.session.status !== 200) {
       return jsonResponse(
         {
           error: {
             message: `Inception session refresh failed: HTTP ${browserResult.session.status} ${String(browserResult.session.text || "").slice(0, 300)}`.trim(),
             type: "invalid_request_error",
+            ...(browserDebug ? { debug: browserDebug } : {}),
           },
         },
         502,
@@ -541,6 +574,7 @@ async function inceptionResponse(request, env, payload) {
     rawText = String(browserResult.chat.text || "");
     contentType = String(browserResult.chat.contentType || "");
   } catch (browserError) {
+    browserErrorMessage = browserError instanceof Error ? browserError.message : String(browserError);
     let activeSessionToken = sessionToken;
     try {
       activeSessionToken = await refreshSessionToken(env, baseUrl, cookie, sessionToken);
@@ -550,6 +584,7 @@ async function inceptionResponse(request, env, payload) {
           error: {
             message: error instanceof Error ? error.message : String(error),
             type: "invalid_request_error",
+            ...(browserErrorMessage ? { browser_error: browserErrorMessage } : {}),
           },
         },
         502,
@@ -572,6 +607,7 @@ async function inceptionResponse(request, env, payload) {
           error: {
             message: `Inception completion failed: HTTP ${upstream.status} ${rawText.slice(0, 300)}`.trim(),
             type: "invalid_request_error",
+            ...(browserErrorMessage ? { browser_error: browserErrorMessage } : {}),
           },
         },
         502,
@@ -585,6 +621,8 @@ async function inceptionResponse(request, env, payload) {
         error: {
           message: `Inception completion failed: HTTP ${upstreamStatus} ${rawText.slice(0, 300)}`.trim(),
           type: "invalid_request_error",
+          ...(browserDebug ? { debug: browserDebug } : {}),
+          ...(browserErrorMessage ? { browser_error: browserErrorMessage } : {}),
         },
       },
       502,
