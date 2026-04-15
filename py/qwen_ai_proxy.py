@@ -19,9 +19,9 @@ OWNED_BY = "chat.qwen.ai"
 
 SUPPORTED_MODELS = [
     "Qwen3.5-Plus",
-    "Qwen3.5-397B-A17B",
-    "Qwen3-Max",
     "Qwen3-235B-A22B-2507",
+    "Qwen3-Max",
+    "Qwen3.5-397B-A17B",
     "Qwen3-Coder",
     "Qwen3-VL-235B-A22B",
     "Qwen3-Omni-Flash",
@@ -37,8 +37,8 @@ MODEL_MAP = {
     "Qwen3-VL-235B-A22B": "qwen3-vl-235b-a22b",
     "Qwen3-Omni-Flash": "qwen3-omni-flash",
     "Qwen2.5-Max": "qwen2.5-max",
-    "qwen": "qwen3-max",
-    "qwen3": "qwen3-max",
+    "qwen": "qwen3.5-plus",
+    "qwen3": "qwen3.5-plus",
     "qwen3.5": "qwen3.5-plus",
     "qwen3-coder": "qwen3-coder-plus",
     "qwen3-vl": "qwen3-vl-235b-a22b",

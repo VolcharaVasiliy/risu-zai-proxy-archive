@@ -77,8 +77,7 @@ def _candidate_cookie_dbs(profile_root: Path):
 
 
 def _read_cookie_rows(cookie_db_path: Path):
-    uri = cookie_db_path.resolve().as_uri() + "?mode=ro&immutable=1"
-    with sqlite3.connect(uri, uri=True) as conn:
+    with sqlite3.connect(str(cookie_db_path)) as conn:
         return conn.execute(
             """
             select host_key, name, value, encrypted_value
@@ -104,9 +103,9 @@ def _extract_cookies(profile_root: Path):
     if cookie_db is None:
         raise FileNotFoundError(f"Chromium Cookies DB not found under {profile_root}")
 
-    temp_root = profile_root.parent / ".tmp"
+    temp_root = Path(__file__).resolve().parents[1] / ".tmp"
     temp_root.mkdir(exist_ok=True)
-    copied_db = temp_root / f"{profile_root.name}-inception-cookies.db"
+    copied_db = temp_root / f"inception-{profile_root.name.replace(' ', '_').lower()}-cookies.db"
 
     master_key = _load_master_key(local_state)
     copied = False

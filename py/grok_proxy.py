@@ -30,17 +30,17 @@ OWNED_BY = "grok.com"
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 
 SUPPORTED_MODELS = [
-    "grok-3",
     "grok-3-mini",
+    "grok-3",
     "grok-3-thinking",
+    "grok-4.1-fast",
+    "grok-4.1-mini",
+    "grok-4.1-thinking",
     "grok-4",
     "grok-4-mini",
     "grok-4-thinking",
     "grok-4-heavy",
-    "grok-4.1-mini",
-    "grok-4.1-fast",
     "grok-4.1-expert",
-    "grok-4.1-thinking",
     "grok-4.20-beta",
 ]
 
@@ -67,7 +67,7 @@ def supports_model(model: str) -> bool:
 
 
 def _map_model(model: str) -> dict:
-    return MODEL_MAPPING.get(str(model or "").strip().lower()) or MODEL_MAPPING["grok-3"]
+    return MODEL_MAPPING.get(str(model or "").strip().lower()) or MODEL_MAPPING["grok-3-mini"]
 
 
 def _session(use_curl: bool = True):

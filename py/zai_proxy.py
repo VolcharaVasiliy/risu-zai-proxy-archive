@@ -19,7 +19,6 @@ SECRET = b"key-@@@@)))()((9))-xxxx&&&%%%%%"
 OWNED_BY = "z.ai"
 
 SUPPORTED_MODELS = [
-    "GLM-5-Turbo",
     "glm-5",
     "glm-5.1",
     "glm-4.7",
@@ -27,6 +26,7 @@ SUPPORTED_MODELS = [
     "glm-4.6",
     "glm-4.5v",
     "glm-4.5-air",
+    "GLM-5-Turbo",
 ]
 
 MODEL_MAPPING = {

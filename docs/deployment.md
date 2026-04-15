@@ -26,6 +26,7 @@ Use the exact env names expected by the adapters:
 | Mimo | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN`, `MIMO_COOKIE` |
 | Kimi | `KIMI_TOKEN` |
 | Inflection / Pi API | `INFLECTION_API_KEY`, `PI_INFLECTION_API_KEY`, optional `INFLECTION_API_BASE` |
+| Inception Cloudflare edge | `INCEPTION_EDGE_URL` |
 
 Local-only variables that should stay off Vercel:
 
@@ -35,6 +36,9 @@ Local-only variables that should stay off Vercel:
 - `MIMO_RESOLVE_IPS`
 - `MIMO_SKIP_TLS_VERIFY`
 - `PI_LOCAL_*`
+
+When `INCEPTION_EDGE_URL` is set, Vercel can forward only Inception chat requests to the Cloudflare worker. For Python-based runs, `py/inception_proxy.py` now prefers the direct `curl_cffi` browser-impersonation path when that transport is available, and falls back to `INCEPTION_EDGE_URL` only when needed or when `INCEPTION_FORCE_EDGE=1` is set.
+For Inception, the proxy refreshes the session token through `/api/session` and strips `stream` before forwarding the request so the upstream always sees a non-streaming payload.
 
 ## Manual Credential Sources
 

@@ -17,7 +17,7 @@ except ImportError:
 
 # Module constants
 OWNED_BY = "Phind (phind.com)"
-SUPPORTED_MODELS = ["phind-search", "phind-chat"]
+SUPPORTED_MODELS = ["phind-chat", "phind-search"]
 
 
 def supports_model(model: str) -> bool:

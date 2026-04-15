@@ -4,6 +4,7 @@
 .tmp
 .vercel
 .vercel-global
+.wrangler
 __pycache__/
 *.pyc
 *.pyo
@@ -15,3 +16,5 @@ auth/
 node_modules/
 pydeps/
 REPORT.md
+.env*.local
+.vercel

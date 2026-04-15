@@ -12,7 +12,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Grok | `grok-3`, `grok-4`, `grok-4-thinking`, `grok-4.1-fast` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE` | Logged-in `grok.com` browser session | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py` | Cookie-based browser provider. |
 | OpenAI Web | `chatgpt-auto` and discovered ChatGPT web slugs | `OPENAI_WEB_ACCESS_TOKEN` | `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` | Logged-in `chatgpt.com` session | `scripts/launch-openai-auth.ps1`, `scripts/get-openai-web-creds.py` | Uses the web auth/session flow, not the public API. |
 | Qwen International | `Qwen3-Max`, `Qwen3.5-Plus`, `Qwen3-Coder`, `Qwen3-VL-235B-A22B` | `QWEN_AI_COOKIE` | `QWEN_AI_TOKEN` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py` | Cookie + token based. |
-| Inception | `mercury-2`, `mercury-coder` | `INCEPTION_SESSION_TOKEN` | `INCEPTION_COOKIE` | Logged-in `chat.inceptionlabs.ai` session | `scripts/launch-inception-auth.ps1`, `scripts/get-inception-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Each request gets a fresh backend chat id, so sessions do not collapse into one shared conversation. |
+| Inception | `mercury-2`, `mercury-coder` | `INCEPTION_SESSION_TOKEN` | `INCEPTION_COOKIE` | Logged-in `chat.inceptionlabs.ai` session | `scripts/launch-inception-auth.ps1`, `scripts/get-inception-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Each request gets a fresh backend chat id, so sessions do not collapse into one shared conversation. When `INCEPTION_EDGE_URL` is set, Vercel forwards only this provider to the Cloudflare worker. |
 | LongCat | `LongCat-Flash-Chat`, `LongCat-Flash-Thinking`, `LongCat-Flash-Thinking-2601` | `LONGCAT_COOKIE` | none | Logged-in `longcat.chat` session | `scripts/launch-longcat-auth.ps1`, `scripts/get-longcat-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | `LongCat-Flash-Chat` is the regular mode; `LongCat-Flash-Thinking` and `LongCat-Flash-Thinking-2601` are separate reasoning-mode slugs. Each request gets a fresh `session-create` conversation. |
 | Mistral | `mistral-small-2603`, `mistral-small-2506`, `mistral-medium-2508`, `mistral-large-2512`, `ministral-14b-2512`, `ministral-8b-2512`, `ministral-3b-2512`, `magistral-medium-2509`, `magistral-small-2509`, `devstral-2512`, `codestral-2508`, `labs-devstral-small-2512`, `labs-leanstral-2603`, `voxtral-mini-2507`, `voxtral-small-2507` | `MISTRAL_COOKIE` | `MISTRAL_CSRF_TOKEN` | Logged-in `console.mistral.ai` session | `scripts/launch-mistral-auth.ps1`, `scripts/get-mistral-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Current chat-capable models only; models with 2026 retirement notes are intentionally omitted. |
 | Perplexity | `Turbo`, `PPLX-Pro`, `GPT-5`, `Claude-Sonnet-4` | `PERPLEXITY_COOKIE` | `PERPLEXITY_SESSION_TOKEN` | Logged-in `perplexity.ai` session | `scripts/get-provider-creds.py` | Session cookie based. |
@@ -22,6 +22,29 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Inflection / Pi API | `pi-api`, `pi-3.1`, aliases `inflection-pi`, `inflection_3_pi`, `pi-3-1` | `INFLECTION_API_KEY` or `PI_INFLECTION_API_KEY` | `INFLECTION_API_BASE` | `https://developers.inflection.ai/keys` | Manual only | Official API path, works on Vercel. |
 | Pi Web Local | `pi-web-local` | none | `PI_LOCAL_*` | Local `pi.ai` browser profile | `scripts/launch-pi-auth.ps1`, `scripts/pi-browser-bridge.mjs` | Local-only browser automation path. |
 | UncloseAI | `uncloseai-hermes`, `uncloseai-qwen-vl`, `uncloseai-gpt-oss`, `uncloseai-r1-distill` | none | none | Public endpoint | none | Intentionally credential-free. |
+
+## Lightweight Picks
+
+Use these single-model picks for routine traffic when you want the lighter option for each provider:
+
+| Provider | Recommended model |
+| --- | --- |
+| Z.ai | `glm-5` |
+| DeepSeek | `deepseek-chat` |
+| Gemini Web | `gemini-3-flash` |
+| Grok | `grok-3-mini` |
+| Qwen International | `Qwen3.5-Plus` |
+| Inception | `mercury-2` |
+| LongCat | `LongCat-Flash-Chat` |
+| Mistral | `mistral-small-2603` |
+| Perplexity | `Turbo` |
+| Phind | `phind-chat` |
+| Mimo | `mimo-v2-flash-studio` |
+| Kimi | `kimi` |
+| Pi Web Local | `pi-web-local` |
+| UncloseAI | `uncloseai-hermes` |
+
+`OpenAI Web` and `Inflection / Pi API` are currently not included in the routine recommended picks because the live deployment is known to be unreliable for those paths.
 
 ## Stable Provider
 
@@ -79,6 +102,7 @@ Inception uses a separate browser-profile extractor:
 - `scripts/get-inception-creds.py`
 
 The extractor stores `INCEPTION_COOKIE` and `INCEPTION_SESSION_TOKEN` in `auth\inception-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` can push into Vercel.
+When Inception is routed through Cloudflare, `stream` is stripped before the request leaves Vercel so the upstream always receives a non-streaming request.
 
 LongCat uses a separate browser-profile extractor:
 

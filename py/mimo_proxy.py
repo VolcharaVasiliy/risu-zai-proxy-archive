@@ -29,8 +29,8 @@ MIMO_BASE = "https://aistudio.xiaomimimo.com"
 OWNED_BY = "Xiaomi Mimo"
 
 SUPPORTED_MODELS = [
-    "mimo-v2-pro",
     "mimo-v2-flash-studio",
+    "mimo-v2-pro",
     "mimo-v2-omni",
 ]
 

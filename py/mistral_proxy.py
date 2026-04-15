@@ -17,12 +17,12 @@ except ImportError:
 OWNED_BY = "console.mistral.ai"
 BASE_URL = (os.environ.get("MISTRAL_BASE_URL", "").strip() or "https://console.mistral.ai").rstrip("/")
 CONVERSATION_URL = f"{BASE_URL}/api-ui/bora/v1/conversations"
-DEFAULT_MODEL = "mistral-medium-2508"
+DEFAULT_MODEL = "mistral-small-2603"
 DEFAULT_SUPPORTED_MODELS = [
     "mistral-small-2603",
-    "mistral-large-2512",
-    "mistral-medium-2508",
     "mistral-small-2506",
+    "mistral-medium-2508",
+    "mistral-large-2512",
     "ministral-14b-2512",
     "ministral-8b-2512",
     "ministral-3b-2512",
@@ -41,9 +41,9 @@ SUPPORTED_MODELS = [
     if item.strip()
 ]
 MODEL_ALIASES = {
-    "mistral": "mistral-medium-2508",
-    "mistral-chat": "mistral-medium-2508",
-    "mistral-latest": "mistral-medium-2508",
+    "mistral": "mistral-small-2603",
+    "mistral-chat": "mistral-small-2603",
+    "mistral-latest": "mistral-small-2603",
     "mistral-small": "mistral-small-2603",
     "mistral-small-latest": "mistral-small-2603",
     "mistral-medium": "mistral-medium-2508",

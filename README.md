@@ -75,6 +75,48 @@ The one-click deploy button above creates a Vercel project from this repository.
 
 The environment map and manual/automatic credential sources are documented in [docs/deployment.md](docs/deployment.md).
 
+## Cloudflare Edge
+
+If `chat.inceptionlabs.ai` rejects plain server-side requests, the Python adapter now prefers the direct `curl_cffi` browser-impersonation path when it is available. The edge worker in `cloudflare/worker.mjs` stays as a fallback path for Inception only.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/VolcharaVasiliy/risu-zai-proxy-archive)
+
+This worker:
+
+- answers `/health` on Cloudflare
+- handles only `Inception` models from Cloudflare egress so the upstream sees Cloudflare IPs instead of Vercel
+- always receives Inception chat requests with `stream` disabled
+- accepts the `INCEPTION_SESSION_TOKEN` / `INCEPTION_COOKIE` values forwarded by Vercel
+- can also run as a standalone Inception endpoint when `INCEPTION_SESSION_TOKEN` and `INCEPTION_COOKIE` are configured as Cloudflare Worker secrets
+- does not host the rest of the model set
+
+For Python/Vercel runs:
+
+- `py/inception_proxy.py` refreshes the Inception session token through `/api/session`
+- when `curl_cffi` is available, the adapter prefers the direct browser-impersonation transport over `INCEPTION_EDGE_URL`
+- when running on Vercel and `INCEPTION_EDGE_URL` is set, the adapter prefers the Cloudflare edge path for Inception
+- `INCEPTION_FORCE_EDGE=1` can force the Cloudflare edge path back on if you need to debug the worker specifically
+
+Local commands:
+
+```powershell
+npm run cloudflare:login
+npm run cloudflare:dev
+npm run cloudflare:deploy
+```
+
+Cloudflare env vars for the worker:
+
+- none required if Vercel forwards the Inception credentials in headers
+- `INCEPTION_BASE_URL` optional
+- `INCEPTION_REASONING_EFFORT` optional
+- `INCEPTION_WEB_SEARCH` optional
+- `INCEPTION_USER_AGENT` optional
+
+Vercel env var for routing:
+
+- `INCEPTION_EDGE_URL` - Cloudflare worker URL used only for Inception requests
+
 ## Notes
 
 - The project is wired to the companion Chat2API desktop storage layout, so `scripts/get-provider-creds.py` can automatically reuse already logged-in sessions when they exist.

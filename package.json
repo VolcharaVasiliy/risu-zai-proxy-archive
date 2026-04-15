@@ -5,15 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "node ./local-server.js",
-    "check": "node ./scripts/check.js"
+    "check": "node ./scripts/check.js",
+    "cloudflare:dev": "wrangler dev cloudflare/worker.mjs",
+    "cloudflare:deploy": "wrangler deploy cloudflare/worker.mjs",
+    "cloudflare:login": "wrangler login"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "vercel": "^50.37.3"
+    "vercel": "^50.37.3",
+    "wrangler": "^4.83.0"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.3",
     "chrome-remote-interface": "^0.34.0"
   }
 }
