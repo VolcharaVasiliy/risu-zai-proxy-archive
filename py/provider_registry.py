@@ -167,7 +167,7 @@ def provider_error_hint(provider_id: str) -> str:
     if provider_id == "pi-local":
         return "Run scripts\\launch-pi-auth.ps1, log in to pi.ai, and use the local Python server with the saved pi-edge-profile"
     if provider_id == "qwen-ai":
-        return "Configure QWEN_AI_COOKIE plus QWEN_AI_BX_UMIDTOKEN and QWEN_AI_BX_UA/QWEN_AI_BX_UA_CREATE/QWEN_AI_BX_UA_CHAT in server env"
+        return "Configure QWEN_AI_COOKIE in server env"
     if provider_id == "uncloseai":
         return "UncloseAI public endpoints do not require credentials"
     return "Provider credentials are not configured"
@@ -343,10 +343,7 @@ def resolve_credentials(handler, provider_id: str):
             token = cookie_value(cookie, "token")
         if not cookie:
             return None
-        if not bx_umidtoken:
-            return None
-        if not (bx_ua or (bx_ua_create and bx_ua_chat)):
-            return None
+        # Removed checks for bx_umidtoken and bx_ua to make them optional
         return {
             "token": token,
             "cookie": cookie,
