@@ -42,6 +42,7 @@ That layout is read by `scripts/get-provider-creds.py`, which can populate many 
 
 Other provider-specific automation lives in:
 
+- `scripts/get-arcee-creds.py`
 - `scripts/launch-grok-auth.ps1`
 - `scripts/get-grok-creds.py`
 - `scripts/launch-openai-auth.ps1`

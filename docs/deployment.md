@@ -14,6 +14,7 @@ Use the exact env names expected by the adapters:
 | --- | --- |
 | Z.ai | `ZAI_TOKEN` |
 | DeepSeek | `DEEPSEEK_TOKEN` |
+| Arcee | `ARCEE_ACCESS_TOKEN` |
 | Gemini Web | `GEMINI_WEB_SECURE_1PSID`, `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS` |
 | Grok | `GROK_COOKIE`, `GROK_SSO`, `GROK_CF_CLEARANCE` |
 | OpenAI Web | `OPENAI_WEB_ACCESS_TOKEN`, `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` |
@@ -43,11 +44,19 @@ For Inception, the proxy refreshes the session token through `/api/session` and 
 If the hosted Cloudflare worker is also blocked by the upstream checkpoint, use the local tunnel fallback for this one provider:
 
 - `py/inception_tunnel_server.py`
+- `scripts/refresh-inception-creds.ps1`
 - `scripts/start-inception-tunnel.ps1 -UpdateVercel -Redeploy`
 - `scripts/stop-inception-tunnel.ps1`
 - `scripts/install-inception-tunnel-task.ps1`
+- `scripts/setup-inception-named-tunnel.ps1`
 
 That flow keeps Vercel as the single public API URL, but routes only `Inception` traffic through a Cloudflare quick tunnel into the local direct Python transport.
+
+Named tunnel notes:
+
+- `scripts/setup-inception-named-tunnel.ps1` can prepare the named-tunnel path locally.
+- To fully finish a named tunnel, this machine still needs Cloudflare Tunnel auth (`cloudflared tunnel login`, which creates `cert.pem`) and a concrete hostname on a zone you control.
+- Until those exist, the script intentionally falls back to the quick tunnel so the provider keeps working.
 
 ## Manual Credential Sources
 
@@ -91,6 +100,12 @@ Those scripts store `auth\inception-creds.json`, which `scripts/redeploy-vercel.
 - `scripts/get-longcat-creds.py`
 
 Those scripts store `auth\longcat-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` reads and pushes into `LONGCAT_COOKIE`.
+
+`Arcee` uses a bearer token stored in the Chromium/Yandex cookie jar on `api.arcee.ai`:
+
+- `scripts/get-arcee-creds.py`
+
+That script stores `auth\arcee-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` now reads and pushes into `ARCEE_ACCESS_TOKEN`.
 
 `Mistral` uses its own browser-profile extractor because it is not part of the Chat2API desktop layout:
 
@@ -139,6 +154,8 @@ The script:
 - `vercel.json` - route rewrites for `/health`, `/v1/models`, and `/v1/chat/completions`
 - `api/index.py` - Vercel function entrypoint
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
+- `scripts/refresh-inception-creds.ps1` - refresh the local ignored Inception credentials file and optionally restart/redeploy the tunnel path
+- `scripts/setup-inception-named-tunnel.ps1` - prepare the named-tunnel path and fall back to quick tunnel when Cloudflare tunnel auth is still missing
 - `scripts/start-inception-tunnel.ps1` - start the local Inception-only endpoint, quick tunnel, and Vercel sync/redeploy
 - `scripts/get-provider-creds.py` - Chat2API-based auto extraction
 

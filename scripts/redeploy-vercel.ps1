@@ -3,6 +3,7 @@ param(
   [string]$Target = 'production',
   [string]$Scope = 'spichekkorobok500-1532s-projects',
   [string]$CredsFile = '',
+  [string]$ArceeCredsFile = '',
   [string]$GeminiWebCredsFile = '',
   [string]$GrokCredsFile = '',
   [string]$MistralCredsFile = '',
@@ -21,6 +22,7 @@ $pythonExe = 'F:\DevTools\Python311\python.exe'
 $vercelBin = Join-Path $projectRoot 'node_modules\.bin\vercel.cmd'
 $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
+$defaultArceeCredsFile = Join-Path $projectRoot 'auth\arcee-creds.json'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
 $defaultMistralCredsFile = Join-Path $projectRoot 'auth\mistral-creds.json'
@@ -111,6 +113,9 @@ if ($SyncEnv) {
   Set-VercelEnv -Name 'PERPLEXITY_COOKIE' -Value $creds.perplexity_cookie
   Set-VercelEnv -Name 'PERPLEXITY_SESSION_TOKEN' -Value $creds.perplexity_session_token
 
+  if (-not $ArceeCredsFile -and (Test-Path -LiteralPath $defaultArceeCredsFile)) {
+    $ArceeCredsFile = $defaultArceeCredsFile
+  }
   if (-not $GeminiWebCredsFile -and (Test-Path -LiteralPath $defaultGeminiWebCredsFile)) {
     $GeminiWebCredsFile = $defaultGeminiWebCredsFile
   }
@@ -131,6 +136,15 @@ if ($SyncEnv) {
   }
   if (-not $PhindCredsFile -and (Test-Path -LiteralPath $defaultPhindCredsFile)) {
     $PhindCredsFile = $defaultPhindCredsFile
+  }
+
+  if ($ArceeCredsFile) {
+    if (-not (Test-Path -LiteralPath $ArceeCredsFile)) {
+      throw "Arcee credentials file not found: $ArceeCredsFile"
+    }
+
+    $arceeCreds = Get-Content -LiteralPath $ArceeCredsFile -Raw | ConvertFrom-Json
+    Set-VercelEnv -Name 'ARCEE_ACCESS_TOKEN' -Value $arceeCreds.access_token
   }
 
   if ($GeminiWebCredsFile) {

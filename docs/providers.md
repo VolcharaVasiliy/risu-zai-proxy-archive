@@ -8,10 +8,11 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | --- | --- | --- | --- | --- | --- | --- |
 | Z.ai | `GLM-5-Turbo`, `glm-5`, `glm-5.1`, `glm-4.7`, `glm-4.6v`, `glm-4.6`, `glm-4.5v`, `glm-4.5-air` | `ZAI_TOKEN` | `x-zai-token` header | Logged-in `chat.z.ai` session | `scripts/get-zai-token.ps1`, `scripts/get-provider-creds.py` | Stable production provider. |
 | DeepSeek | `deepseek-chat`, `deepseek-reasoner`, `deepseek-search` | `DEEPSEEK_TOKEN` | `x-deepseek-token` header | Logged-in `chat.deepseek.com` session | `scripts/get-provider-creds.py` | Browser-session style token provider. |
+| Arcee | `trinity-mini`, `trinity-large-preview`, `trinity-large-thinking` | `ARCEE_ACCESS_TOKEN` | `ARCEE_SESSION_ID`, `x-arcee-access-token`, `x-arcee-session-id` | Logged-in `chat.arcee.ai` / `api.arcee.ai` bearer cookie | `scripts/get-arcee-creds.py` | Uses the `api.arcee.ai` `access_token` bearer token; request session id can be any UUID. |
 | Gemini Web | `gemini-3-flash`, `gemini-3-pro`, `gemini-3-flash-thinking`, plus `gemini-web*` aliases | `GEMINI_WEB_SECURE_1PSID` | `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE` | Logged-in `gemini.google.com` / Google cookie session | `scripts/launch-gemini-auth.ps1`, `scripts/get-gemini-web-creds.py`, `scripts/get-provider-creds.py` | Account/region gated. Can auto-use WinINET proxy locally. |
 | Grok | `grok-3`, `grok-4`, `grok-4-thinking`, `grok-4.1-fast` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE` | Logged-in `grok.com` browser session | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py` | Cookie-based browser provider. |
 | OpenAI Web | `chatgpt-auto` and discovered ChatGPT web slugs | `OPENAI_WEB_ACCESS_TOKEN` | `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` | Logged-in `chatgpt.com` session | `scripts/launch-openai-auth.ps1`, `scripts/get-openai-web-creds.py` | Uses the web auth/session flow, not the public API. |
-| Qwen International | `Qwen3-Max`, `Qwen3.5-Plus`, `Qwen3-Coder`, `Qwen3-VL-235B-A22B` | `QWEN_AI_COOKIE` | `QWEN_AI_TOKEN` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py` | Cookie + token based. |
+| Qwen International | `Qwen3.6-Plus`, `Qwen3.5-Plus`, `Qwen3-Max`, `Qwen3-235B-A22B-2507`, `Qwen3.5-397B-A17B`, `Qwen3-Coder`, `Qwen3-VL-235B-A22B`, `Qwen3-Omni-Flash`, `Qwen2.5-Max` | `QWEN_AI_COOKIE` | `QWEN_AI_TOKEN` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py` | Cookie + token based. |
 | Inception | `mercury-2`, `mercury-coder` | `INCEPTION_SESSION_TOKEN` | `INCEPTION_COOKIE` | Logged-in `chat.inceptionlabs.ai` session | `scripts/launch-inception-auth.ps1`, `scripts/get-inception-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Each request gets a fresh backend chat id, so sessions do not collapse into one shared conversation. When `INCEPTION_EDGE_URL` is set, Vercel forwards only this provider to the Cloudflare worker. |
 | LongCat | `LongCat-Flash-Chat`, `LongCat-Flash-Thinking`, `LongCat-Flash-Thinking-2601` | `LONGCAT_COOKIE` | none | Logged-in `longcat.chat` session | `scripts/launch-longcat-auth.ps1`, `scripts/get-longcat-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | `LongCat-Flash-Chat` is the regular mode; `LongCat-Flash-Thinking` and `LongCat-Flash-Thinking-2601` are separate reasoning-mode slugs. Each request gets a fresh `session-create` conversation. |
 | Mistral | `mistral-small-2603`, `mistral-small-2506`, `mistral-medium-2508`, `mistral-large-2512`, `ministral-14b-2512`, `ministral-8b-2512`, `ministral-3b-2512`, `magistral-medium-2509`, `magistral-small-2509`, `devstral-2512`, `codestral-2508`, `labs-devstral-small-2512`, `labs-leanstral-2603`, `voxtral-mini-2507`, `voxtral-small-2507` | `MISTRAL_COOKIE` | `MISTRAL_CSRF_TOKEN` | Logged-in `console.mistral.ai` session | `scripts/launch-mistral-auth.ps1`, `scripts/get-mistral-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Current chat-capable models only; models with 2026 retirement notes are intentionally omitted. |
@@ -31,9 +32,10 @@ Use these single-model picks for routine traffic when you want the lighter optio
 | --- | --- |
 | Z.ai | `glm-5` |
 | DeepSeek | `deepseek-chat` |
+| Arcee | `trinity-mini` |
 | Gemini Web | `gemini-3-flash` |
 | Grok | `grok-3-mini` |
-| Qwen International | `Qwen3.5-Plus` |
+| Qwen International | `Qwen3.6-Plus` |
 | Inception | `mercury-2` |
 | LongCat | `LongCat-Flash-Chat` |
 | Mistral | `mistral-small-2603` |
@@ -57,6 +59,7 @@ These providers depend on logged-in browser sessions or cookies:
 - `Grok`
 - `OpenAI Web`
 - `Gemini Web`
+- `Arcee`
 - `Qwen International`
 - `Inception`
 - `LongCat`
@@ -126,6 +129,7 @@ Manual sources by provider:
 
 - `Z.ai` - logged-in `chat.z.ai` session or JWT export
 - `DeepSeek` - logged-in `chat.deepseek.com` session
+- `Arcee` - bearer token from the `api.arcee.ai` `access_token` cookie
 - `Gemini Web` - `gemini.google.com` login cookies
 - `Grok` - `grok.com` cookies
 - `OpenAI Web` - `chatgpt.com` session token and cookies

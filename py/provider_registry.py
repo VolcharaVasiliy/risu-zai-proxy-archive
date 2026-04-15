@@ -1,6 +1,7 @@
 try:
     from py import (
         deepseek_proxy,
+        arcee_proxy,
         gemini_web_proxy,
         inception_proxy,
         longcat_proxy,
@@ -21,6 +22,7 @@ try:
     from py.openai_stream import OpenAIStreamBuilder
 except ImportError:
     import deepseek_proxy
+    import arcee_proxy
     import gemini_web_proxy
     import inception_proxy
     import longcat_proxy
@@ -59,6 +61,7 @@ def _add_models(provider_id: str, owned_by: str, models, requires_env):
 
 _add_models("zai", "z.ai", zai_proxy.SUPPORTED_MODELS, ["ZAI_TOKEN"])
 _add_models("deepseek", deepseek_proxy.OWNED_BY, deepseek_proxy.SUPPORTED_MODELS, ["DEEPSEEK_TOKEN"])
+_add_models("arcee", arcee_proxy.OWNED_BY, arcee_proxy.SUPPORTED_MODELS, ["ARCEE_ACCESS_TOKEN"])
 _add_models(
     "gemini-web",
     gemini_web_proxy.OWNED_BY,
@@ -99,6 +102,8 @@ def resolve_provider_id(model: str) -> str:
         return "zai"
     if deepseek_proxy.supports_model(model):
         return "deepseek"
+    if arcee_proxy.supports_model(model):
+        return "arcee"
     if gemini_web_proxy.supports_model(model):
         return "gemini-web"
     if grok_proxy.supports_model(model):
@@ -135,6 +140,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure ZAI_TOKEN in server env or pass the Z.ai JWT as Bearer token / x-zai-token header"
     if provider_id == "deepseek":
         return "Configure DEEPSEEK_TOKEN in server env or pass the DeepSeek userToken as Bearer token"
+    if provider_id == "arcee":
+        return "Configure ARCEE_ACCESS_TOKEN in server env or pass the Arcee bearer access token via Authorization / x-arcee-access-token"
     if provider_id == "gemini-web":
         return "Configure GEMINI_WEB_SECURE_1PSID plus optional GEMINI_WEB_SECURE_1PSIDTS or GEMINI_WEB_COOKIE in server env"
     if provider_id == "grok":
@@ -180,6 +187,11 @@ def resolve_credentials(handler, provider_id: str):
     if provider_id == "deepseek":
         token = env_or_header_token(handler, ["DEEPSEEK_TOKEN"], ["x-deepseek-token"])
         return {"token": token} if token else None
+
+    if provider_id == "arcee":
+        token = env_or_header_token(handler, ["ARCEE_ACCESS_TOKEN"], ["x-arcee-access-token"])
+        session_id = env_token("ARCEE_SESSION_ID") or header_token(handler, "x-arcee-session-id")
+        return {"token": token, "session_id": session_id} if token else None
 
     if provider_id == "gemini-web":
         cookie = env_token("GEMINI_WEB_COOKIE") or header_token(handler, "x-gemini-web-cookie")
@@ -364,6 +376,8 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         return zai_proxy.complete_non_stream(credentials["token"], payload)
     if provider_id == "deepseek":
         return deepseek_proxy.complete_non_stream(credentials["token"], payload)
+    if provider_id == "arcee":
+        return arcee_proxy.complete_non_stream(credentials, payload)
     if provider_id == "gemini-web":
         return gemini_web_proxy.complete_non_stream(credentials, payload)
     if provider_id == "grok":
@@ -407,6 +421,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "deepseek":
         for chunk in deepseek_proxy.stream_chunks(credentials["token"], payload):
+            yield chunk
+        return
+
+    if provider_id == "arcee":
+        for chunk in arcee_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 
