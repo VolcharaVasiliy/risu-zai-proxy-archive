@@ -40,6 +40,15 @@ Local-only variables that should stay off Vercel:
 When `INCEPTION_EDGE_URL` is set, Vercel can forward only Inception chat requests to the Cloudflare worker. For Python-based runs, `py/inception_proxy.py` now prefers the direct `curl_cffi` browser-impersonation path when that transport is available, and falls back to `INCEPTION_EDGE_URL` only when needed or when `INCEPTION_FORCE_EDGE=1` is set.
 For Inception, the proxy refreshes the session token through `/api/session` and strips `stream` before forwarding the request so the upstream always sees a non-streaming payload.
 
+If the hosted Cloudflare worker is also blocked by the upstream checkpoint, use the local tunnel fallback for this one provider:
+
+- `py/inception_tunnel_server.py`
+- `scripts/start-inception-tunnel.ps1 -UpdateVercel -Redeploy`
+- `scripts/stop-inception-tunnel.ps1`
+- `scripts/install-inception-tunnel-task.ps1`
+
+That flow keeps Vercel as the single public API URL, but routes only `Inception` traffic through a Cloudflare quick tunnel into the local direct Python transport.
+
 ## Manual Credential Sources
 
 | Provider | Where to get it manually |
@@ -130,6 +139,7 @@ The script:
 - `vercel.json` - route rewrites for `/health`, `/v1/models`, and `/v1/chat/completions`
 - `api/index.py` - Vercel function entrypoint
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
+- `scripts/start-inception-tunnel.ps1` - start the local Inception-only endpoint, quick tunnel, and Vercel sync/redeploy
 - `scripts/get-provider-creds.py` - Chat2API-based auto extraction
 
 ## Notes

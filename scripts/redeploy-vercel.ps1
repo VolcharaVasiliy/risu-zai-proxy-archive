@@ -1,6 +1,7 @@
 param(
   [ValidateSet('preview', 'production')]
   [string]$Target = 'production',
+  [string]$Scope = 'spichekkorobok500-1532s-projects',
   [string]$CredsFile = '',
   [string]$GeminiWebCredsFile = '',
   [string]$GrokCredsFile = '',
@@ -9,6 +10,7 @@ param(
   [string]$LongCatCredsFile = '',
   [string]$OpenAIWebCredsFile = '',
   [string]$PhindCredsFile = '',
+  [string]$InceptionEdgeUrl = '',
   [switch]$SyncEnv
 )
 
@@ -16,9 +18,8 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $nodeRoot = 'F:\DevTools\Portable\NodeJS'
 $nodeExe = Join-Path $nodeRoot 'node.exe'
 $pythonExe = 'F:\DevTools\Python311\python.exe'
-$globalConfigDir = Join-Path $projectRoot '.vercel-global'
 $vercelBin = Join-Path $projectRoot 'node_modules\.bin\vercel.cmd'
-$vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\vc.js'
+$vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
@@ -38,10 +39,6 @@ if (-not (Test-Path -LiteralPath $nodeExe)) {
 
 if (-not (Test-Path -LiteralPath $vercelCliScript)) {
   throw "Vercel CLI entrypoint not found at $vercelCliScript."
-}
-
-if (-not (Test-Path -LiteralPath $globalConfigDir)) {
-  throw "Vercel global config directory not found at $globalConfigDir."
 }
 
 if (-not (Test-Path -LiteralPath $pythonExe)) {
@@ -71,7 +68,12 @@ function Set-VercelEnv {
     return
   }
 
-  Invoke-Vercel --global-config $globalConfigDir env add $Name $Target --value $Value --yes --force --non-interactive
+  Invoke-Vercel env add $Name $Target --value $Value --yes --force --non-interactive --scope $Scope
+}
+
+if ($InceptionEdgeUrl) {
+  Set-VercelEnv -Name 'INCEPTION_EDGE_URL' -Value $InceptionEdgeUrl
+  Set-VercelEnv -Name 'INCEPTION_FORCE_EDGE' -Value 'true'
 }
 
 if ($SyncEnv) {
@@ -212,12 +214,12 @@ if ($SyncEnv) {
 }
 
 $deployArgs = @(
-  '--global-config', $globalConfigDir,
   'deploy',
   $projectRoot,
   '-y',
   '--force',
   '--non-interactive',
+  '--scope', $Scope,
   '--format', 'json'
 )
 

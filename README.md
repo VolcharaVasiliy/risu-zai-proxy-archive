@@ -117,6 +117,23 @@ Vercel env var for routing:
 
 - `INCEPTION_EDGE_URL` - Cloudflare worker URL used only for Inception requests
 
+## Cloudflare Tunnel For Inception
+
+When the hosted Cloudflare worker also gets blocked by the upstream checkpoint, the repo includes a local-only fallback for `Inception`:
+
+- `py/inception_tunnel_server.py` runs an `Inception`-only OpenAI-compatible endpoint on `127.0.0.1:3001`
+- `scripts/start-inception-tunnel.ps1` starts that local endpoint, opens a Cloudflare quick tunnel, updates `INCEPTION_EDGE_URL` in Vercel, and redeploys production
+- `scripts/stop-inception-tunnel.ps1` stops the local endpoint and the tunnel
+- `scripts/install-inception-tunnel-task.ps1` registers a logon task so the tunnel can come back automatically after sign-in
+
+Local command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-archive\scripts\start-inception-tunnel.ps1 -UpdateVercel -Redeploy
+```
+
+This path is for `Inception` only. The rest of the providers still stay on Vercel directly.
+
 ## Notes
 
 - The project is wired to the companion Chat2API desktop storage layout, so `scripts/get-provider-creds.py` can automatically reuse already logged-in sessions when they exist.
