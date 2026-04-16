@@ -316,6 +316,7 @@ def chat_completion(token: str, payload: dict):
         if len(messages) == 1:
             # First message: create chat
             chat_id, _ = create_chat(token, model, messages)
+            body_messages = messages
         else:
             # Continuation: use existing chat
             body_messages = [messages[-1]]
