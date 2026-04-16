@@ -38,6 +38,7 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             payload = read_json_body(self)
+            payload["conversation_id"] = self.headers.get("x-conversation-id", "")
         except Exception:
             send_json(self, 400, {"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}})
             return

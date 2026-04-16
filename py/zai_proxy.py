@@ -163,28 +163,38 @@ def build_common_headers(token: str):
     }
 
 
-def create_chat(token: str, model: str, message: str):
-    message_id = str(uuid.uuid4())
+def create_chat(token: str, model: str, messages: list, chat_id: str = None):
+    if not chat_id:
+        chat_id = str(uuid.uuid4())
     now_s = int(time.time())
+    message_dict = {}
+    parent_id = None
+    current_id = None
+    for i, msg in enumerate(messages):
+        message_id = str(uuid.uuid4())
+        message_dict[message_id] = {
+            "id": message_id,
+            "parentId": parent_id,
+            "childrenIds": [],
+            "role": msg["role"],
+            "content": msg["content"],
+            "timestamp": now_s + i,  # slight offset
+            "models": [model],
+        }
+        if parent_id:
+            message_dict[parent_id]["childrenIds"].append(message_id)
+        parent_id = message_id
+        current_id = message_id
+
     body = {
         "chat": {
-            "id": "",
+            "id": chat_id,
             "title": "New Chat",
             "models": [model],
             "params": {},
             "history": {
-                "messages": {
-                    message_id: {
-                        "id": message_id,
-                        "parentId": None,
-                        "childrenIds": [],
-                        "role": "user",
-                        "content": message,
-                        "timestamp": now_s,
-                        "models": [model],
-                    }
-                },
-                "currentId": message_id,
+                "messages": message_dict,
+                "currentId": current_id,
             },
             "tags": [],
             "flags": [],
@@ -199,9 +209,9 @@ def create_chat(token: str, model: str, message: str):
     }
     response = requests.post(f"{BASE}/api/v1/chats/new", headers=build_common_headers(token), json=body, timeout=30)
     response.raise_for_status()
-    chat_id = response.json()["id"]
-    debug_log("create_chat", model=model, message_length=len(message), chat_id=chat_id)
-    return chat_id, message_id
+    actual_chat_id = response.json()["id"]
+    debug_log("create_chat", model=model, message_count=len(messages), chat_id=actual_chat_id)
+    return actual_chat_id, current_id
 
 
 def build_query(token: str, chat_id: str, request_id: str, timestamp_ms: int, user_id: str):
@@ -308,9 +318,10 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
-    chat_id = payload.get("chat_id")
+    conversation_id = payload.get("conversation_id")
+    chat_id = payload.get("chat_id") or conversation_id
     if not chat_id:
-        chat_id, _ = create_chat(token, model, prompt)
+        chat_id, _ = create_chat(token, model, messages)
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
     user_id = extract_user_id(token)
