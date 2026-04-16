@@ -29,6 +29,11 @@ SUPPORTED_MODELS = [
     "GLM-5-Turbo",
 ]
 
+# In-memory session mapping for automatic Z.ai chat continuity.
+# This is best-effort for the same backend instance and allows one-message sequential requests
+# to continue the same Z.ai conversation even when the client does not supply an explicit session id.
+SESSION_CHAT_MAP = {}
+
 MODEL_MAPPING = {
     "glm-5": "glm-5",
     "glm-5.1": "GLM-5.1",
@@ -306,21 +311,31 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
-    # Use explicit conversation_id/chat_id when provided, otherwise derive a stable user session id
-    conversation_id = payload.get("conversation_id") or payload.get("chat_id") or None
-    if not conversation_id:
-        user_id = extract_user_id(token)
-        import hashlib
-        conversation_id = hashlib.md5(f"{user_id}:{request_model}".encode()).hexdigest()[:16]
 
-    chat_id = conversation_id
-    if len(messages) == 1:
-        # First message: create chat with full history
-        chat_id, _ = create_chat(token, model, messages, chat_id=chat_id)
-        body_messages = messages
-    else:
-        # Continuation: only send latest user message
+    explicit_id = payload.get("conversation_id") or payload.get("chat_id")
+    user_id = extract_user_id(token)
+    import hashlib
+    session_key = explicit_id or hashlib.md5(f"{user_id}:{request_model}".encode()).hexdigest()
+
+    chat_id = None
+    if explicit_id:
+        chat_id = explicit_id
+    elif session_key in SESSION_CHAT_MAP:
+        chat_id = SESSION_CHAT_MAP[session_key]
+
+    if chat_id and len(messages) > 1:
         body_messages = [messages[-1]]
+    elif chat_id and len(messages) == 1:
+        body_messages = [messages[-1]]
+    else:
+        # Create a new chat for the session when no existing chat_id is known.
+        chat_id, _ = create_chat(token, model, messages, chat_id=session_key if not explicit_id else explicit_id)
+        if not explicit_id:
+            SESSION_CHAT_MAP[session_key] = chat_id
+        body_messages = messages
+
+    if chat_id and not SESSION_CHAT_MAP.get(session_key):
+        SESSION_CHAT_MAP[session_key] = chat_id
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
     user_id = extract_user_id(token)
