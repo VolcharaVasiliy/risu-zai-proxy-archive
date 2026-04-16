@@ -16,6 +16,17 @@ from py.provider_registry import complete_non_stream, models_payload, provider_e
 from py.zai_proxy import debug_log
 
 
+def _zai_session_id(payload, meta=None):
+    meta = meta or {}
+    return (
+        payload.get("conversation_id")
+        or payload.get("chat_id")
+        or meta.get("conversation_id")
+        or meta.get("chat_id")
+        or ""
+    )
+
+
 class handler(BaseHTTPRequestHandler):
     def _route(self):
         parsed = urlparse(self.path)
@@ -82,9 +93,15 @@ class handler(BaseHTTPRequestHandler):
             debug_log("api_chat_request", route=route, provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
             if payload.get("stream") is False:
                 result, meta = complete_non_stream(provider_id, credentials, payload)
-                result["chat_id"] = meta.get("chat_id")
                 if provider_id == "zai":
-                    result["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id") or meta.get("chat_id")
+                    session_id = _zai_session_id(payload, meta) or str(meta.get("chat_id") or "")
+                    if session_id:
+                        result["id"] = session_id
+                        result["chat_id"] = session_id
+                        result["conversation_id"] = session_id
+                        result["upstream_chat_id"] = meta.get("chat_id")
+                else:
+                    result["chat_id"] = meta.get("chat_id")
                 debug_log("api_chat_response", route=route, **meta)
                 send_json(self, 200, result)
                 return
@@ -100,13 +117,23 @@ class handler(BaseHTTPRequestHandler):
 
             if first_chunk is not None:
                 if provider_id == "zai":
-                    first_chunk["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id")
+                    upstream_chunk_id = first_chunk.get("id")
+                    session_id = _zai_session_id(payload, {"chat_id": upstream_chunk_id})
+                    if session_id:
+                        first_chunk["id"] = session_id
+                        first_chunk["conversation_id"] = session_id
+                        first_chunk["chat_id"] = session_id
+                        first_chunk["upstream_chat_id"] = upstream_chunk_id
                 self.wfile.write(f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
             for chunk in iterator:
                 if provider_id == "zai":
-                    chunk["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id")
+                    session_id = _zai_session_id(payload, {"chat_id": chunk.get("id")})
+                    if session_id:
+                        chunk["id"] = session_id
+                        chunk["conversation_id"] = session_id
+                        chunk["chat_id"] = session_id
                 self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
