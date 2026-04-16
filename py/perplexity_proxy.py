@@ -27,6 +27,7 @@ QUERY_ENDPOINT = f"{PERPLEXITY_URL}/rest/sse/perplexity_ask"
 OWNED_BY = "www.perplexity.ai"
 
 SUPPORTED_MODELS = [
+    "auto",
     "Turbo",
     "PPLX-Pro",
     "GPT-5",
@@ -37,8 +38,8 @@ SUPPORTED_MODELS = [
 ]
 
 MODEL_MAP = {
-    "auto": "turbo",
-    "turbo": "turbo",
+    "auto": "auto",
+    "turbo": "auto",
     "pplx-pro": "pplx_pro",
     "pplx_pro": "pplx_pro",
     "gpt-5": "gpt5",
@@ -192,7 +193,7 @@ def _session():
 
 
 def chat_completion(cookie_header: str, payload: dict):
-    request_model = str(payload.get("model") or "Turbo")
+    request_model = str(payload.get("model") or "auto")
     model = _map_model(request_model)
     query = _extract_query(payload.get("messages") or [])
     if not query:

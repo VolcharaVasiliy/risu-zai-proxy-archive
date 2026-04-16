@@ -16,7 +16,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Inception | `mercury-2`, `mercury-coder` | `INCEPTION_SESSION_TOKEN` | `INCEPTION_COOKIE` | Logged-in `chat.inceptionlabs.ai` session | `scripts/launch-inception-auth.ps1`, `scripts/get-inception-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Each request gets a fresh backend chat id, so sessions do not collapse into one shared conversation. When `INCEPTION_EDGE_URL` is set, Vercel forwards only this provider to the Cloudflare worker. |
 | LongCat | `LongCat-Flash-Chat`, `LongCat-Flash-Thinking`, `LongCat-Flash-Thinking-2601` | `LONGCAT_COOKIE` | none | Logged-in `longcat.chat` session | `scripts/launch-longcat-auth.ps1`, `scripts/get-longcat-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | `LongCat-Flash-Chat` is the regular mode; `LongCat-Flash-Thinking` and `LongCat-Flash-Thinking-2601` are separate reasoning-mode slugs. Each request gets a fresh `session-create` conversation. |
 | Mistral | `mistral-small-2603`, `mistral-small-2506`, `mistral-medium-2508`, `mistral-large-2512`, `ministral-14b-2512`, `ministral-8b-2512`, `ministral-3b-2512`, `magistral-medium-2509`, `magistral-small-2509`, `devstral-2512`, `codestral-2508`, `labs-devstral-small-2512`, `labs-leanstral-2603`, `voxtral-mini-2507`, `voxtral-small-2507` | `MISTRAL_COOKIE` | `MISTRAL_CSRF_TOKEN` | Logged-in `console.mistral.ai` session | `scripts/launch-mistral-auth.ps1`, `scripts/get-mistral-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Current chat-capable models only; models with 2026 retirement notes are intentionally omitted. |
-| Perplexity | `Turbo`, `PPLX-Pro`, `GPT-5`, `Claude-Sonnet-4` | `PERPLEXITY_COOKIE` | `PERPLEXITY_SESSION_TOKEN` | Logged-in `perplexity.ai` session | `scripts/get-provider-creds.py` | Session cookie based. |
+| Perplexity | `auto`, `Turbo`, `PPLX-Pro`, `GPT-5`, `Claude-Sonnet-4` | `PERPLEXITY_COOKIE` | `PERPLEXITY_SESSION_TOKEN` | Logged-in `perplexity.ai` session | `scripts/get-provider-creds.py` | Session cookie based. |
 | Phind | `phind-search`, `phind-chat` | `PHIND_COOKIE` | `PHIND_NONCE` | Logged-in `phindai.org` session | `scripts/launch-phind-auth.ps1`, `scripts/get-phind-creds.ps1`, `scripts/get-provider-creds.py` | WordPress nonce is auto-fetched when missing. |
 | Mimo | `mimo-v2-pro`, `mimo-v2-flash-studio`, `mimo-v2-omni` | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN` | `MIMO_COOKIE`, `MIMO_RESOLVE_IPS`, `MIMO_SKIP_TLS_VERIFY` | Logged-in `xiaomimimo.com` / `aistudio.xiaomimimo.com` session | `scripts/get-provider-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Auto-resolves public IPs if local DNS points to loopback. |
 | Kimi | `kimi`, `kimi-thinking`, `kimi-search` | `KIMI_TOKEN` | none | Logged-in `www.kimi.com` session | `scripts/get-provider-creds.py` | Desktop storage token provider. |
@@ -39,7 +39,7 @@ Use these single-model picks for routine traffic when you want the lighter optio
 | Inception | `mercury-2` |
 | LongCat | `LongCat-Flash-Chat` |
 | Mistral | `mistral-small-2603` |
-| Perplexity | `Turbo` |
+| Perplexity | `auto` |
 | Phind | `phind-chat` |
 | Mimo | `mimo-v2-flash-studio` |
 | Kimi | `kimi` |

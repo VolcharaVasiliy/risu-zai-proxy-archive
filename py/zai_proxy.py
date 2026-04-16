@@ -308,7 +308,9 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
-    chat_id, message_id = create_chat(token, model, prompt)
+    chat_id = payload.get("chat_id")
+    if not chat_id:
+        chat_id, _ = create_chat(token, model, prompt)
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
     user_id = extract_user_id(token)
@@ -335,7 +337,7 @@ def chat_completion(token: str, payload: dict):
         },
         "chat_id": chat_id,
         "id": request_id,
-        "current_user_message_id": message_id,
+        "current_user_message_id": payload.get("current_user_message_id") or (chat_id if not payload.get("chat_id") else None),
         "current_user_message_parent_id": None,
         "background_tasks": {"title_generation": True, "tags_generation": True},
     }
