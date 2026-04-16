@@ -27,14 +27,14 @@ Browser/session providers:
 
 - `Arcee`
 - `Grok`
-- `OpenAI Web`
+- `OpenAI Web` (alpha)
 - `Gemini Web`
 - `Qwen International`
 - `Inception`
 - `LongCat`
-- `Mistral`
+- `Mistral` (Playground)
 - `Perplexity`
-- `Phind`
+- `Phind` (beta)
 - `Mimo`
 - `Kimi`
 - `DeepSeek`
