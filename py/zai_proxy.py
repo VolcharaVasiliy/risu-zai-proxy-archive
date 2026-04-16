@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import uuid
+import threading
 from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
@@ -29,9 +30,6 @@ SUPPORTED_MODELS = [
     "GLM-5-Turbo",
 ]
 
-# In-memory mapping from explicit conversation_id to Z.ai chat_id.
-SESSION_CHAT_MAP = {}
-
 MODEL_MAPPING = {
     "glm-5": "glm-5",
     "glm-5.1": "GLM-5.1",
@@ -50,6 +48,9 @@ MODEL_MAPPING = {
     "GLM-4.5V": "glm-4.5v",
     "GLM-4.5-Air": "glm-4.5-air",
 }
+
+SESSION_CHAT_MAP = {}
+SESSION_LOCK = threading.RLock()
 
 
 def supports_model(model: str) -> bool:
@@ -104,13 +105,11 @@ def extract_user_id(token: str) -> str:
 def normalize_messages(messages):
     result = []
     for message in messages or []:
-      role = message.get("role")
-      if role == "system":
-          # Skip system for Z.ai
-          continue
-      if role in ("user", "assistant"):
-          # Keep both user and assistant messages for full conversation history
-          result.append({"role": role, "content": message.get("content", "")})
+        role = message.get("role")
+        if role == "system":
+            continue
+        if role in ("user", "assistant"):
+            result.append({"role": role, "content": message.get("content", "")})
     return result
 
 
@@ -155,6 +154,7 @@ def build_common_headers(token: str):
 def create_chat(token: str, model: str, messages: list, chat_id: str = None):
     if not chat_id:
         chat_id = str(uuid.uuid4())
+
     now_s = int(time.time())
     message_dict = {}
     parent_id = None
@@ -167,13 +167,25 @@ def create_chat(token: str, model: str, messages: list, chat_id: str = None):
             "childrenIds": [],
             "role": msg["role"],
             "content": msg["content"],
-            "timestamp": now_s + i,  # slight offset
+            "timestamp": now_s + i,
             "models": [model],
         }
         if parent_id:
             message_dict[parent_id]["childrenIds"].append(message_id)
         parent_id = message_id
         current_id = message_id
+
+    if current_id is None:
+        current_id = str(uuid.uuid4())
+        message_dict[current_id] = {
+            "id": current_id,
+            "parentId": None,
+            "childrenIds": [],
+            "role": "user",
+            "content": "",
+            "timestamp": now_s,
+            "models": [model],
+        }
 
     body = {
         "chat": {
@@ -196,11 +208,70 @@ def create_chat(token: str, model: str, messages: list, chat_id: str = None):
             "timestamp": int(time.time() * 1000),
         }
     }
+
     response = requests.post(f"{BASE}/api/v1/chats/new", headers=build_common_headers(token), json=body, timeout=30)
     response.raise_for_status()
     actual_chat_id = response.json()["id"]
     debug_log("create_chat", model=model, message_count=len(messages), chat_id=actual_chat_id)
     return actual_chat_id, current_id
+
+
+def _session_key(payload: dict) -> str:
+    return str(payload.get("conversation_id") or payload.get("chat_id") or "").strip()
+
+
+def _merge_session_messages(existing, incoming):
+    if not existing:
+        return list(incoming)
+    if not incoming:
+        return list(existing)
+    if len(incoming) >= len(existing) and incoming[: len(existing)] == existing:
+        return list(incoming)
+    if len(incoming) == 1:
+        return list(existing) + list(incoming)
+    return list(incoming)
+
+
+def _get_session_state(key: str):
+    with SESSION_LOCK:
+        return SESSION_CHAT_MAP.get(key)
+
+
+def _set_session_state(key: str, state: dict):
+    with SESSION_LOCK:
+        SESSION_CHAT_MAP[key] = state
+
+
+def _touch_session_messages(key: str, messages: list):
+    with SESSION_LOCK:
+        state = SESSION_CHAT_MAP.setdefault(key, {})
+        state["messages"] = list(messages)
+        state["updated_at"] = time.time()
+        return state
+
+
+def _append_session_assistant_message(key: str, content: str, reasoning_content: str = ""):
+    if not key:
+        return
+
+    assistant_message = {"role": "assistant", "content": content or ""}
+    if reasoning_content:
+        assistant_message["reasoning_content"] = reasoning_content
+
+    with SESSION_LOCK:
+        state = SESSION_CHAT_MAP.get(key)
+        if not state:
+            return
+
+        messages = list(state.get("messages") or [])
+        if messages and messages[-1].get("role") == "assistant" and messages[-1].get("content", "") == assistant_message["content"]:
+            if reasoning_content and messages[-1].get("reasoning_content", "") != reasoning_content:
+                messages[-1]["reasoning_content"] = reasoning_content
+        else:
+            messages.append(assistant_message)
+
+        state["messages"] = messages
+        state["updated_at"] = time.time()
 
 
 def build_query(token: str, chat_id: str, request_id: str, timestamp_ms: int, user_id: str):
@@ -259,13 +330,16 @@ def build_features(request_model: str, web_search=False, reasoning_effort=None):
     }
 
 
-def openai_stream_chunks(response, model: str, chat_id: str):
+def openai_stream_chunks(response, model: str, chat_id: str, session_key: str = ""):
     created = int(time.time())
     sent_role = False
     answer_chunks = 0
     thinking_chunks = 0
     total_answer_chars = 0
     saw_done = False
+    content_parts = []
+    reasoning_parts = []
+
     for raw in response.iter_lines(decode_unicode=True):
         if not raw or not raw.startswith("data: "):
             continue
@@ -281,6 +355,7 @@ def openai_stream_chunks(response, model: str, chat_id: str):
         item = obj.get("data") or {}
         if item.get("phase") == "thinking" and item.get("delta_content"):
             thinking_chunks += 1
+            reasoning_parts.append(item["delta_content"])
             if not sent_role:
                 yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": ""}, "finish_reason": None}]}
                 sent_role = True
@@ -288,6 +363,7 @@ def openai_stream_chunks(response, model: str, chat_id: str):
         elif item.get("phase") == "answer" and item.get("delta_content"):
             answer_chunks += 1
             total_answer_chars += len(item["delta_content"])
+            content_parts.append(item["delta_content"])
             if not sent_role:
                 yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]}
                 sent_role = True
@@ -296,9 +372,11 @@ def openai_stream_chunks(response, model: str, chat_id: str):
             saw_done = True
             debug_log("stream_done", chat_id=chat_id, model=model, answer_chunks=answer_chunks, thinking_chunks=thinking_chunks, total_answer_chars=total_answer_chars)
             yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+            _append_session_assistant_message(session_key, "".join(content_parts), "".join(reasoning_parts))
             return
 
     debug_log("stream_ended_without_done", chat_id=chat_id, model=model, answer_chunks=answer_chunks, thinking_chunks=thinking_chunks, total_answer_chars=total_answer_chars, saw_done=saw_done)
+    _append_session_assistant_message(session_key, "".join(content_parts), "".join(reasoning_parts))
     yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
 
 
@@ -308,62 +386,34 @@ def chat_completion(token: str, payload: dict):
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
     user_id = extract_user_id(token)
+    if not prompt:
+        raise RuntimeError("Z.ai request requires a user message")
 
-    # Priority order for conversation_id:
-    # 1. Explicit conversation_id in body (highest priority)
-    explicit_id = payload.get("conversation_id")
-    
-    # 2. Fallback to chat_id from Risu (local chat ID stored in Risu)
-    if not explicit_id:
-        explicit_id = payload.get("chat_id")
-    
-    # Note: NO auto-generated fallback!
-    # If neither is provided, each request creates a new chat in Z.ai
-    # This ensures each new Risu chat becomes a new Z.ai chat
-    
-    session_state = None
-    chat_id = None
-    current_user_message_id = None
-    parent_user_message_id = None
-    
-    debug_log("chat_completion_incoming",
-        explicit_id=explicit_id,
-        user_id=user_id,
-        model=model,
-        message_count=len(messages),
-        has_chat_id="yes" if explicit_id else "no")
+    session_key = _session_key(payload)
+    current_user_message_parent_id = None
+    current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
 
-    if explicit_id and explicit_id in SESSION_CHAT_MAP:
-        session_state = SESSION_CHAT_MAP[explicit_id]
+    if session_key:
+        session_state = _get_session_state(session_key) or {}
+        stored_messages = list(session_state.get("messages") or [])
+        body_messages = _merge_session_messages(stored_messages, messages)
         chat_id = session_state.get("chat_id")
-        parent_user_message_id = session_state.get("last_user_message_id")
-        is_continuation = True
-    else:
-        is_continuation = False
-
-    if is_continuation:
-        # Continue an existing chat but ALWAYS send full message history
-        # Z.ai requires complete history for context
-        body_messages = messages
-        current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
-        current_user_message_parent_id = parent_user_message_id
-        SESSION_CHAT_MAP[explicit_id]["last_user_message_id"] = current_user_message_id
-        debug_log("continuing_chat", explicit_id=explicit_id, chat_id=chat_id, parent_id=parent_user_message_id, message_count=len(messages))
-    else:
-        # New chat: create and send full message history
-        chat_id, current_user_message_id = create_chat(token, model, messages)
-        body_messages = messages
-        current_user_message_parent_id = None
-        
-        # Only store in SESSION_CHAT_MAP if we have an explicit_id to track
-        if explicit_id:
-            SESSION_CHAT_MAP[explicit_id] = {
+        if not chat_id:
+            chat_id, _ = create_chat(token, model, body_messages)
+        current_user_message_parent_id = session_state.get("last_user_message_id")
+        _set_session_state(
+            session_key,
+            {
                 "chat_id": chat_id,
+                "messages": list(body_messages),
                 "last_user_message_id": current_user_message_id,
-            }
-            debug_log("creating_new_chat_with_id", explicit_id=explicit_id, chat_id=chat_id, message_count=len(messages))
-        else:
-            debug_log("creating_new_chat_stateless", chat_id=chat_id, message_count=len(messages))
+            },
+        )
+        debug_log("chat_completion_incoming", user_id=user_id, model=model, message_count=len(body_messages), chat_id=chat_id, session_key=session_key)
+    else:
+        chat_id, current_user_message_id = create_chat(token, model, messages)
+        body_messages = list(messages)
+        debug_log("chat_completion_incoming", user_id=user_id, model=model, message_count=len(messages), chat_id=chat_id)
 
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
@@ -390,7 +440,7 @@ def chat_completion(token: str, payload: dict):
         },
         "chat_id": chat_id,
         "id": request_id,
-        "current_user_message_id": payload.get("current_user_message_id") or current_user_message_id,
+        "current_user_message_id": current_user_message_id,
         "current_user_message_parent_id": current_user_message_parent_id,
         "background_tasks": {"title_generation": True, "tags_generation": True},
     }
@@ -420,6 +470,8 @@ def chat_completion(token: str, payload: dict):
         stream=True,
     )
     response.raise_for_status()
+    if session_key:
+        _touch_session_messages(session_key, body_messages)
     debug_log("chat_completion_started", chat_id=chat_id, request_id=request_id, model=model, prompt_length=len(prompt), stream_requested=bool(payload.get("stream", True)))
     return response, chat_id, model
 
@@ -511,6 +563,10 @@ def complete_non_stream(token: str, payload: dict):
         last_meta = meta
 
         if not meta["empty_content"]:
+            session_key = _session_key(payload)
+            if session_key:
+                message = ((result.get("choices") or [{}])[0].get("message") or {})
+                _append_session_assistant_message(session_key, message.get("content", ""), message.get("reasoning_content", ""))
             if attempt > 1:
                 debug_log("non_stream_retry_recovered", attempt=attempt, attempts=attempts, **meta)
             return result, meta

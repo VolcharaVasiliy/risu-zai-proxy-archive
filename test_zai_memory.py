@@ -1,76 +1,68 @@
-import requests
-import json
-import time
+import sys
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
-class ZaiMemoryTester:
+import requests
+
+
+class ZaiSessionTester:
     def __init__(self):
-        self.base_url = "http://localhost:3001"
+        self.base_url = "https://risu-zai-proxy-archive.vercel.app"
         self.token = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImYzM2MyNDk2LWI0ZWUtNDI5Mi1iNjU2LWIwYWFlZjFkOThkMCIsImVtYWlsIjoiR3Vlc3QtMTc3NjMzMzc2ODY1MEBndWVzdC5jb20ifQ.17lbn7p3BY1pbPGX_VqFkNY6AvqgK4slP8xOEnu1p9dFQvaYhrrOBl00OrLCHAsM4VjnRnsejXnti2mQ3gSv1g"
-        self.conversation = []
-    
-    def chat_completion(self, model: str, prompt: str) -> Dict[str, Any]:
+
+    def chat_completion(self, chat_id: str, prompt: str) -> Dict[str, Any]:
         url = f"{self.base_url}/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        
-        self.conversation.append({"role": "user", "content": prompt})
-        
         payload = {
-            "model": model,
-            "messages": self.conversation,
-            "stream": False
+            "model": "glm-5",
+            "chat_id": chat_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
         }
-        
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
-        
-        data = response.json()
-        assistant_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        self.conversation.append({"role": "assistant", "content": assistant_content})
-        
-        return data
-    
-    def test_memory(self):
-        try:
-            print("=== Тестирование памяти Z AI через GLM ===")
-            
-            # Шаг 1: Запросить запомнить число
-            print("\nШаг 1: Запросить запомнить число...")
-            result1 = self.chat_completion("glm-5", "Запомни число 42. Это важный тест памяти.")
-            print(f"Первый ответ: {result1.get('choices', [{}])[0].get('message', {}).get('content', '')[:100]}...")
-            
-            # Шаг 2: Спросить что запомнил
-            print("\nШаг 2: Спросить что запомнил...")
-            result2 = self.chat_completion("glm-5", "Что я просил тебя запомнить?")
-            
-            print("\nОтвет Z AI:")
-            content = result2.get("choices", [{}])[0].get("message", {}).get("content", "")
-            print(content)
-            
-            # Проверить ответ
-            if "42" in content:
-                print("\n✅ Память работает! Z AI вспомнил число 42.")
-                return True
-            else:
-                print("\n❌ Память не работает. Z AI не вспомнил число.")
-                return False
-        except Exception as e:
-            print(f"Error: {e}")
+        return response.json()
+
+    def test_memory(self) -> bool:
+        session_a = "zai-session-a-" + uuid.uuid4().hex[:8]
+        session_b = "zai-session-b-" + uuid.uuid4().hex[:8]
+        secret = "code-" + uuid.uuid4().hex[:8]
+
+        print("Session A: store a secret")
+        first = self.chat_completion(session_a, f"Please remember this code for this session only: {secret}.")
+        first_text = first.get("choices", [{}])[0].get("message", {}).get("content", "")
+        print(first_text)
+
+        print("\nSession A: ask for the secret again")
+        second = self.chat_completion(session_a, "What code did I ask you to remember? Answer only the code.")
+        second_text = second.get("choices", [{}])[0].get("message", {}).get("content", "")
+        print(second_text)
+
+        print("\nSession B: ask without prior context")
+        third = self.chat_completion(session_b, "What code did I ask you to remember? Answer only the code.")
+        third_text = third.get("choices", [{}])[0].get("message", {}).get("content", "")
+        print(third_text)
+
+        if secret not in second_text:
+            print("\nFAIL: session A did not remember the secret.")
             return False
 
+        if secret in third_text:
+            print("\nFAIL: session B leaked session A memory.")
+            return False
+
+        print("\nPASS: session memory works and sessions are isolated.")
+        return True
+
+
 def main():
-    tester = ZaiMemoryTester()
+    tester = ZaiSessionTester()
     success = tester.test_memory()
-    
-    if success:
-        print("\n✅ Тест памяти пройден успешно!")
-        print("Можно пушить изменения.")
-    else:
-        print("\n❌ Тест памяти провален. Необходимо исправить проблемы с памятью Z AI.")
+    sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     main()

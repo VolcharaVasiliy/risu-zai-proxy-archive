@@ -440,7 +440,8 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
     if provider_id == "zai":
         upstream, chat_id, model = zai_proxy.chat_completion(credentials["token"], payload)
         try:
-            for chunk in zai_proxy.openai_stream_chunks(upstream, model, chat_id):
+            session_key = str(payload.get("conversation_id") or payload.get("chat_id") or "").strip()
+            for chunk in zai_proxy.openai_stream_chunks(upstream, model, chat_id, session_key=session_key):
                 yield chunk
         finally:
             upstream.close()
