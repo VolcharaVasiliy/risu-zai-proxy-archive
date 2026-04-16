@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 
 class ZaiMemoryTester:
     def __init__(self):
-        self.base_url = "https://risu-zai-proxy-virid.vercel.app"
+        self.base_url = "http://localhost:3001"
         self.token = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImYzM2MyNDk2LWI0ZWUtNDI5Mi1iNjU2LWIwYWFlZjFkOThkMCIsImVtYWlsIjoiR3Vlc3QtMTc3NjMzMzc2ODY1MEBndWVzdC5jb20ifQ.17lbn7p3BY1pbPGX_VqFkNY6AvqgK4slP8xOEnu1p9dFQvaYhrrOBl00OrLCHAsM4VjnRnsejXnti2mQ3gSv1g"
         self.conversation = []
     

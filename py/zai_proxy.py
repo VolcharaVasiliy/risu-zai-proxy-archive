@@ -100,7 +100,7 @@ def extract_user_id(token: str) -> str:
 
 def normalize_messages(messages):
     system_parts = []
-    result = []
+    user_parts = []
 
     for message in messages or []:
       role = message.get("role")
@@ -109,20 +109,19 @@ def normalize_messages(messages):
           if isinstance(content, str) and content.strip():
               system_parts.append(content)
           continue
-      result.append({"role": role, "content": message.get("content", "")})
+      if role == "assistant":
+          continue  # Skip assistant messages
+      if role == "user":
+          content = message.get("content", "")
+          if isinstance(content, str) and content.strip():
+              user_parts.append(content)
 
+    combined_content = "\n".join(user_parts)
     if system_parts:
-        first_user = next((index for index, msg in enumerate(result) if msg.get("role") == "user"), -1)
-        if first_user >= 0:
-            content = result[first_user].get("content", "")
-            if isinstance(content, list):
-                text = "\n".join(part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text")
-            else:
-                text = str(content)
-            system_text = "\n\n".join(system_parts)
-            result[first_user]["content"] = f"{system_text}\n\nUser: {text}"
+        system_text = "\n\n".join(system_parts)
+        combined_content = f"{system_text}\n\n{combined_content}"
 
-    return result
+    return [{"role": "user", "content": combined_content}] if combined_content else []
 
 
 def latest_user_text(messages) -> str:
@@ -319,8 +318,9 @@ def chat_completion(token: str, payload: dict):
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
     conversation_id = payload.get("conversation_id")
-    chat_id = payload.get("chat_id") or conversation_id
-    if not chat_id:
+    if conversation_id:
+        chat_id = conversation_id
+    else:
         chat_id, _ = create_chat(token, model, messages)
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
