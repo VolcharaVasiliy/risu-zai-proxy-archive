@@ -108,10 +108,8 @@ def normalize_messages(messages):
       if role == "system":
           # Skip system for Z.ai
           continue
-      if role == "assistant":
-          # Skip assistant
-          continue
-      if role == "user":
+      if role in ("user", "assistant"):
+          # Keep both user and assistant messages for full conversation history
           result.append({"role": role, "content": message.get("content", "")})
     return result
 
