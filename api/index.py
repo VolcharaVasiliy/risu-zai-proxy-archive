@@ -42,9 +42,12 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             payload = read_json_body(self)
+            # Support both conversation_id (explicit session) and chat_id (local Risu chat)
             payload["conversation_id"] = payload.get("conversation_id") or self.headers.get("x-conversation-id", "")
+            payload["chat_id"] = payload.get("chat_id") or self.headers.get("x-chat-id", "")
             debug_log("api_incoming_request", 
                 conversation_id=payload.get("conversation_id"),
+                chat_id=payload.get("chat_id"),
                 model=payload.get("model"),
                 message_count=len(payload.get("messages", [])),
                 first_message=str(payload.get("messages", [{}])[0]).replace("\\", "")[:100] if payload.get("messages") else None,

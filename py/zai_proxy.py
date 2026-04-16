@@ -311,11 +311,17 @@ def chat_completion(token: str, payload: dict):
     prompt = latest_user_text(messages)
     user_id = extract_user_id(token)
 
-    # Try explicit conversation_id first, fallback to user_id + model
+    # Priority order for conversation_id:
+    # 1. Explicit conversation_id in body (highest priority)
     explicit_id = payload.get("conversation_id")
+    
+    # 2. Fallback to chat_id from Risu (local chat ID stored in Risu)
     if not explicit_id:
-        # Auto-generate conversation_id from user_id + model for session continuity
-        explicit_id = f"auto_{user_id}_{model}"
+        explicit_id = payload.get("chat_id")
+    
+    # Note: NO auto-generated fallback!
+    # If neither is provided, each request creates a new chat in Z.ai
+    # This ensures each new Risu chat becomes a new Z.ai chat
     
     session_state = None
     chat_id = None
@@ -326,7 +332,8 @@ def chat_completion(token: str, payload: dict):
         explicit_id=explicit_id,
         user_id=user_id,
         model=model,
-        message_count=len(messages))
+        message_count=len(messages),
+        has_chat_id="yes" if explicit_id else "no")
 
     if explicit_id and explicit_id in SESSION_CHAT_MAP:
         session_state = SESSION_CHAT_MAP[explicit_id]
@@ -347,13 +354,18 @@ def chat_completion(token: str, payload: dict):
     else:
         # New chat: create and send full message history
         chat_id, current_user_message_id = create_chat(token, model, messages)
-        SESSION_CHAT_MAP[explicit_id] = {
-            "chat_id": chat_id,
-            "last_user_message_id": current_user_message_id,
-        }
         body_messages = messages
         current_user_message_parent_id = None
-        debug_log("creating_new_chat", explicit_id=explicit_id, chat_id=chat_id, message_count=len(messages))
+        
+        # Only store in SESSION_CHAT_MAP if we have an explicit_id to track
+        if explicit_id:
+            SESSION_CHAT_MAP[explicit_id] = {
+                "chat_id": chat_id,
+                "last_user_message_id": current_user_message_id,
+            }
+            debug_log("creating_new_chat_with_id", explicit_id=explicit_id, chat_id=chat_id, message_count=len(messages))
+        else:
+            debug_log("creating_new_chat_stateless", chat_id=chat_id, message_count=len(messages))
 
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
