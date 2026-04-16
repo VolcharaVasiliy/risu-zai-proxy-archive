@@ -306,15 +306,19 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
-    conversation_id = payload.get("conversation_id")
-    if not conversation_id and messages:
-        # Auto-generate conversation_id from message history for automatic context
+    # Auto-generate conversation_id from first user message for automatic context
+    conversation_id = None
+    if messages:
         import hashlib
-        history_str = json.dumps(messages[:-1], sort_keys=True)
-        conversation_id = hashlib.md5(history_str.encode()).hexdigest()[:16]
-    if conversation_id and len(messages) > 1:
+        conversation_id = hashlib.md5(messages[0]["content"].encode()).hexdigest()[:16]
+    if conversation_id:
         chat_id = conversation_id
-        body_messages = [messages[-1]] if messages else []
+        if len(messages) == 1:
+            # First message: create chat
+            chat_id, _ = create_chat(token, model, messages)
+        else:
+            # Continuation: use existing chat
+            body_messages = [messages[-1]]
     else:
         chat_id, _ = create_chat(token, model, messages)
         body_messages = messages
@@ -327,7 +331,7 @@ def chat_completion(token: str, payload: dict):
     body = {
         "stream": True,
         "model": model,
-        "messages": body_messages,
+        "messages": [msg["content"] for msg in body_messages],
         "signature_prompt": prompt,
         "params": {},
         "extra": {},
