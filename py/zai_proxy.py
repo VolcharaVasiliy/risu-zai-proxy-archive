@@ -311,7 +311,12 @@ def chat_completion(token: str, payload: dict):
     prompt = latest_user_text(messages)
     user_id = extract_user_id(token)
 
+    # Try explicit conversation_id first, fallback to user_id + model
     explicit_id = payload.get("conversation_id")
+    if not explicit_id:
+        # Auto-generate conversation_id from user_id + model for session continuity
+        explicit_id = f"auto_{user_id}_{model}"
+    
     session_state = None
     chat_id = None
     current_user_message_id = None
@@ -320,22 +325,26 @@ def chat_completion(token: str, payload: dict):
     debug_log("chat_completion_incoming",
         explicit_id=explicit_id,
         user_id=user_id,
-        message_count=len(messages),
-        all_messages=messages)
+        model=model,
+        message_count=len(messages))
 
     if explicit_id and explicit_id in SESSION_CHAT_MAP:
         session_state = SESSION_CHAT_MAP[explicit_id]
         chat_id = session_state.get("chat_id")
         parent_user_message_id = session_state.get("last_user_message_id")
+        is_continuation = True
+    else:
+        is_continuation = False
 
-    if chat_id:
-        # Continue an existing chat only when the client explicitly provides a session id.
+    if is_continuation:
+        # Continue an existing chat: send only the latest message
         body_messages = [messages[-1]] if messages else []
         current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
         current_user_message_parent_id = parent_user_message_id
         SESSION_CHAT_MAP[explicit_id]["last_user_message_id"] = current_user_message_id
-    elif explicit_id:
-        # New explicit conversation starts a new underlying Z.ai chat.
+        debug_log("continuing_chat", explicit_id=explicit_id, chat_id=chat_id, parent_id=parent_user_message_id)
+    else:
+        # New chat: create and send full message history
         chat_id, current_user_message_id = create_chat(token, model, messages)
         SESSION_CHAT_MAP[explicit_id] = {
             "chat_id": chat_id,
@@ -343,15 +352,10 @@ def chat_completion(token: str, payload: dict):
         }
         body_messages = messages
         current_user_message_parent_id = None
-    else:
-        # Stateless request without explicit conversation_id: always start a fresh chat.
-        chat_id, current_user_message_id = create_chat(token, model, messages)
-        body_messages = messages
-        current_user_message_parent_id = None
+        debug_log("creating_new_chat", explicit_id=explicit_id, chat_id=chat_id, message_count=len(messages))
 
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
-    user_id = extract_user_id(token)
     signature = signature_for(prompt, request_id, timestamp_ms, user_id)
     now = dt.datetime.utcnow()
 
