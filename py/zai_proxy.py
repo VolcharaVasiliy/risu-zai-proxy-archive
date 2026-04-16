@@ -389,11 +389,23 @@ def chat_completion(token: str, payload: dict):
     if not prompt:
         raise RuntimeError("Z.ai request requires a user message")
 
+    token_session_state = payload.get("_zai_session_state") or {}
     session_key = _session_key(payload)
     current_user_message_parent_id = None
     current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
 
-    if session_key:
+    if token_session_state.get("upstream_chat_id"):
+        chat_id = token_session_state["upstream_chat_id"]
+        body_messages = [{"role": "user", "content": prompt}]
+        current_user_message_parent_id = token_session_state.get("last_user_message_id")
+        debug_log(
+            "chat_completion_token_session",
+            user_id=user_id,
+            model=model,
+            chat_id=chat_id,
+            parent_id=current_user_message_parent_id,
+        )
+    elif session_key:
         session_state = _get_session_state(session_key) or {}
         stored_messages = list(session_state.get("messages") or [])
         body_messages = _merge_session_messages(stored_messages, messages)
@@ -470,6 +482,10 @@ def chat_completion(token: str, payload: dict):
         stream=True,
     )
     response.raise_for_status()
+    payload["_zai_continuation_state"] = {
+        "upstream_chat_id": chat_id,
+        "last_user_message_id": current_user_message_id,
+    }
     if session_key:
         _touch_session_messages(session_key, body_messages)
     debug_log("chat_completion_started", chat_id=chat_id, request_id=request_id, model=model, prompt_length=len(prompt), stream_requested=bool(payload.get("stream", True)))
@@ -564,6 +580,9 @@ def complete_non_stream(token: str, payload: dict):
 
         if not meta["empty_content"]:
             session_key = _session_key(payload)
+            continuation_state = payload.get("_zai_continuation_state") or {}
+            if continuation_state:
+                meta["continuation_state"] = continuation_state
             if session_key:
                 message = ((result.get("choices") or [{}])[0].get("message") or {})
                 _append_session_assistant_message(session_key, message.get("content", ""), message.get("reasoning_content", ""))

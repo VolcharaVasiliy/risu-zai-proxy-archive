@@ -7,7 +7,9 @@ from py.credentials_bootstrap import load_credentials_env
 load_credentials_env()
 
 import json
-import uuid
+import base64
+import hashlib
+import hmac
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -16,15 +18,47 @@ from py.provider_registry import complete_non_stream, models_payload, provider_e
 from py.zai_proxy import debug_log
 
 
-def _zai_session_id(payload, meta=None):
-    meta = meta or {}
-    return (
-        payload.get("conversation_id")
-        or payload.get("chat_id")
-        or meta.get("conversation_id")
-        or meta.get("chat_id")
-        or ""
-    )
+ZAI_SESSION_SECRET = hashlib.sha256(
+    (os.environ.get("ZAI_TOKEN") or "zai-session-secret").encode("utf-8")
+).digest()
+
+
+def _zai_session_token(state):
+    if not state:
+        return ""
+    payload = json.dumps(
+        {
+            "v": 1,
+            "upstream_chat_id": state.get("upstream_chat_id", ""),
+            "last_user_message_id": state.get("last_user_message_id", ""),
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    body = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    sig = hmac.new(ZAI_SESSION_SECRET, body.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"zai-session.{body}.{sig}"
+
+
+def _decode_zai_session_token(value):
+    raw = str(value or "").strip()
+    if not raw.startswith("zai-session."):
+        return None
+    try:
+        _prefix, body, sig = raw.split(".", 2)
+    except ValueError:
+        return None
+    expected = hmac.new(ZAI_SESSION_SECRET, body.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        padded = body + "=" * ((4 - len(body) % 4) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return None
+    if not payload.get("upstream_chat_id") or not payload.get("last_user_message_id"):
+        return None
+    return payload
 
 
 class handler(BaseHTTPRequestHandler):
@@ -57,8 +91,10 @@ class handler(BaseHTTPRequestHandler):
             # Support both conversation_id (explicit session) and chat_id (local Risu chat)
             payload["conversation_id"] = payload.get("conversation_id") or self.headers.get("x-conversation-id", "")
             payload["chat_id"] = payload.get("chat_id") or self.headers.get("x-chat-id", "")
-            if resolve_provider_id(payload.get("model")) == "zai" and not payload.get("conversation_id") and not payload.get("chat_id"):
-                payload["conversation_id"] = f"zai-{uuid.uuid4().hex}"
+            if resolve_provider_id(payload.get("model")) == "zai":
+                token_state = _decode_zai_session_token(payload.get("conversation_id")) or _decode_zai_session_token(payload.get("chat_id"))
+                if token_state:
+                    payload["_zai_session_state"] = token_state
             debug_log("api_incoming_request", 
                 conversation_id=payload.get("conversation_id"),
                 chat_id=payload.get("chat_id"),
@@ -94,11 +130,12 @@ class handler(BaseHTTPRequestHandler):
             if payload.get("stream") is False:
                 result, meta = complete_non_stream(provider_id, credentials, payload)
                 if provider_id == "zai":
-                    session_id = _zai_session_id(payload, meta) or str(meta.get("chat_id") or "")
-                    if session_id:
-                        result["id"] = session_id
-                        result["chat_id"] = session_id
-                        result["conversation_id"] = session_id
+                    continuation_state = meta.get("continuation_state") or payload.get("_zai_continuation_state") or {}
+                    session_token = _zai_session_token(continuation_state)
+                    if session_token:
+                        result["id"] = session_token
+                        result["chat_id"] = session_token
+                        result["conversation_id"] = session_token
                         result["upstream_chat_id"] = meta.get("chat_id")
                 else:
                     result["chat_id"] = meta.get("chat_id")
@@ -117,23 +154,25 @@ class handler(BaseHTTPRequestHandler):
 
             if first_chunk is not None:
                 if provider_id == "zai":
+                    continuation_state = payload.get("_zai_continuation_state") or {}
+                    session_token = _zai_session_token(continuation_state)
                     upstream_chunk_id = first_chunk.get("id")
-                    session_id = _zai_session_id(payload, {"chat_id": upstream_chunk_id})
-                    if session_id:
-                        first_chunk["id"] = session_id
-                        first_chunk["conversation_id"] = session_id
-                        first_chunk["chat_id"] = session_id
+                    if session_token:
+                        first_chunk["id"] = session_token
+                        first_chunk["conversation_id"] = session_token
+                        first_chunk["chat_id"] = session_token
                         first_chunk["upstream_chat_id"] = upstream_chunk_id
                 self.wfile.write(f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
             for chunk in iterator:
                 if provider_id == "zai":
-                    session_id = _zai_session_id(payload, {"chat_id": chunk.get("id")})
-                    if session_id:
-                        chunk["id"] = session_id
-                        chunk["conversation_id"] = session_id
-                        chunk["chat_id"] = session_id
+                    continuation_state = payload.get("_zai_continuation_state") or {}
+                    session_token = _zai_session_token(continuation_state)
+                    if session_token:
+                        chunk["id"] = session_token
+                        chunk["conversation_id"] = session_token
+                        chunk["chat_id"] = session_token
                 self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
