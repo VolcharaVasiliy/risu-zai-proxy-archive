@@ -41,6 +41,18 @@ except ImportError:
     from http_helpers import cookie_value, env_or_header_token, env_token, header_token
     from openai_stream import OpenAIStreamBuilder
 
+import redis
+
+kv = redis.from_url(os.environ.get('REDIS_URL')) if os.environ.get('REDIS_URL') else None
+
+
+def env_or_kv_token(key):
+    if kv:
+        value = kv.get(key)
+        if value:
+            return value.decode('utf-8') if isinstance(value, bytes) else str(value)
+    return os.environ.get(key, '')
+
 
 MODEL_SPECS = []
 
@@ -190,13 +202,13 @@ def resolve_credentials(handler, provider_id: str):
 
     if provider_id == "arcee":
         token = env_or_header_token(handler, ["ARCEE_ACCESS_TOKEN"], ["x-arcee-access-token"])
-        session_id = env_token("ARCEE_SESSION_ID") or header_token(handler, "x-arcee-session-id")
+        session_id = env_or_kv_token("ARCEE_SESSION_ID") or header_token(handler, "x-arcee-session-id")
         return {"token": token, "session_id": session_id} if token else None
 
     if provider_id == "gemini-web":
-        cookie = env_token("GEMINI_WEB_COOKIE") or header_token(handler, "x-gemini-web-cookie")
-        secure_1psid = env_token("GEMINI_WEB_SECURE_1PSID") or header_token(handler, "x-gemini-web-secure-1psid")
-        secure_1psidts = env_token("GEMINI_WEB_SECURE_1PSIDTS") or header_token(handler, "x-gemini-web-secure-1psidts")
+        cookie = env_or_kv_token("GEMINI_WEB_COOKIE") or header_token(handler, "x-gemini-web-cookie")
+        secure_1psid = env_or_kv_token("GEMINI_WEB_SECURE_1PSID") or header_token(handler, "x-gemini-web-secure-1psid")
+        secure_1psidts = env_or_kv_token("GEMINI_WEB_SECURE_1PSIDTS") or header_token(handler, "x-gemini-web-secure-1psidts")
 
         if cookie:
             secure_1psid = secure_1psid or cookie_value(cookie, "__Secure-1PSID")
@@ -218,7 +230,7 @@ def resolve_credentials(handler, provider_id: str):
         }
 
     if provider_id == "grok":
-        cookie = env_token("GROK_COOKIE")
+        cookie = env_or_kv_token("GROK_COOKIE")
         if not cookie:
             cookie = handler.headers.get("x-grok-cookie", "").strip()
 
@@ -226,7 +238,7 @@ def resolve_credentials(handler, provider_id: str):
         if not sso and cookie:
             sso = cookie_value(cookie, "sso") or cookie_value(cookie, "sso-rw")
 
-        cf_clearance = env_token("GROK_CF_CLEARANCE")
+        cf_clearance = env_or_kv_token("GROK_CF_CLEARANCE")
         if not cf_clearance and cookie:
             cf_clearance = cookie_value(cookie, "cf_clearance")
 
@@ -243,8 +255,8 @@ def resolve_credentials(handler, provider_id: str):
         return {"token": token} if token else None
 
     if provider_id == "inception":
-        cookie = env_token("INCEPTION_COOKIE") or header_token(handler, "x-inception-cookie")
-        session_token = env_token("INCEPTION_SESSION_TOKEN") or header_token(handler, "x-inception-session-token")
+        cookie = env_or_kv_token("INCEPTION_COOKIE") or header_token(handler, "x-inception-cookie")
+        session_token = env_or_kv_token("INCEPTION_SESSION_TOKEN") or header_token(handler, "x-inception-session-token")
         if not session_token and cookie:
             for part in cookie.split(";"):
                 key, sep, value = part.partition("=")
@@ -256,12 +268,12 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "session_token": session_token} if session_token else None
 
     if provider_id == "longcat":
-        cookie = env_token("LONGCAT_COOKIE") or header_token(handler, "x-longcat-cookie")
+        cookie = env_or_kv_token("LONGCAT_COOKIE") or header_token(handler, "x-longcat-cookie")
         return {"cookie": cookie} if cookie else None
 
     if provider_id == "mistral":
-        cookie = env_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
-        csrf_token = env_token("MISTRAL_CSRF_TOKEN") or header_token(handler, "x-mistral-csrf-token")
+        cookie = env_or_kv_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
+        csrf_token = env_or_kv_token("MISTRAL_CSRF_TOKEN") or header_token(handler, "x-mistral-csrf-token")
         if not csrf_token and cookie:
             for part in cookie.split(";"):
                 key, sep, value = part.partition("=")
@@ -271,10 +283,10 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "csrf_token": csrf_token} if cookie else None
 
     if provider_id == "mimo":
-        cookie = env_token("MIMO_COOKIE") or header_token(handler, "x-mimo-cookie")
-        service_token = env_token("MIMO_SERVICE_TOKEN") or header_token(handler, "x-mimo-service-token")
-        user_id = env_token("MIMO_USER_ID") or header_token(handler, "x-mimo-user-id")
-        ph_token = env_token("MIMO_PH_TOKEN") or header_token(handler, "x-mimo-ph-token")
+        cookie = env_or_kv_token("MIMO_COOKIE") or header_token(handler, "x-mimo-cookie")
+        service_token = env_or_kv_token("MIMO_SERVICE_TOKEN") or header_token(handler, "x-mimo-service-token")
+        user_id = env_or_kv_token("MIMO_USER_ID") or header_token(handler, "x-mimo-user-id")
+        ph_token = env_or_kv_token("MIMO_PH_TOKEN") or header_token(handler, "x-mimo-ph-token")
 
         if cookie:
             service_token = service_token or cookie_value(cookie, "serviceToken")
@@ -300,15 +312,15 @@ def resolve_credentials(handler, provider_id: str):
 
     if provider_id == "openai-web":
         access_token = env_or_header_token(handler, ["OPENAI_WEB_ACCESS_TOKEN"], ["x-openai-web-token"])
-        cookie = env_token("OPENAI_WEB_COOKIE") or header_token(handler, "x-openai-web-cookie")
-        account_id = env_token("OPENAI_WEB_ACCOUNT_ID") or header_token(handler, "x-openai-web-account-id")
-        device_id = env_token("OPENAI_WEB_DEVICE_ID") or header_token(handler, "x-openai-web-device-id")
+        cookie = env_or_kv_token("OPENAI_WEB_COOKIE") or header_token(handler, "x-openai-web-cookie")
+        account_id = env_or_kv_token("OPENAI_WEB_ACCOUNT_ID") or header_token(handler, "x-openai-web-account-id")
+        device_id = env_or_kv_token("OPENAI_WEB_DEVICE_ID") or header_token(handler, "x-openai-web-device-id")
         if not access_token and not cookie:
             return None
         return {"access_token": access_token, "cookie": cookie, "account_id": account_id, "device_id": device_id}
 
     if provider_id == "perplexity":
-        cookie = env_token("PERPLEXITY_COOKIE")
+        cookie = env_or_kv_token("PERPLEXITY_COOKIE")
         session_token = env_or_header_token(handler, ["PERPLEXITY_SESSION_TOKEN"], ["x-perplexity-session"])
         if not session_token and cookie:
             session_token = cookie_value(cookie, "__Secure-next-auth.session-token")
@@ -317,10 +329,10 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "session_token": session_token} if cookie else None
 
     if provider_id == "phind":
-        cookie = env_token("PHIND_COOKIE")
+        cookie = env_or_kv_token("PHIND_COOKIE")
         if not cookie:
             cookie = handler.headers.get("x-phind-cookie", "").strip()
-        nonce = env_token("PHIND_NONCE")
+        nonce = env_or_kv_token("PHIND_NONCE")
         if not nonce:
             nonce = handler.headers.get("x-phind-nonce", "").strip()
         return {"cookie": cookie, "nonce": nonce} if cookie else None
@@ -333,11 +345,11 @@ def resolve_credentials(handler, provider_id: str):
         return {"local": True}
 
     if provider_id == "qwen-ai":
-        cookie = env_token("QWEN_AI_COOKIE") or header_token(handler, "x-qwen-ai-cookie")
-        bx_umidtoken = env_token("QWEN_AI_BX_UMIDTOKEN") or header_token(handler, "x-qwen-ai-bx-umidtoken")
-        bx_ua = env_token("QWEN_AI_BX_UA") or header_token(handler, "x-qwen-ai-bx-ua")
-        bx_ua_create = env_token("QWEN_AI_BX_UA_CREATE") or header_token(handler, "x-qwen-ai-bx-ua-create")
-        bx_ua_chat = env_token("QWEN_AI_BX_UA_CHAT") or header_token(handler, "x-qwen-ai-bx-ua-chat")
+        cookie = env_or_kv_token("QWEN_AI_COOKIE") or header_token(handler, "x-qwen-ai-cookie")
+        bx_umidtoken = env_or_kv_token("QWEN_AI_BX_UMIDTOKEN") or header_token(handler, "x-qwen-ai-bx-umidtoken")
+        bx_ua = env_or_kv_token("QWEN_AI_BX_UA") or header_token(handler, "x-qwen-ai-bx-ua")
+        bx_ua_create = env_or_kv_token("QWEN_AI_BX_UA_CREATE") or header_token(handler, "x-qwen-ai-bx-ua-create")
+        bx_ua_chat = env_or_kv_token("QWEN_AI_BX_UA_CHAT") or header_token(handler, "x-qwen-ai-bx-ua-chat")
         token = env_or_header_token(handler, ["QWEN_AI_TOKEN"], ["x-qwen-ai-token"])
         if not token and cookie:
             token = cookie_value(cookie, "token")
@@ -351,8 +363,8 @@ def resolve_credentials(handler, provider_id: str):
             "bx_ua": bx_ua,
             "bx_ua_create": bx_ua_create or bx_ua,
             "bx_ua_chat": bx_ua_chat or bx_ua,
-            "bx_v": env_token("QWEN_AI_BX_V") or header_token(handler, "x-qwen-ai-bx-v"),
-            "timezone": env_token("QWEN_AI_TIMEZONE") or header_token(handler, "x-qwen-ai-timezone"),
+            "bx_v": env_or_kv_token("QWEN_AI_BX_V") or header_token(handler, "x-qwen-ai-bx-v"),
+            "timezone": env_or_kv_token("QWEN_AI_TIMEZONE") or header_token(handler, "x-qwen-ai-timezone"),
         }
 
     if provider_id == "uncloseai":
