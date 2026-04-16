@@ -50,15 +50,16 @@ The full model list, required env vars, manual acquisition paths, and automatic 
 ## How It Works
 
 1. `api/index.py` exposes an OpenAI-compatible API surface.
-2. `py/provider_registry.py` resolves a model id to the correct provider.
-3. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
-4. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
-5. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
-6. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
-7. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
-8. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
-9. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
-10. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
+2. `py/credentials_bootstrap.py` loads `credentials.json` into the runtime environment before provider modules import.
+3. `py/provider_registry.py` resolves a model id to the correct provider.
+4. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
+5. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
+6. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
+7. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
+8. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
+9. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
+10. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
+11. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
 
 ## Local Run
 
@@ -77,6 +78,7 @@ F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\py\server.py
 The one-click deploy button above creates a Vercel project from this repository.
 
 The environment map and manual/automatic credential sources are documented in [docs/deployment.md](docs/deployment.md).
+When `credentials.json` is present, the Python entrypoints load it before importing providers so Vercel can use the file as the auth source of truth.
 
 ## Cloudflare Edge
 

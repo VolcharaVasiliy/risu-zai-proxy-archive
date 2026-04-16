@@ -1,3 +1,10 @@
+try:
+    from py.credentials_bootstrap import load_credentials_env
+except ImportError:
+    from credentials_bootstrap import load_credentials_env
+
+load_credentials_env()
+
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 

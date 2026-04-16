@@ -339,7 +339,7 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "nonce": nonce} if cookie else None
 
     if provider_id == "inflection":
-        token = env_or_header_token(handler, ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"], ["x-inflection-api-key"])
+        token = env_or_header_token(handler, ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY", "INFLECTION_TOKEN"], ["x-inflection-api-key"])
         return {"token": token} if token else None
 
     if provider_id == "pi-local":

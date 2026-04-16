@@ -152,6 +152,7 @@ The script:
 
 - reads `scripts/get-provider-creds.py`
 - imports optional JSON files from `auth/`
+- loads `credentials.json` when present so the exact file can seed Vercel auth
 - writes Vercel env vars with the exact provider names above
 - performs the production deploy
 
@@ -159,6 +160,7 @@ The script:
 
 - `vercel.json` - route rewrites for `/health`, `/v1/models`, and `/v1/chat/completions`
 - `api/index.py` - Vercel function entrypoint
+- `py/credentials_bootstrap.py` - loads `credentials.json` into process env before provider imports
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
 - `scripts/refresh-inception-creds.ps1` - refresh the local ignored Inception credentials file and optionally restart/redeploy the tunnel path
 - `scripts/setup-inception-named-tunnel.ps1` - prepare the named-tunnel path and fall back to quick tunnel when Cloudflare tunnel auth is still missing

@@ -32,6 +32,7 @@ $defaultInceptionCredsFile = Join-Path $projectRoot 'auth\inception-creds.json'
 $defaultLongCatCredsFile = Join-Path $projectRoot 'auth\longcat-creds.json'
 $defaultOpenAIWebCredsFile = Join-Path $projectRoot 'auth\openai-web-creds.json'
 $defaultPhindCredsFile = Join-Path $projectRoot 'auth\phind-creds.json'
+$defaultCredentialsJson = Join-Path $projectRoot 'credentials.json'
 
 if (-not (Test-Path -LiteralPath $vercelBin)) {
   throw "Vercel CLI not found at $vercelBin. Run npm install in $projectRoot first."
@@ -75,6 +76,36 @@ function Set-VercelEnv {
   Invoke-Vercel env add $Name $Target --value $Value --yes --force --non-interactive --scope $Scope
 }
 
+function Set-VercelEnvFromJson {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return
+  }
+
+  $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  foreach ($property in $json.PSObject.Properties) {
+    $name = [string]$property.Name
+    $value = [string]$property.Value
+    if ([string]::IsNullOrWhiteSpace($value)) {
+      continue
+    }
+
+    switch ($name) {
+      'INFLECTION_TOKEN' {
+        Set-VercelEnv -Name 'INFLECTION_API_KEY' -Value $value
+        Set-VercelEnv -Name 'PI_INFLECTION_API_KEY' -Value $value
+      }
+      default {
+        Set-VercelEnv -Name $name -Value $value
+      }
+    }
+  }
+}
+
 if ($InceptionEdgeUrl) {
   Set-VercelEnv -Name 'INCEPTION_EDGE_URL' -Value $InceptionEdgeUrl
   Set-VercelEnv -Name 'INCEPTION_FORCE_EDGE' -Value 'true'
@@ -84,6 +115,8 @@ if ($SyncEnv) {
   if ($Target -eq 'preview') {
     throw 'Preview env sync is not enabled in this script. Use project-level preview envs in Vercel or deploy preview without env sync.'
   }
+
+  Set-VercelEnvFromJson -Path $defaultCredentialsJson
 
   if ($CredsFile) {
     if (-not (Test-Path -LiteralPath $CredsFile)) {

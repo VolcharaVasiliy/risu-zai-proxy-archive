@@ -10,6 +10,7 @@ const requiredFiles = [
   'py/grok_proxy.py',
   'py/gemini_web_proxy.py',
   'py/http_helpers.py',
+  'py/credentials_bootstrap.py',
   'py/inflection_proxy.py',
   'py/mimo_proxy.py',
   'py/openai_web_proxy.py',

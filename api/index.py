@@ -1,3 +1,7 @@
+from py.credentials_bootstrap import load_credentials_env
+
+load_credentials_env()
+
 import json
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
