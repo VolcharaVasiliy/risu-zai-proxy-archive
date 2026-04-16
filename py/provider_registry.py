@@ -41,17 +41,18 @@ except ImportError:
     from http_helpers import cookie_value, env_or_header_token, env_token, header_token
     from openai_stream import OpenAIStreamBuilder
 
-import redis
+import json
+import os
 
-kv = redis.from_url(os.environ.get('REDIS_URL')) if os.environ.get('REDIS_URL') else None
+try:
+    with open('credentials.json', 'r') as f:
+        credentials = json.load(f)
+except FileNotFoundError:
+    credentials = {}
 
 
 def env_or_kv_token(key):
-    if kv:
-        value = kv.get(key)
-        if value:
-            return value.decode('utf-8') if isinstance(value, bytes) else str(value)
-    return os.environ.get(key, '')
+    return credentials.get(key, os.environ.get(key, ''))
 
 
 MODEL_SPECS = []
