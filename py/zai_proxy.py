@@ -29,6 +29,9 @@ SUPPORTED_MODELS = [
     "GLM-5-Turbo",
 ]
 
+# In-memory mapping from explicit conversation_id to Z.ai chat_id.
+SESSION_CHAT_MAP = {}
+
 MODEL_MAPPING = {
     "glm-5": "glm-5",
     "glm-5.1": "GLM-5.1",
@@ -307,17 +310,23 @@ def chat_completion(token: str, payload: dict):
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
 
-    explicit_id = payload.get("conversation_id") or payload.get("chat_id")
+    explicit_id = payload.get("conversation_id")
     chat_id = None
-    if explicit_id:
-        chat_id = explicit_id
+    current_user_message_id = None
+    if explicit_id and explicit_id in SESSION_CHAT_MAP:
+        chat_id = SESSION_CHAT_MAP[explicit_id]
 
     if chat_id:
         # Continue an existing chat only when the client explicitly provides a session id.
         body_messages = [messages[-1]] if messages else []
+    elif explicit_id:
+        # New explicit conversation starts a new underlying Z.ai chat.
+        chat_id, current_user_message_id = create_chat(token, model, messages)
+        SESSION_CHAT_MAP[explicit_id] = chat_id
+        body_messages = messages
     else:
-        # Start a fresh chat for requests without explicit conversation identifier.
-        chat_id, _ = create_chat(token, model, messages)
+        # Stateless request without explicit conversation_id: always start a fresh chat.
+        chat_id, current_user_message_id = create_chat(token, model, messages)
         body_messages = messages
 
     request_id = str(uuid.uuid4())
@@ -346,7 +355,7 @@ def chat_completion(token: str, payload: dict):
         },
         "chat_id": chat_id,
         "id": request_id,
-        "current_user_message_id": payload.get("current_user_message_id") or (chat_id if not payload.get("chat_id") else None),
+        "current_user_message_id": payload.get("current_user_message_id") or current_user_message_id,
         "current_user_message_parent_id": None,
         "background_tasks": {"title_generation": True, "tags_generation": True},
     }
