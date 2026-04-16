@@ -306,23 +306,21 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
-    # Auto-generate conversation_id from first user message for automatic context
-    conversation_id = None
-    if messages:
+    # Use explicit conversation_id/chat_id when provided, otherwise derive a stable user session id
+    conversation_id = payload.get("conversation_id") or payload.get("chat_id") or None
+    if not conversation_id:
+        user_id = extract_user_id(token)
         import hashlib
-        conversation_id = hashlib.md5(messages[0]["content"].encode()).hexdigest()[:16]
-    if conversation_id:
-        chat_id = conversation_id
-        if len(messages) == 1:
-            # First message: create chat
-            chat_id, _ = create_chat(token, model, messages)
-            body_messages = messages
-        else:
-            # Continuation: use existing chat
-            body_messages = [messages[-1]]
-    else:
-        chat_id, _ = create_chat(token, model, messages)
+        conversation_id = hashlib.md5(f"{user_id}:{request_model}".encode()).hexdigest()[:16]
+
+    chat_id = conversation_id
+    if len(messages) == 1:
+        # First message: create chat with full history
+        chat_id, _ = create_chat(token, model, messages, chat_id=chat_id)
         body_messages = messages
+    else:
+        # Continuation: only send latest user message
+        body_messages = [messages[-1]]
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
     user_id = extract_user_id(token)
