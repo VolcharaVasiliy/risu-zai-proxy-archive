@@ -332,7 +332,7 @@ def chat_completion(token: str, payload: dict):
     body = {
         "stream": True,
         "model": model,
-        "messages": [msg["content"] for msg in body_messages],
+        "messages": body_messages,
         "signature_prompt": prompt,
         "params": {},
         "extra": {},
