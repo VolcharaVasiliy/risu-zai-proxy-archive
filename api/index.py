@@ -43,6 +43,12 @@ class handler(BaseHTTPRequestHandler):
         try:
             payload = read_json_body(self)
             payload["conversation_id"] = payload.get("conversation_id") or self.headers.get("x-conversation-id", "")
+            debug_log("api_incoming_request", 
+                conversation_id=payload.get("conversation_id"),
+                model=payload.get("model"),
+                message_count=len(payload.get("messages", [])),
+                first_message=str(payload.get("messages", [{}])[0]).replace("\\", "")[:100] if payload.get("messages") else None,
+                headers=dict(self.headers))
         except Exception:
             send_json(self, 400, {"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}})
             return

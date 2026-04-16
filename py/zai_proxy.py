@@ -309,12 +309,19 @@ def chat_completion(token: str, payload: dict):
     model = map_model(request_model)
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
+    user_id = extract_user_id(token)
 
     explicit_id = payload.get("conversation_id")
     session_state = None
     chat_id = None
     current_user_message_id = None
     parent_user_message_id = None
+    
+    debug_log("chat_completion_incoming",
+        explicit_id=explicit_id,
+        user_id=user_id,
+        message_count=len(messages),
+        all_messages=messages)
 
     if explicit_id and explicit_id in SESSION_CHAT_MAP:
         session_state = SESSION_CHAT_MAP[explicit_id]
