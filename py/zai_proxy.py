@@ -99,29 +99,18 @@ def extract_user_id(token: str) -> str:
 
 
 def normalize_messages(messages):
-    system_parts = []
-    user_parts = []
-
+    result = []
     for message in messages or []:
       role = message.get("role")
       if role == "system":
-          content = message.get("content")
-          if isinstance(content, str) and content.strip():
-              system_parts.append(content)
+          # Skip system for Z.ai
           continue
       if role == "assistant":
-          continue  # Skip assistant messages
+          # Skip assistant
+          continue
       if role == "user":
-          content = message.get("content", "")
-          if isinstance(content, str) and content.strip():
-              user_parts.append(content)
-
-    combined_content = "\n".join(user_parts)
-    if system_parts:
-        system_text = "\n\n".join(system_parts)
-        combined_content = f"{system_text}\n\n{combined_content}"
-
-    return [{"role": "user", "content": combined_content}] if combined_content else []
+          result.append({"role": role, "content": message.get("content", "")})
+    return result
 
 
 def latest_user_text(messages) -> str:
@@ -320,8 +309,10 @@ def chat_completion(token: str, payload: dict):
     conversation_id = payload.get("conversation_id")
     if conversation_id:
         chat_id = conversation_id
+        body_messages = [messages[-1]] if messages else []
     else:
         chat_id, _ = create_chat(token, model, messages)
+        body_messages = messages
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
     user_id = extract_user_id(token)
@@ -331,7 +322,7 @@ def chat_completion(token: str, payload: dict):
     body = {
         "stream": True,
         "model": model,
-        "messages": messages,
+        "messages": body_messages,
         "signature_prompt": prompt,
         "params": {},
         "extra": {},

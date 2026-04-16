@@ -70,6 +70,7 @@ class handler(BaseHTTPRequestHandler):
             debug_log("api_chat_request", route=route, provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
             if payload.get("stream") is False:
                 result, meta = complete_non_stream(provider_id, credentials, payload)
+                result["chat_id"] = meta.get("chat_id")
                 debug_log("api_chat_response", route=route, **meta)
                 send_json(self, 200, result)
                 return
