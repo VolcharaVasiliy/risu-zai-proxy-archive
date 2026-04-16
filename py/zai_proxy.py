@@ -337,12 +337,13 @@ def chat_completion(token: str, payload: dict):
         is_continuation = False
 
     if is_continuation:
-        # Continue an existing chat: send only the latest message
-        body_messages = [messages[-1]] if messages else []
+        # Continue an existing chat but ALWAYS send full message history
+        # Z.ai requires complete history for context
+        body_messages = messages
         current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
         current_user_message_parent_id = parent_user_message_id
         SESSION_CHAT_MAP[explicit_id]["last_user_message_id"] = current_user_message_id
-        debug_log("continuing_chat", explicit_id=explicit_id, chat_id=chat_id, parent_id=parent_user_message_id)
+        debug_log("continuing_chat", explicit_id=explicit_id, chat_id=chat_id, parent_id=parent_user_message_id, message_count=len(messages))
     else:
         # New chat: create and send full message history
         chat_id, current_user_message_id = create_chat(token, model, messages)
