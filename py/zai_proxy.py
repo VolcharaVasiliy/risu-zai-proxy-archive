@@ -307,7 +307,12 @@ def chat_completion(token: str, payload: dict):
     messages = normalize_messages(payload.get("messages") or [])
     prompt = latest_user_text(messages)
     conversation_id = payload.get("conversation_id")
-    if conversation_id:
+    if not conversation_id and messages:
+        # Auto-generate conversation_id from message history for automatic context
+        import hashlib
+        history_str = json.dumps(messages[:-1], sort_keys=True)
+        conversation_id = hashlib.md5(history_str.encode()).hexdigest()[:16]
+    if conversation_id and len(messages) > 1:
         chat_id = conversation_id
         body_messages = [messages[-1]] if messages else []
     else:

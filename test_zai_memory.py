@@ -10,14 +10,12 @@ class ZaiMemoryTester:
         self.token = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImYzM2MyNDk2LWI0ZWUtNDI5Mi1iNjU2LWIwYWFlZjFkOThkMCIsImVtYWlsIjoiR3Vlc3QtMTc3NjMzMzc2ODY1MEBndWVzdC5jb20ifQ.17lbn7p3BY1pbPGX_VqFkNY6AvqgK4slP8xOEnu1p9dFQvaYhrrOBl00OrLCHAsM4VjnRnsejXnti2mQ3gSv1g"
         self.conversation = []
     
-    def chat_completion(self, model: str, prompt: str, chat_id=None) -> Dict[str, Any]:
+    def chat_completion(self, model: str, prompt: str) -> Dict[str, Any]:
         url = f"{self.base_url}/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        if chat_id:
-            headers["x-conversation-id"] = chat_id
         
         self.conversation.append({"role": "user", "content": prompt})
         
@@ -42,15 +40,12 @@ class ZaiMemoryTester:
             
             # Шаг 1: Запросить запомнить число
             print("\nШаг 1: Запросить запомнить число...")
-            result1 = self.chat_completion("glm-5", "Запомни число 42. Это важный тест памяти.")
-            chat_id = result1.get("chat_id")
-            if not chat_id:
-                chat_id = "test-conversation"
+            result1 = self.chat_completion("glm-5-turbo", "Запомни число 42. Это важный тест памяти.")
             print(f"Первый ответ: {result1.get('choices', [{}])[0].get('message', {}).get('content', '')[:100]}...")
             
             # Шаг 2: Спросить что запомнил
             print("\nШаг 2: Спросить что запомнил...")
-            result2 = self.chat_completion("glm-5", "Что я просил тебя запомнить?", chat_id)
+            result2 = self.chat_completion("glm-5-turbo", "Что я просил тебя запомнить?")
             
             print("\nОтвет Z AI:")
             content = result2.get("choices", [{}])[0].get("message", {}).get("content", "")
