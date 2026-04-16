@@ -4,6 +4,8 @@ Extract Phind cookies from dedicated Edge profile.
 Usage: python scripts/get-phind-creds.py [--profile-root PATH] [--output PATH]
 """
 import argparse
+import base64
+import ctypes
 import json
 import os
 import sqlite3
@@ -20,6 +22,33 @@ except ImportError:
     print("Error: cryptography module not found")
     print("Install with: pip install cryptography")
     sys.exit(1)
+
+
+class DATA_BLOB(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _dpapi_unprotect(data: bytes) -> bytes:
+    if not data:
+        return b""
+
+    in_blob = DATA_BLOB(len(data), ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_char)))
+    out_blob = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+        ctypes.byref(in_blob),
+        None,
+        None,
+        None,
+        None,
+        0,
+        ctypes.byref(out_blob),
+    ):
+        raise ctypes.WinError()
+
+    try:
+        return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(out_blob.pbData)
 
 
 def get_encryption_key_windows(profile_root):
@@ -49,9 +78,7 @@ def get_encryption_key_windows(profile_root):
     encrypted_key_bytes = encrypted_key_bytes[5:]
     
     # Decrypt using Windows DPAPI
-    import win32crypt
-    key = win32crypt.CryptUnprotectData(encrypted_key_bytes, None, None, None, 0)[1]
-    return key
+    return _dpapi_unprotect(encrypted_key_bytes)
 
 
 def decrypt_cookie_value(encrypted_value, key):
@@ -72,7 +99,15 @@ def decrypt_cookie_value(encrypted_value, key):
         cipher = AESGCM(key)
         try:
             decrypted = cipher.decrypt(nonce, ciphertext, None)
-            return decrypted.decode("utf-8")
+            try:
+                return decrypted.decode("utf-8")
+            except UnicodeDecodeError:
+                if len(decrypted) > 32:
+                    try:
+                        return decrypted[32:].decode("utf-8")
+                    except UnicodeDecodeError:
+                        pass
+                raise
         except Exception as e:
             print(f"Warning: Failed to decrypt cookie: {e}")
             return ""
@@ -111,7 +146,7 @@ def extract_phind_cookies(profile_root):
         cursor.execute("""
             SELECT name, encrypted_value, host_key, path, expires_utc, is_secure, is_httponly
             FROM cookies
-            WHERE host_key LIKE '%phind.com%'
+            WHERE host_key LIKE '%phind%'
             ORDER BY creation_utc DESC
         """)
         
