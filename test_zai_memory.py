@@ -10,7 +10,7 @@ class ZaiSessionTester:
         self.base_url = "https://risu-zai-proxy-archive.vercel.app"
         self.token = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImYzM2MyNDk2LWI0ZWUtNDI5Mi1iNjU2LWIwYWFlZjFkOThkMCIsImVtYWlsIjoiR3Vlc3QtMTc3NjMzMzc2ODY1MEBndWVzdC5jb20ifQ.17lbn7p3BY1pbPGX_VqFkNY6AvqgK4slP8xOEnu1p9dFQvaYhrrOBl00OrLCHAsM4VjnRnsejXnti2mQ3gSv1g"
 
-    def chat_completion(self, chat_id: str, prompt: str) -> Dict[str, Any]:
+    def chat_completion(self, prompt: str, conversation_id: str = "") -> Dict[str, Any]:
         url = f"{self.base_url}/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -18,31 +18,34 @@ class ZaiSessionTester:
         }
         payload = {
             "model": "glm-5",
-            "chat_id": chat_id,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         }
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
         response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
         return response.json()
 
     def test_memory(self) -> bool:
-        session_a = "zai-session-a-" + uuid.uuid4().hex[:8]
-        session_b = "zai-session-b-" + uuid.uuid4().hex[:8]
         secret = "code-" + uuid.uuid4().hex[:8]
 
         print("Session A: store a secret")
-        first = self.chat_completion(session_a, f"Please remember this code for this session only: {secret}.")
+        first = self.chat_completion(f"Please remember this code for this session only: {secret}.")
         first_text = first.get("choices", [{}])[0].get("message", {}).get("content", "")
+        conversation_id = first.get("conversation_id", "")
+        if not conversation_id:
+            print("\nFAIL: response did not include conversation_id.")
+            return False
         print(first_text)
 
         print("\nSession A: ask for the secret again")
-        second = self.chat_completion(session_a, "What code did I ask you to remember? Answer only the code.")
+        second = self.chat_completion("What code did I ask you to remember? Answer only the code.", conversation_id=conversation_id)
         second_text = second.get("choices", [{}])[0].get("message", {}).get("content", "")
         print(second_text)
 
         print("\nSession B: ask without prior context")
-        third = self.chat_completion(session_b, "What code did I ask you to remember? Answer only the code.")
+        third = self.chat_completion("What code did I ask you to remember? Answer only the code.")
         third_text = third.get("choices", [{}])[0].get("message", {}).get("content", "")
         print(third_text)
 

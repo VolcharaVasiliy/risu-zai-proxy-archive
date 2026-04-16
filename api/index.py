@@ -7,6 +7,7 @@ from py.credentials_bootstrap import load_credentials_env
 load_credentials_env()
 
 import json
+import uuid
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -45,6 +46,8 @@ class handler(BaseHTTPRequestHandler):
             # Support both conversation_id (explicit session) and chat_id (local Risu chat)
             payload["conversation_id"] = payload.get("conversation_id") or self.headers.get("x-conversation-id", "")
             payload["chat_id"] = payload.get("chat_id") or self.headers.get("x-chat-id", "")
+            if resolve_provider_id(payload.get("model")) == "zai" and not payload.get("conversation_id") and not payload.get("chat_id"):
+                payload["conversation_id"] = f"zai-{uuid.uuid4().hex}"
             debug_log("api_incoming_request", 
                 conversation_id=payload.get("conversation_id"),
                 chat_id=payload.get("chat_id"),
@@ -80,6 +83,8 @@ class handler(BaseHTTPRequestHandler):
             if payload.get("stream") is False:
                 result, meta = complete_non_stream(provider_id, credentials, payload)
                 result["chat_id"] = meta.get("chat_id")
+                if provider_id == "zai":
+                    result["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id") or meta.get("chat_id")
                 debug_log("api_chat_response", route=route, **meta)
                 send_json(self, 200, result)
                 return
@@ -94,10 +99,14 @@ class handler(BaseHTTPRequestHandler):
             stream_started = True
 
             if first_chunk is not None:
+                if provider_id == "zai":
+                    first_chunk["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id")
                 self.wfile.write(f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
             for chunk in iterator:
+                if provider_id == "zai":
+                    chunk["conversation_id"] = payload.get("conversation_id") or payload.get("chat_id")
                 self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
