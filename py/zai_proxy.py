@@ -311,23 +311,36 @@ def chat_completion(token: str, payload: dict):
     prompt = latest_user_text(messages)
 
     explicit_id = payload.get("conversation_id")
+    session_state = None
     chat_id = None
     current_user_message_id = None
+    parent_user_message_id = None
+
     if explicit_id and explicit_id in SESSION_CHAT_MAP:
-        chat_id = SESSION_CHAT_MAP[explicit_id]
+        session_state = SESSION_CHAT_MAP[explicit_id]
+        chat_id = session_state.get("chat_id")
+        parent_user_message_id = session_state.get("last_user_message_id")
 
     if chat_id:
         # Continue an existing chat only when the client explicitly provides a session id.
         body_messages = [messages[-1]] if messages else []
+        current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
+        current_user_message_parent_id = parent_user_message_id
+        SESSION_CHAT_MAP[explicit_id]["last_user_message_id"] = current_user_message_id
     elif explicit_id:
         # New explicit conversation starts a new underlying Z.ai chat.
         chat_id, current_user_message_id = create_chat(token, model, messages)
-        SESSION_CHAT_MAP[explicit_id] = chat_id
+        SESSION_CHAT_MAP[explicit_id] = {
+            "chat_id": chat_id,
+            "last_user_message_id": current_user_message_id,
+        }
         body_messages = messages
+        current_user_message_parent_id = None
     else:
         # Stateless request without explicit conversation_id: always start a fresh chat.
         chat_id, current_user_message_id = create_chat(token, model, messages)
         body_messages = messages
+        current_user_message_parent_id = None
 
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
@@ -356,7 +369,7 @@ def chat_completion(token: str, payload: dict):
         "chat_id": chat_id,
         "id": request_id,
         "current_user_message_id": payload.get("current_user_message_id") or current_user_message_id,
-        "current_user_message_parent_id": None,
+        "current_user_message_parent_id": current_user_message_parent_id,
         "background_tasks": {"title_generation": True, "tags_generation": True},
     }
 
