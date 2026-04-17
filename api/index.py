@@ -14,7 +14,6 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 from py.http_helpers import read_json_body, send_json
-from py.responses_api import complete_response, stream_response_events
 from py.provider_registry import complete_non_stream, models_payload, provider_error_hint, resolve_credentials, resolve_provider_id, stream_chunks
 from py.zai_proxy import debug_log
 
@@ -119,7 +118,7 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 400, {"error": {"message": "messages must be a non-empty array", "type": "invalid_request_error"}})
             return
 
-        if route == "responses" and payload.get("input") is None and payload.get("messages") is None:
+        if route in {"responses", "responses-chat"} and payload.get("input") is None and payload.get("messages") is None:
             send_json(self, 400, {"error": {"message": "input or messages is required", "type": "invalid_request_error"}})
             return
 
@@ -136,35 +135,6 @@ class handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             debug_log("api_chat_request", route=route, provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
-            if route == "responses":
-                if payload.get("stream") is False:
-                    result, meta = complete_response(provider_id, credentials, payload)
-                    debug_log("api_chat_response", route=route, **meta)
-                    send_json(self, 200, result)
-                    return
-
-                iterator = iter(stream_response_events(provider_id, credentials, payload))
-                first_event = next(iterator, None)
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache, no-transform")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                stream_started = True
-
-                if first_event is not None:
-                    self.wfile.write(f"data: {json.dumps(first_event, ensure_ascii=False)}\n\n".encode("utf-8"))
-                    self.wfile.flush()
-
-                for event in iterator:
-                    self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8"))
-                    self.wfile.flush()
-
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
-                self.close_connection = True
-                return
-
             if payload.get("stream") is False:
                 result, meta = complete_non_stream(provider_id, credentials, payload)
                 if provider_id == "zai":
