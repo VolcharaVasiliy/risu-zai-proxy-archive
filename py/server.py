@@ -20,15 +20,24 @@ from zai_proxy import debug_log
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _request_path(self):
+        return self.path.split("?", 1)[0]
+
+    def _is_responses_request(self):
+        request_path = self._request_path()
+        return request_path == "/v1/responses" or request_path.startswith("/v1/responses/")
+
     def do_GET(self):
-        if self.path == "/health":
+        request_path = self._request_path()
+        if request_path == "/health":
             return send_json(self, 200, {"ok": True})
-        if self.path == "/v1/models":
+        if request_path == "/v1/models":
             return send_json(self, 200, models_payload())
         return send_json(self, 404, {"error": {"message": "Not found"}})
 
     def do_POST(self):
-        if self.path not in {"/v1/chat/completions", "/v1/responses"}:
+        request_path = self._request_path()
+        if request_path not in {"/v1/chat/completions"} and not self._is_responses_request():
             return send_json(self, 404, {"error": {"message": "Not found"}})
 
         try:
@@ -39,9 +48,9 @@ class Handler(BaseHTTPRequestHandler):
         if not payload.get("model"):
             return send_json(self, 400, {"error": {"message": "model is required", "type": "invalid_request_error"}})
 
-        if self.path == "/v1/chat/completions" and (not isinstance(payload.get("messages"), list) or not payload["messages"]):
+        if request_path == "/v1/chat/completions" and (not isinstance(payload.get("messages"), list) or not payload["messages"]):
             return send_json(self, 400, {"error": {"message": "messages must be a non-empty array", "type": "invalid_request_error"}})
-        if self.path == "/v1/responses" and payload.get("input") is None and payload.get("messages") is None:
+        if self._is_responses_request() and payload.get("input") is None and payload.get("messages") is None:
             return send_json(self, 400, {"error": {"message": "input or messages is required", "type": "invalid_request_error"}})
 
         provider_id = resolve_provider_id(payload.get("model"))
@@ -55,7 +64,7 @@ class Handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             debug_log("local_api_chat_request", provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
-            if self.path == "/v1/responses":
+            if self._is_responses_request():
                 if payload.get("stream") is False:
                     result, _meta = complete_response(provider_id, credentials, payload)
                     return send_json(self, 200, result)

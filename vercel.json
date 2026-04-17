@@ -16,6 +16,10 @@
     {
       "source": "/v1/responses",
       "destination": "/api?route=responses"
+    },
+    {
+      "source": "/v1/responses/:path*",
+      "destination": "/api?route=responses"
     }
   ]
 }
