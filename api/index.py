@@ -87,7 +87,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route != "chat":
+        if route not in {"chat", "responses"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
