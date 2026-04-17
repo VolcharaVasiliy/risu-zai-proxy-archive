@@ -5,9 +5,11 @@ import time
 import uuid
 
 try:
+    from py.openai_stream import OpenAIStreamBuilder, openai_chunk
     from py.provider_registry import complete_non_stream
     from py.zai_proxy import debug_log
 except ImportError:
+    from openai_stream import OpenAIStreamBuilder, openai_chunk
     from provider_registry import complete_non_stream
     from zai_proxy import debug_log
 
@@ -436,29 +438,42 @@ def _output_items_from_result(result: dict) -> list:
     return output
 
 
-def _response_object_from_result(result: dict, response_id: str, previous_response_id: str, payload: dict) -> dict:
+def _chat_completion_from_result(result: dict, response_id: str, previous_response_id: str, payload: dict) -> dict:
     created_at = _now()
     choices = result.get("choices") or [{}]
     message = ((choices[0] or {}).get("message") or {})
-    content = _content_text(message.get("content")).strip()
+    content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     tool_calls = _tool_calls_from_result(result)
+    if not tool_calls:
+        tool_calls = pseudo_tool_calls
     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    finish_reason = ((choices[0] or {}).get("finish_reason")) or ("tool_calls" if tool_calls else "stop")
 
     response = {
         "id": response_id,
-        "object": "response",
-        "created_at": created_at,
-        "status": "completed",
+        "object": "chat.completion",
+        "created": created_at,
         "model": result.get("model") or payload.get("model") or "",
-        "output": _output_items_from_result(result),
-        "output_text": content,
-        "previous_response_id": previous_response_id or None,
-        "parallel_tool_calls": bool(payload.get("parallel_tool_calls", True)),
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    **({"tool_calls": tool_calls} if tool_calls else {}),
+                    **({"reasoning_content": _content_text(message.get("reasoning_content")).strip()} if _content_text(message.get("reasoning_content")).strip() else {}),
+                },
+                "finish_reason": finish_reason,
+            }
+        ],
         "usage": {
             "input_tokens": usage.get("prompt_tokens", 0),
             "output_tokens": usage.get("completion_tokens", 0),
             "total_tokens": usage.get("total_tokens", 0),
         },
+        "conversation_id": response_id,
+        "response_id": response_id,
+        "previous_response_id": previous_response_id or None,
     }
 
     instructions = payload.get("instructions")
@@ -469,68 +484,64 @@ def _response_object_from_result(result: dict, response_id: str, previous_respon
     if metadata is not None:
         response["metadata"] = metadata
 
-    if tool_calls:
-        response["tool_calls"] = [
-            {
-                "id": item["call_id"],
-                "type": "function",
-                "status": "completed",
-                "name": item["name"],
-                "arguments": item["arguments"],
-            }
-            for item in response["output"]
-            if item.get("type") == "function_call"
-        ]
-
     return response
 
 
-def _stream_events_from_response(response: dict):
-    response_id = response["id"]
-    output = response.get("output") or []
-    completed = dict(response)
-    completed["status"] = "completed"
-    created = {"type": "response.created", "response": {**response, "status": "in_progress"}}
-    yield _event(created["type"], response=created["response"])
+def _tool_call_delta(tool_call: dict, index: int) -> dict:
+    function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    return {
+        "index": index,
+        "id": str(tool_call.get("id") or tool_call.get("call_id") or "").strip() or f"call_{uuid.uuid4().hex}",
+        "type": "function",
+        "function": {
+            "name": str(function.get("name") or tool_call.get("name") or ""),
+            "arguments": str(function.get("arguments") if function else tool_call.get("arguments") or ""),
+        },
+    }
 
-    for index, item in enumerate(output):
-        yield _event("response.output_item.added", response_id=response_id, output_index=index, item=item)
 
-        if item.get("type") == "message":
-            text = _content_text(item.get("content")).strip()
-            if text:
-                yield _event(
-                    "response.output_text.delta",
-                    response_id=response_id,
-                    item_id=item["id"],
-                    output_index=index,
-                    content_index=0,
-                    delta=text,
-                )
-                yield _event(
-                    "response.output_text.done",
-                    response_id=response_id,
-                    item_id=item["id"],
-                    output_index=index,
-                    content_index=0,
-                    text=text,
-                )
-            yield _event("response.output_item.done", response_id=response_id, output_index=index, item=item)
-            continue
+def _stream_chunks_from_result(result: dict):
+    response_id = result.get("id") or f"chatcmpl_{uuid.uuid4().hex}"
+    created = int(result.get("created") or _now())
+    model = result.get("model") or ""
+    builder = OpenAIStreamBuilder(response_id, model)
+    builder.created = created
 
-        if item.get("type") == "function_call":
-            yield _event(
-                "response.function_call_arguments.done",
-                response_id=response_id,
-                item_id=item["id"],
-                output_index=index,
-                call_id=item["call_id"],
-                arguments=item["arguments"],
-            )
-            yield _event("response.output_item.done", response_id=response_id, output_index=index, item=item)
+    choices = result.get("choices") or [{}]
+    message = ((choices[0] or {}).get("message") or {})
+    content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
+    tool_calls = _tool_calls_from_result(result)
+    if not tool_calls:
+        tool_calls = pseudo_tool_calls
+    reasoning = _content_text(message.get("reasoning_content")).strip()
 
-    yield _event("response.completed", response=completed)
-    yield _event("response.done", response=completed)
+    if reasoning:
+        for chunk in builder.reasoning(reasoning):
+            yield chunk
+
+    if tool_calls:
+        role_chunk = builder.ensure_role("content")
+        if role_chunk is not None:
+            yield role_chunk
+        yield openai_chunk(
+            response_id,
+            model,
+            created,
+            {
+                "tool_calls": [_tool_call_delta(tool_call, index) for index, tool_call in enumerate(tool_calls)],
+            },
+        )
+
+    if content:
+        for chunk in builder.content(content):
+            yield chunk
+    elif not reasoning and not tool_calls and not builder.role_sent:
+        role_chunk = builder.ensure_role("content")
+        if role_chunk is not None:
+            yield role_chunk
+
+    finish_reason = ((choices[0] or {}).get("finish_reason")) or ("tool_calls" if tool_calls else "stop")
+    yield builder.finish(finish_reason=finish_reason)
 
 
 def complete_response(provider_id: str, credentials: dict, payload: dict):
@@ -540,7 +551,7 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
     result, meta = complete_non_stream(provider_id, credentials, chat_payload)
 
     response_id = f"resp_{uuid.uuid4().hex}"
-    response = _response_object_from_result(result, response_id, previous_response_id, payload)
+    response = _chat_completion_from_result(result, response_id, previous_response_id, payload)
     assistant_message = _assistant_message_from_result(result)
 
     if payload.get("store", True) is not False:
@@ -564,7 +575,7 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
             "response_id": response_id,
             "previous_response_id": previous_response_id,
             "message_count": len(messages),
-            "output_text_length": len(response.get("output_text") or ""),
+            "output_text_length": len(_content_text((result.get("choices") or [{}])[0].get("message", {}).get("content")).strip()),
             "tool_call_count": len(_tool_calls_from_result(result)),
         }
     )
@@ -576,5 +587,11 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
 def stream_response_events(provider_id: str, credentials: dict, payload: dict):
     response, meta = complete_response(provider_id, credentials, payload)
     debug_log("responses_stream", provider=provider_id, response_id=response["id"], tool_call_count=meta.get("tool_call_count", 0))
-    for event in _stream_events_from_response(response):
-        yield event
+    result = {
+        "id": response["id"],
+        "created": response.get("created"),
+        "model": response.get("model"),
+        "choices": response.get("choices"),
+    }
+    for chunk in _stream_chunks_from_result(result):
+        yield chunk

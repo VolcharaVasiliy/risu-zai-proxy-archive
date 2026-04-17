@@ -68,26 +68,6 @@ class handler(BaseHTTPRequestHandler):
         route_values = parse_qs(parsed.query).get("route", [])
         return route_values[0] if route_values else ""
 
-    def _uses_responses_mode(self, route, payload):
-        if route == "responses":
-            return True
-        if route != "responses-chat":
-            return False
-        return any(
-            payload.get(field) is not None
-            for field in (
-                "input",
-                "previous_response_id",
-                "instructions",
-                "tools",
-                "tool_choice",
-                "parallel_tool_calls",
-                "store",
-                "metadata",
-                "response_format",
-            )
-        )
-
     def do_GET(self):
         route = self._route()
 
@@ -156,7 +136,7 @@ class handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             debug_log("api_chat_request", route=route, provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
-            if self._uses_responses_mode(route, payload):
+            if route in {"responses", "responses-chat"}:
                 if payload.get("stream") is False:
                     result, meta = complete_response(provider_id, credentials, payload)
                     debug_log("api_chat_response", route=route, **meta)
