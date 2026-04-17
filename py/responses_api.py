@@ -368,11 +368,17 @@ def _assistant_message_from_result(result: dict) -> dict:
     if not tool_calls:
         tool_calls = pseudo_tool_calls
 
+    if tool_calls:
+        assistant_message = {"role": "assistant", "content": ""}
+        hidden_text = content or reasoning
+        if hidden_text:
+            assistant_message["reasoning_content"] = hidden_text
+        assistant_message["tool_calls"] = tool_calls
+        return assistant_message
+
     assistant_message = {"role": "assistant", "content": content}
     if reasoning:
         assistant_message["reasoning_content"] = reasoning
-    if tool_calls:
-        assistant_message["tool_calls"] = tool_calls
     return assistant_message
 
 
@@ -395,7 +401,7 @@ def _output_items_from_result(result: dict) -> list:
         tool_calls = pseudo_tool_calls
 
     output = []
-    if content:
+    if content and not tool_calls:
         output.append(
             {
                 "id": f"msg_{uuid.uuid4().hex}",
@@ -448,6 +454,9 @@ def _chat_completion_from_result(result: dict, response_id: str, previous_respon
         tool_calls = pseudo_tool_calls
     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
     finish_reason = ((choices[0] or {}).get("finish_reason")) or ("tool_calls" if tool_calls else "stop")
+    reasoning_text = _content_text(message.get("reasoning_content")).strip()
+    if tool_calls and content:
+        reasoning_text = content
 
     response = {
         "id": response_id,
@@ -459,9 +468,9 @@ def _chat_completion_from_result(result: dict, response_id: str, previous_respon
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": content,
+                    "content": "" if tool_calls else content,
                     **({"tool_calls": tool_calls} if tool_calls else {}),
-                    **({"reasoning_content": _content_text(message.get("reasoning_content")).strip()} if _content_text(message.get("reasoning_content")).strip() else {}),
+                    **({"reasoning_content": reasoning_text} if reasoning_text else {}),
                 },
                 "finish_reason": finish_reason,
             }
@@ -532,7 +541,7 @@ def _stream_chunks_from_result(result: dict):
             },
         )
 
-    if content:
+    if content and not tool_calls:
         for chunk in builder.content(content):
             yield chunk
     elif not reasoning and not tool_calls and not builder.role_sent:
