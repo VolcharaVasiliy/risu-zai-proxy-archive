@@ -12,6 +12,10 @@
     {
       "source": "/v1/chat/completions",
       "destination": "/api?route=chat"
+    },
+    {
+      "source": "/v1/responses",
+      "destination": "/api?route=responses"
     }
   ]
 }

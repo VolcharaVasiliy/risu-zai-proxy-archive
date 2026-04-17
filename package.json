@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ./local-server.js",
+    "dev": "F:\\DevTools\\Python311\\python.exe ./py/server.py",
+    "dev:node": "node ./local-server.js",
     "check": "node ./scripts/check.js",
     "cloudflare:dev": "wrangler dev cloudflare/worker.mjs",
     "cloudflare:deploy": "wrangler deploy cloudflare/worker.mjs",

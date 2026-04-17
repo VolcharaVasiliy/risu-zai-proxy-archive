@@ -16,6 +16,7 @@ const requiredFiles = [
   'py/openai_web_proxy.py',
   'py/phind_proxy.py',
   'py/pi_local_proxy.py',
+  'py/responses_api.py',
   'py/provider_registry.py',
   'py/server.py',
   'py/uncloseai_proxy.py',

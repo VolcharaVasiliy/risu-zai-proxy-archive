@@ -439,6 +439,9 @@ def chat_completion(token: str, payload: dict):
         "signature_prompt": prompt,
         "params": {},
         "extra": {},
+        "tools": payload.get("tools") or [],
+        "tool_choice": payload.get("tool_choice"),
+        "parallel_tool_calls": payload.get("parallel_tool_calls"),
         "features": build_features(request_model, payload.get("web_search"), payload.get("reasoning_effort")),
         "variables": {
             "{{USER_NAME}}": "User",

@@ -8,6 +8,7 @@
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 - `GET /health`
 
 ## Docs
@@ -158,3 +159,5 @@ This path is for `Inception` only. The rest of the providers still stay on Verce
 - LongCat exposes separate slugs for convenience: `LongCat-Flash-Chat` for regular answers and `LongCat-Flash-Thinking` / `LongCat-Flash-Thinking-2601` for reasoning.
 - `Pi Web Local` is intentionally local-only and does not need Vercel env vars.
 - `UncloseAI` does not require credentials.
+- For OpenAI Agents / long-running tool loops, prefer a model that already passes through `tools` and `tool_choice`, such as `pi-api`, `uncloseai-hermes`, `uncloseai-gpt-oss`, `uncloseai-r1-distill`, or `trinity-large-thinking`.
+- `Z.ai` remains the chat-only stable path; it is not the right backend for tool-heavy agent runs.
