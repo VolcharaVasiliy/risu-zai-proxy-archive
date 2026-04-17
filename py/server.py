@@ -9,6 +9,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from http_helpers import read_json_body, send_json
+from responses_api import complete_response, stream_response_events
 from provider_registry import complete_non_stream, models_payload, provider_error_hint, resolve_credentials, resolve_provider_id, stream_chunks
 
 from zai_proxy import debug_log
@@ -17,6 +18,26 @@ from zai_proxy import debug_log
 class Handler(BaseHTTPRequestHandler):
     def _request_path(self):
         return self.path.split("?", 1)[0]
+
+    def _uses_responses_mode(self, payload: dict, request_path: str) -> bool:
+        if request_path == "/v1/responses":
+            return True
+        if request_path != "/v1/responses/chat/completions":
+            return False
+        return any(
+            payload.get(field) is not None
+            for field in (
+                "input",
+                "previous_response_id",
+                "instructions",
+                "tools",
+                "tool_choice",
+                "parallel_tool_calls",
+                "store",
+                "metadata",
+                "response_format",
+            )
+        )
 
     def do_GET(self):
         request_path = self._request_path()
@@ -55,6 +76,32 @@ class Handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             debug_log("local_api_chat_request", provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
+            if self._uses_responses_mode(payload, request_path):
+                if payload.get("stream") is False:
+                    result, _meta = complete_response(provider_id, credentials, payload)
+                    return send_json(self, 200, result)
+
+                iterator = iter(stream_response_events(provider_id, credentials, payload))
+                first_event = next(iterator, None)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache, no-transform")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                stream_started = True
+
+                if first_event is not None:
+                    self.wfile.write(f"data: {json.dumps(first_event, ensure_ascii=False)}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+
+                for event in iterator:
+                    self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
+
             if payload.get("stream") is False:
                 result, _meta = complete_non_stream(provider_id, credentials, payload)
                 return send_json(self, 200, result)

@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import time
 import uuid
@@ -14,6 +15,10 @@ except ImportError:
 _STATE_LOCK = threading.RLock()
 _STATE_TTL_SECONDS = 6 * 60 * 60
 _RESPONSE_STATE = {}
+_TOOL_CALL_RE = re.compile(r"^\s*tool_call\s*:\s*(?P<name>[A-Za-z0-9_.:-]+)(?:\s+for\s+(?P<args>.*))?\s*$", re.IGNORECASE)
+_TOOL_WAIT_RE = re.compile(r"^\s*\(?\s*wait(?:ing)?\s+for\s+tool\s+output.*\)?\s*$", re.IGNORECASE)
+_SHELL_TOOL_NAMES = {"bash", "shell", "powershell", "pwsh", "cmd", "terminal"}
+_PATH_TOOL_NAMES = {"ls", "list", "read_file", "read", "cat", "open", "image"}
 
 
 def _now() -> int:
@@ -38,6 +43,60 @@ def _content_text(content) -> str:
     if content is None:
         return ""
     return str(content)
+
+
+def _pseudo_tool_call_arguments(name: str, args_text: str) -> str:
+    tool_name = str(name or "").strip().lower()
+    text = str(args_text or "").strip()
+
+    if tool_name in _SHELL_TOOL_NAMES:
+        return json.dumps({"command": text}, ensure_ascii=False)
+
+    if tool_name in _PATH_TOOL_NAMES:
+        lowered = text.lower()
+        if lowered.startswith("path "):
+            text = text[5:].strip()
+        elif lowered.startswith("file "):
+            text = text[5:].strip()
+        if not text:
+            return json.dumps({}, ensure_ascii=False)
+        return json.dumps({"path": text}, ensure_ascii=False)
+
+    return json.dumps({"input": text}, ensure_ascii=False)
+
+
+def _extract_pseudo_tool_calls(content) -> tuple[str, list]:
+    raw_text = _content_text(content)
+    if not raw_text:
+        return "", []
+
+    plain_lines = []
+    calls = []
+
+    for line in raw_text.splitlines():
+        tool_match = _TOOL_CALL_RE.match(line)
+        if tool_match:
+            name = str(tool_match.group("name") or "").strip()
+            args_text = str(tool_match.group("args") or "").strip()
+            call_id = f"call_{uuid.uuid4().hex}"
+            calls.append(
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": _pseudo_tool_call_arguments(name, args_text),
+                    },
+                }
+            )
+            continue
+
+        if _TOOL_WAIT_RE.match(line):
+            continue
+
+        plain_lines.append(line)
+
+    return "\n".join(plain_lines).strip(), calls
 
 
 def _content_to_chat_content(content):
@@ -301,9 +360,11 @@ def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, d
 def _assistant_message_from_result(result: dict) -> dict:
     choices = result.get("choices") or [{}]
     message = ((choices[0] or {}).get("message") or {})
-    content = _content_text(message.get("content")).strip()
+    content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     reasoning = _content_text(message.get("reasoning_content")).strip()
     tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+    if not tool_calls:
+        tool_calls = pseudo_tool_calls
 
     assistant_message = {"role": "assistant", "content": content}
     if reasoning:
@@ -319,16 +380,30 @@ def _tool_calls_from_result(result: dict) -> list:
     tool_calls = message.get("tool_calls")
     if isinstance(tool_calls, list):
         return tool_calls
-    return []
+    _, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
+    return pseudo_tool_calls
 
 
 def _output_items_from_result(result: dict) -> list:
     choices = result.get("choices") or [{}]
     message = ((choices[0] or {}).get("message") or {})
-    content = _content_text(message.get("content")).strip()
+    content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     tool_calls = _tool_calls_from_result(result)
+    if not tool_calls:
+        tool_calls = pseudo_tool_calls
 
     output = []
+    if content:
+        output.append(
+            {
+                "id": f"msg_{uuid.uuid4().hex}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content}],
+            }
+        )
+
     for tool_call in tool_calls:
         function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
         call_id = str(tool_call.get("id") or tool_call.get("call_id") or "").strip() or f"call_{uuid.uuid4().hex}"
@@ -344,17 +419,6 @@ def _output_items_from_result(result: dict) -> list:
                 "call_id": call_id,
                 "name": str(function.get("name") or tool_call.get("name") or ""),
                 "arguments": str(arguments or ""),
-            }
-        )
-
-    if content:
-        output.append(
-            {
-                "id": f"msg_{uuid.uuid4().hex}",
-                "type": "message",
-                "status": "completed",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": content}],
             }
         )
 
