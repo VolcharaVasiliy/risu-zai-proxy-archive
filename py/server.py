@@ -27,6 +27,9 @@ class Handler(BaseHTTPRequestHandler):
         request_path = self._request_path()
         return request_path == "/v1/responses" or request_path.startswith("/v1/responses/")
 
+    def _is_responses_chat_alias(self):
+        return self._request_path() == "/v1/responses/chat/completions"
+
     def do_GET(self):
         request_path = self._request_path()
         if request_path == "/health":
@@ -64,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
         stream_started = False
         try:
             debug_log("local_api_chat_request", provider=provider_id, stream=payload.get("stream", True), model=payload.get("model"), message_count=len(payload.get("messages", [])))
-            if self._is_responses_request():
+            if self._is_responses_request() and not self._is_responses_chat_alias():
                 if payload.get("stream") is False:
                     result, _meta = complete_response(provider_id, credentials, payload)
                     return send_json(self, 200, result)

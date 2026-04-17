@@ -14,6 +14,10 @@
       "destination": "/api?route=chat"
     },
     {
+      "source": "/v1/responses/chat/completions",
+      "destination": "/api?route=responses-chat"
+    },
+    {
       "source": "/v1/responses",
       "destination": "/api?route=responses"
     },

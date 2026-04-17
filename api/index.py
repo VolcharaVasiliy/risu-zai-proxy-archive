@@ -87,7 +87,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route not in {"chat", "responses"}:
+        if route not in {"chat", "responses", "responses-chat"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
@@ -115,7 +115,7 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 400, {"error": {"message": "model is required", "type": "invalid_request_error"}})
             return
 
-        if route == "chat" and (not isinstance(payload.get("messages"), list) or not payload["messages"]):
+        if route in {"chat", "responses-chat"} and (not isinstance(payload.get("messages"), list) or not payload["messages"]):
             send_json(self, 400, {"error": {"message": "messages must be a non-empty array", "type": "invalid_request_error"}})
             return
 
