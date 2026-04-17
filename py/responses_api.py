@@ -56,10 +56,14 @@ def _pseudo_tool_call_arguments(name: str, args_text: str) -> str:
 
     if tool_name in _PATH_TOOL_NAMES:
         lowered = text.lower()
+        if lowered.startswith("absolute_path "):
+            return json.dumps({"absolute_path": text[14:].strip()}, ensure_ascii=False)
+        if lowered.startswith("relative_path "):
+            return json.dumps({"relative_path": text[14:].strip()}, ensure_ascii=False)
         if lowered.startswith("path "):
-            text = text[5:].strip()
-        elif lowered.startswith("file "):
-            text = text[5:].strip()
+            return json.dumps({"path": text[5:].strip()}, ensure_ascii=False)
+        if lowered.startswith("file "):
+            return json.dumps({"file": text[5:].strip()}, ensure_ascii=False)
         if not text:
             return json.dumps({}, ensure_ascii=False)
         return json.dumps({"path": text}, ensure_ascii=False)
