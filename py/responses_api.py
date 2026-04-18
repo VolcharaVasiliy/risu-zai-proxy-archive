@@ -36,9 +36,23 @@ _STATEFUL_REQUEST_FIELDS = (
     "metadata",
     "user",
 )
+_AGENT_TOOL_SUPPORTED = {"inflection", "uncloseai"}
 _AGENT_TOOL_UNSUPPORTED = {
+    "arcee": "Arcee in this proxy does not support generic function tools on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "deepseek": "DeepSeek in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
     "gemini-web": "Gemini Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "grok": "Grok in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "inception": "Inception in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "kimi": "Kimi in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "longcat": "LongCat in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "mimo": "Mimo in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
     "mistral": "Mistral, Devstral, and Codestral in this proxy do not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "openai-web": "OpenAI Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "perplexity": "Perplexity in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "phind": "Phind in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "pi-local": "Pi Web Local in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "qwen-ai": "Qwen AI in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "zai": "Z.ai in this proxy does not support reliable tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
 }
 
 
@@ -417,8 +431,16 @@ def _request_config_from_payload(payload: dict, state: dict | None = None) -> di
 
 
 def _validate_provider_request(provider_id: str, request_config: dict):
-    if request_config.get("tools") and provider_id in _AGENT_TOOL_UNSUPPORTED:
+    if not request_config.get("tools"):
+        return
+    if provider_id in _AGENT_TOOL_SUPPORTED:
+        return
+    if provider_id in _AGENT_TOOL_UNSUPPORTED:
         raise RuntimeError(_AGENT_TOOL_UNSUPPORTED[provider_id])
+    raise RuntimeError(
+        f"Provider '{provider_id}' in this proxy does not support tools/tool_choice on the responses route. "
+        "Use pi-api or uncloseai-* for agent loops."
+    )
 
 
 def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, dict]:
