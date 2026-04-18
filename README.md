@@ -165,6 +165,7 @@ This path is for `Inception` only. The rest of the providers still stay on Verce
 ## Notes
 
 - The project is wired to the companion Chat2API desktop storage layout, so `scripts/get-provider-creds.py` can automatically reuse already logged-in sessions when they exist.
+- `py/credentials_bootstrap.py` mirrors lowercase keys from extracted creds files to uppercase env names, so local `openai_web_*` / `gemini_web_*` exports work without manual renaming.
 - Arcee uses a bearer token stored in the Chromium/Yandex cookie jar for `api.arcee.ai`; `scripts/get-arcee-creds.py` extracts it into `auth\arcee-creds.json` for local runs and Vercel sync.
 - Qwen uses the browser cookie jar plus live `bx-*` request headers from `chat.qwen.ai`; `scripts/get-qwen-creds.py` extracts them into `auth\qwen-creds.json` for local runs and Vercel sync.
 - Mistral uses a dedicated browser-profile extractor for `console.mistral.ai`, which feeds the Vercel env sync through `auth\mistral-creds.json`.

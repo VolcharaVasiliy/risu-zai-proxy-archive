@@ -31,8 +31,14 @@ def load_credentials_env(path: Path = CREDENTIALS_PATH) -> dict:
         normalized = _normalize_value(value)
         if not normalized:
             continue
-        os.environ[str(key)] = normalized
-        applied[str(key)] = normalized
+        env_key = str(key)
+        os.environ[env_key] = normalized
+        applied[env_key] = normalized
+
+        upper_key = env_key.upper()
+        if upper_key != env_key:
+            os.environ[upper_key] = normalized
+            applied[upper_key] = normalized
 
     inflection_token = applied.get("INFLECTION_TOKEN", "")
     if inflection_token:
