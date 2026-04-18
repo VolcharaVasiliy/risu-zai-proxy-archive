@@ -9,6 +9,7 @@
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
+- `POST /v1/responses/chat/completions`
 - `GET /health`
 
 ## Docs
@@ -16,6 +17,13 @@
 - [Provider reference](docs/providers.md)
 - [Deployment and env guide](docs/deployment.md)
 - [Repeat deploy notes](REDEPLOY.md)
+
+## Responses Route
+
+- `/v1/chat/completions` remains the regular one-shot chat path.
+- `/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+- On this proxy, generic function-tool loops are currently supported only by `Inflection / Pi API` and `UncloseAI`.
+- Chat-only providers fail fast on `responses+tools` instead of pretending to be agent-capable.
 
 ## Provider Overview
 
@@ -65,13 +73,19 @@ The full model list, required env vars, manual acquisition paths, and automatic 
 ## Local Run
 
 ```powershell
-F:\DevTools\Portable\NodeJS\node.exe F:\Projects\risu-zai-proxy\local-server.js
+F:\DevTools\Portable\NodeJS\node.exe F:\Projects\risu-zai-proxy-archive\local-server.js
 ```
 
 Python server path:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\py\server.py
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\py\server.py
+```
+
+Or from the repo root:
+
+```powershell
+npm run dev
 ```
 
 ## Vercel
@@ -159,5 +173,5 @@ This path is for `Inception` only. The rest of the providers still stay on Verce
 - LongCat exposes separate slugs for convenience: `LongCat-Flash-Chat` for regular answers and `LongCat-Flash-Thinking` / `LongCat-Flash-Thinking-2601` for reasoning.
 - `Pi Web Local` is intentionally local-only and does not need Vercel env vars.
 - `UncloseAI` does not require credentials.
-- For OpenAI Agents / long-running tool loops, prefer a model that already passes through `tools` and `tool_choice`, such as `pi-api`, `uncloseai-hermes`, `uncloseai-gpt-oss`, `uncloseai-r1-distill`, or `trinity-large-thinking`.
-- `Z.ai` remains the chat-only stable path; it is not the right backend for tool-heavy agent runs.
+- For OpenAI Agents / long-running tool loops, use `pi-api` or an `uncloseai-*` model.
+- `Z.ai` remains the stable chat path, but it is not the right backend for generic tool-heavy agent runs.

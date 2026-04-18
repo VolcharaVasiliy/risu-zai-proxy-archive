@@ -144,7 +144,7 @@ def _extract_cookies(profile_root: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy\auth\mistral-edge-profile")
+    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\mistral-edge-profile")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 

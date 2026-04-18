@@ -233,7 +233,7 @@ def _fetch_session_via_cdp(profile_root: Path, browser_path: Path, node_path: Pa
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy\auth\openai-web-edge-profile")
+    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\openai-web-edge-profile")
     parser.add_argument("--output", default="")
     parser.add_argument("--browser-path", default="")
     parser.add_argument("--node-path", default="")

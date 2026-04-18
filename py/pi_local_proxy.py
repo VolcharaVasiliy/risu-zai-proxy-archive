@@ -146,7 +146,7 @@ def complete_non_stream(_credentials: dict, payload: dict):
     if not prompt:
         raise RuntimeError("Pi local prompt is empty")
 
-    profile_root = Path(os.environ.get("PI_LOCAL_PROFILE_ROOT") or r"F:\Projects\risu-zai-proxy\auth\pi-edge-profile")
+    profile_root = Path(os.environ.get("PI_LOCAL_PROFILE_ROOT") or r"F:\Projects\risu-zai-proxy-archive\auth\pi-edge-profile")
     cdp_port = int(os.environ.get("PI_LOCAL_CDP_PORT") or "9232")
     timeout_ms = int(os.environ.get("PI_LOCAL_TIMEOUT_MS") or "90000")
     browser_path = _resolve_existing_path(BROWSER_CANDIDATES, os.environ.get("PI_LOCAL_BROWSER_PATH", ""))

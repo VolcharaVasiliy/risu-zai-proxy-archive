@@ -6,6 +6,20 @@
 
 Use this button to create a Vercel project from the repository.
 
+## API Surface
+
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/responses/chat/completions`
+- `GET /health`
+
+`/v1/chat/completions` is the regular one-shot chat path.
+`/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+
+In this repository, generic function-tool loops are currently supported only by `Inflection / Pi API` and `UncloseAI`.
+Other providers are chat-only on the responses route and now fail fast when `tools` are supplied.
+
 ## Environment Naming
 
 Use the exact env names expected by the adapters:
@@ -145,7 +159,7 @@ Provider-specific helpers:
 Deploy and sync env from local credentials:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy\scripts\redeploy-vercel.ps1 -SyncEnv
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
 ```
 
 The script:
@@ -158,9 +172,10 @@ The script:
 
 ## Repository Files Used By Deployment
 
-- `vercel.json` - route rewrites for `/health`, `/v1/models`, and `/v1/chat/completions`
+- `vercel.json` - route rewrites for `/health`, `/v1/models`, `/v1/chat/completions`, `/v1/responses`, and `/v1/responses/chat/completions`
 - `api/index.py` - Vercel function entrypoint
 - `py/credentials_bootstrap.py` - loads `credentials.json` into process env before provider imports
+- `py/responses_api.py` - responses-route translation, session state, and agent compatibility rules
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
 - `scripts/refresh-inception-creds.ps1` - refresh the local ignored Inception credentials file and optionally restart/redeploy the tunnel path
 - `scripts/setup-inception-named-tunnel.ps1` - prepare the named-tunnel path and fall back to quick tunnel when Cloudflare tunnel auth is still missing

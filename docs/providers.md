@@ -24,6 +24,19 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Pi Web Local | `pi-web-local` | none | `PI_LOCAL_*` | Local `pi.ai` browser profile | `scripts/launch-pi-auth.ps1`, `scripts/pi-browser-bridge.mjs` | Local-only browser automation path. |
 | UncloseAI | `uncloseai-hermes`, `uncloseai-qwen-vl`, `uncloseai-gpt-oss`, `uncloseai-r1-distill` | none | none | Public endpoint | none | Intentionally credential-free. |
 
+## Responses Route Support
+
+`/v1/chat/completions` is the regular chat path.
+`/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+
+Generic function-tool loops are currently supported only by:
+
+- `Inflection / Pi API`
+- `UncloseAI`
+
+All other providers in this repository are chat-only on the responses route.
+When `tools` are supplied to those adapters, the proxy now returns an explicit error instead of pretending the provider is agent-capable.
+
 ## Lightweight Picks
 
 Use these single-model picks for routine traffic when you want the lighter option for each provider:
@@ -144,3 +157,14 @@ Manual sources by provider:
 - `Inflection / Pi API` - developer key from Inflection
 - `Pi Web Local` - local browser profile only
 - `UncloseAI` - no credentials
+
+## Agent Picks
+
+For generic OpenAI-style tool loops in this repository, use:
+
+- `pi-api`
+- `uncloseai-hermes`
+- `uncloseai-gpt-oss`
+- `uncloseai-r1-distill`
+
+Do not use browser-session chat adapters like `Z.ai`, `Gemini Web`, `Qwen International`, `Mistral`, `Devstral`, or `Codestral` for generic function-tool loops through `/v1/responses*`.

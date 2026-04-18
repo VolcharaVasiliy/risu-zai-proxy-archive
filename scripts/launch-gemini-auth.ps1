@@ -1,5 +1,5 @@
 param(
-  [string]$ProfileRoot = 'F:\Projects\risu-zai-proxy\auth\gemini-web-edge-profile',
+[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\gemini-web-edge-profile',
   [string]$Url = 'https://gemini.google.com/app'
 )
 
@@ -36,4 +36,4 @@ Start-Process -FilePath $browserPath -ArgumentList @(
 Write-Output "Browser started: $browserPath"
 Write-Output "Profile root: $profileRootResolved"
 Write-Output 'After you finish logging in, extract Gemini Web credentials with:'
-Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-gemini-web-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy\auth\gemini-web-creds.json"
+Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-gemini-web-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy-archive\auth\gemini-web-creds.json"

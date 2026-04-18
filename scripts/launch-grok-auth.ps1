@@ -1,5 +1,5 @@
 param(
-  [string]$ProfileRoot = 'F:\Projects\risu-zai-proxy\auth\grok-edge-profile',
+[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\grok-edge-profile',
   [string]$Url = 'https://grok.com/'
 )
 
@@ -35,4 +35,4 @@ Start-Process -FilePath $browserPath -ArgumentList @(
 Write-Output "Browser started: $browserPath"
 Write-Output "Profile root: $profileRootResolved"
 Write-Output 'After you finish logging in, extract Grok cookies with:'
-Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-grok-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy\auth\grok-creds.json"
+Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-grok-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy-archive\auth\grok-creds.json"

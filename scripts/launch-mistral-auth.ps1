@@ -1,5 +1,5 @@
 param(
-  [string]$ProfileRoot = 'F:\Projects\risu-zai-proxy\auth\mistral-edge-profile',
+[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\mistral-edge-profile',
   [string]$Url = 'https://console.mistral.ai/build/playground'
 )
 
@@ -36,4 +36,4 @@ Start-Process -FilePath $browserPath -ArgumentList @(
 Write-Output "Browser started: $browserPath"
 Write-Output "Profile root: $profileRootResolved"
 Write-Output 'After you finish logging in, extract Mistral credentials with:'
-Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-mistral-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy\auth\mistral-creds.json"
+Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-mistral-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy-archive\auth\mistral-creds.json"

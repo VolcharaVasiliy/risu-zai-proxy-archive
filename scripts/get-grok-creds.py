@@ -142,7 +142,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--profile-root",
-        default=r"F:\Projects\risu-zai-proxy\auth\grok-edge-profile",
+        default=r"F:\Projects\risu-zai-proxy-archive\auth\grok-edge-profile",
         help="Chromium user-data-dir root used for the Grok login browser session.",
     )
     parser.add_argument(

@@ -1,5 +1,5 @@
 param(
-  [string]$ProfileRoot = 'F:\Projects\risu-zai-proxy\auth\inception-edge-profile',
+[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\inception-edge-profile',
   [string]$Url = 'https://chat.inceptionlabs.ai/'
 )
 
@@ -36,4 +36,4 @@ Start-Process -FilePath $browserPath -ArgumentList @(
 Write-Output "Browser started: $browserPath"
 Write-Output "Profile root: $profileRootResolved"
 Write-Output 'After you finish logging in, extract Inception credentials with:'
-Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-inception-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy\auth\inception-creds.json"
+Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-inception-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy-archive\auth\inception-creds.json"

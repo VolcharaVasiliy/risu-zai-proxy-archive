@@ -1,5 +1,5 @@
 param(
-  [string]$ProfileRoot = 'F:\Projects\risu-zai-proxy\auth\openai-web-edge-profile',
+[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\openai-web-edge-profile',
   [string]$Url = 'https://chatgpt.com/'
 )
 
@@ -35,4 +35,4 @@ Start-Process -FilePath $browserPath -ArgumentList @(
 Write-Output "Browser started: $browserPath"
 Write-Output "Profile root: $profileRootResolved"
 Write-Output 'After you finish logging in, extract OpenAI Web credentials with:'
-Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-openai-web-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy\auth\openai-web-creds.json"
+Write-Output "F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-openai-web-creds.py --profile-root $profileRootResolved --output F:\Projects\risu-zai-proxy-archive\auth\openai-web-creds.json"

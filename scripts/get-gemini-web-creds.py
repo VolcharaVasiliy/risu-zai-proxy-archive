@@ -194,7 +194,7 @@ def _discover_models(cookie_header: str, secure_1psid: str, secure_1psidts: str)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy\auth\gemini-web-edge-profile")
+    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\gemini-web-edge-profile")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 

@@ -11,26 +11,33 @@ For provider-by-provider details, read [docs/providers.md](docs/providers.md).
 Auto-extract credentials from local storage and Chat2API partitions:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-provider-creds.py
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-provider-creds.py
 ```
 
 Extract the Mistral browser session into `auth\mistral-creds.json`:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-mistral-creds.py --profile-root F:\Projects\risu-zai-proxy\auth\mistral-edge-profile --output F:\Projects\risu-zai-proxy\auth\mistral-creds.json
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-mistral-creds.py --profile-root F:\Projects\risu-zai-proxy-archive\auth\mistral-edge-profile --output F:\Projects\risu-zai-proxy-archive\auth\mistral-creds.json
 ```
 
 Extract the LongCat browser session into `auth\longcat-creds.json`:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy\scripts\get-longcat-creds.py --profile-root F:\Projects\risu-zai-proxy\auth\longcat-edge-profile --output F:\Projects\risu-zai-proxy\auth\longcat-creds.json
+F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-longcat-creds.py --profile-root F:\Projects\risu-zai-proxy-archive\auth\longcat-edge-profile --output F:\Projects\risu-zai-proxy-archive\auth\longcat-creds.json
 ```
 
 Deploy to Vercel with env sync:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy\scripts\redeploy-vercel.ps1 -SyncEnv
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
 ```
+
+## Agent Route Notes
+
+- `/v1/chat/completions` is the regular chat path.
+- `/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+- In this repository, generic function-tool loops are currently supported only by `pi-api` and `uncloseai-*`.
+- Other providers now fail fast on `responses+tools` instead of returning misleading ordinary chat output.
 
 ## Automatic Sources
 
