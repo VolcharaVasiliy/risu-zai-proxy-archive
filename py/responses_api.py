@@ -38,6 +38,7 @@ _STATEFUL_REQUEST_FIELDS = (
 )
 _AGENT_TOOL_UNSUPPORTED = {
     "gemini-web": "Gemini Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+    "mistral": "Mistral, Devstral, and Codestral in this proxy do not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
 }
 
 
