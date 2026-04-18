@@ -21,6 +21,24 @@ _TOOL_CALL_RE = re.compile(r"^\s*tool_call\s*:\s*(?P<name>[A-Za-z0-9_.:-]+)(?:\s
 _TOOL_WAIT_RE = re.compile(r"^\s*\(?\s*wait(?:ing)?\s+for\s+tool\s+output.*\)?\s*$", re.IGNORECASE)
 _SHELL_TOOL_NAMES = {"bash", "shell", "powershell", "pwsh", "cmd", "terminal"}
 _PATH_TOOL_NAMES = {"ls", "list", "read_file", "read", "cat", "open", "image"}
+_STATEFUL_REQUEST_FIELDS = (
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "response_format",
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "max_completion_tokens",
+    "reasoning_effort",
+    "seed",
+    "stop",
+    "metadata",
+    "user",
+)
+_AGENT_TOOL_UNSUPPORTED = {
+    "gemini-web": "Gemini Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
+}
 
 
 def _now() -> int:
@@ -45,6 +63,22 @@ def _content_text(content) -> str:
     if content is None:
         return ""
     return str(content)
+
+
+def _single_function_tool(request_config: dict):
+    tools = request_config.get("tools")
+    if not isinstance(tools, list) or len(tools) != 1:
+        return None
+    tool = tools[0] if isinstance(tools[0], dict) else None
+    if not tool:
+        return None
+    if str(tool.get("type") or "").strip() != "function":
+        return None
+    function = tool.get("function") if isinstance(tool.get("function"), dict) else None
+    name = str((function or {}).get("name") or "").strip()
+    if not name:
+        return None
+    return tool
 
 
 def _pseudo_tool_call_arguments(name: str, args_text: str) -> str:
@@ -103,6 +137,49 @@ def _extract_pseudo_tool_calls(content) -> tuple[str, list]:
         plain_lines.append(line)
 
     return "\n".join(plain_lines).strip(), calls
+
+
+def _normalize_result_tool_calls(result: dict, request_config: dict) -> dict:
+    choices = result.get("choices") or [{}]
+    message = ((choices[0] or {}).get("message") or {})
+    existing_calls = message.get("tool_calls")
+    if isinstance(existing_calls, list) and existing_calls:
+        return result
+
+    content = _content_text(message.get("content")).strip()
+    if not content or not (content.startswith("{") or content.startswith("[")):
+        return result
+
+    tool = _single_function_tool(request_config)
+    if not tool:
+        return result
+
+    try:
+        parsed = json.loads(content)
+    except Exception:
+        return result
+
+    function = tool.get("function") if isinstance(tool.get("function"), dict) else {}
+    normalized_message = dict(message)
+    normalized_message["content"] = ""
+    normalized_message["tool_calls"] = [
+        {
+            "id": f"call_{uuid.uuid4().hex}",
+            "type": "function",
+            "function": {
+                "name": str(function.get("name") or ""),
+                "arguments": json.dumps(parsed, ensure_ascii=False),
+            },
+        }
+    ]
+
+    normalized_choice = dict(choices[0] or {})
+    normalized_choice["message"] = normalized_message
+    normalized_choice["finish_reason"] = "tool_calls"
+
+    normalized_result = dict(result)
+    normalized_result["choices"] = [normalized_choice] + list(choices[1:])
+    return normalized_result
 
 
 def _content_to_chat_content(content):
@@ -326,11 +403,29 @@ def _save_state(response_id: str, state: dict):
         _RESPONSE_STATE[response_id] = state
 
 
+def _request_config_from_payload(payload: dict, state: dict | None = None) -> dict:
+    state = state if isinstance(state, dict) else {}
+    config = {}
+    for field in _STATEFUL_REQUEST_FIELDS:
+        if field in payload and payload[field] is not None:
+            config[field] = payload[field]
+            continue
+        if field in state and state[field] is not None:
+            config[field] = state[field]
+    return config
+
+
+def _validate_provider_request(provider_id: str, request_config: dict):
+    if request_config.get("tools") and provider_id in _AGENT_TOOL_UNSUPPORTED:
+        raise RuntimeError(_AGENT_TOOL_UNSUPPORTED[provider_id])
+
+
 def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, dict]:
     state_key, state = _load_state(payload)
     stored_messages = list(state.get("messages") or [])
     incoming_messages = _input_to_messages(payload)
     messages = _merge_messages(stored_messages, incoming_messages)
+    request_config = _request_config_from_payload(payload, state)
 
     if provider_id == "zai":
         # Z.ai drops system/tool messages in its own adapter, so keep the request shape
@@ -342,25 +437,10 @@ def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, d
     chat_payload["messages"] = messages
     chat_payload["stream"] = False
 
-    for field in (
-        "tools",
-        "tool_choice",
-        "parallel_tool_calls",
-        "response_format",
-        "temperature",
-        "top_p",
-        "max_tokens",
-        "max_completion_tokens",
-        "reasoning_effort",
-        "seed",
-        "stop",
-        "metadata",
-        "user",
-    ):
-        if field in payload:
-            chat_payload[field] = payload[field]
+    for field, value in request_config.items():
+        chat_payload[field] = value
 
-    return messages, {"state_key": state_key, "stored_state": state, "chat_payload": chat_payload}
+    return messages, {"state_key": state_key, "stored_state": state, "chat_payload": chat_payload, "request_config": request_config}
 
 
 def _assistant_message_from_result(result: dict) -> dict:
@@ -560,8 +640,10 @@ def _stream_chunks_from_result(result: dict):
 def complete_response(provider_id: str, credentials: dict, payload: dict):
     previous_response_id = _session_key(payload)
     messages, context = _chat_payload_from_request(payload, provider_id)
+    _validate_provider_request(provider_id, context.get("request_config") or {})
     chat_payload = context["chat_payload"]
     result, meta = complete_non_stream(provider_id, credentials, chat_payload)
+    result = _normalize_result_tool_calls(result, context.get("request_config") or {})
 
     response_id = f"resp_{uuid.uuid4().hex}"
     response = _chat_completion_from_result(result, response_id, previous_response_id, payload)
@@ -571,6 +653,7 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
         next_messages = list(messages)
         if assistant_message:
             next_messages.append(assistant_message)
+        request_config = dict(context.get("request_config") or {})
         _save_state(
             response_id,
             {
@@ -578,6 +661,7 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
                 "provider": provider_id,
                 "model": response.get("model") or payload.get("model") or "",
                 "previous_response_id": previous_response_id,
+                **request_config,
             },
         )
 
