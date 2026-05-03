@@ -13,6 +13,9 @@ param(
   [string]$OpenAIWebCredsFile = '',
   [string]$PhindCredsFile = '',
   [string]$InceptionEdgeUrl = '',
+  [string]$ProxyApiKey = '',
+  [string]$AgentToolMode = '',
+  [string]$AgentToolSchemaMaxChars = '',
   [switch]$SyncEnv
 )
 
@@ -109,6 +112,18 @@ function Set-VercelEnvFromJson {
 if ($InceptionEdgeUrl) {
   Set-VercelEnv -Name 'INCEPTION_EDGE_URL' -Value $InceptionEdgeUrl
   Set-VercelEnv -Name 'INCEPTION_FORCE_EDGE' -Value 'true'
+}
+
+if ($ProxyApiKey) {
+  Set-VercelEnv -Name 'PROXY_API_KEY' -Value $ProxyApiKey
+}
+
+if ($AgentToolMode) {
+  Set-VercelEnv -Name 'AGENT_TOOL_MODE' -Value $AgentToolMode
+}
+
+if ($AgentToolSchemaMaxChars) {
+  Set-VercelEnv -Name 'AGENT_TOOL_SCHEMA_MAX_CHARS' -Value $AgentToolSchemaMaxChars
 }
 
 if ($SyncEnv) {

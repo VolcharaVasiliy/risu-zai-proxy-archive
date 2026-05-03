@@ -5,9 +5,9 @@ import hmac
 import json
 import os
 import sys
+import threading
 import time
 import uuid
-import threading
 from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
@@ -20,7 +20,11 @@ SECRET = b"key-@@@@)))()((9))-xxxx&&&%%%%%"
 OWNED_BY = "z.ai"
 
 SUPPORTED_MODELS = [
+    "glm-5-agent",
+    "glm-5-search",
     "glm-5",
+    "glm-5.1-agent",
+    "glm-5.1-search",
     "glm-5.1",
     "glm-4.7",
     "glm-4.6v",
@@ -32,7 +36,11 @@ SUPPORTED_MODELS = [
 
 MODEL_MAPPING = {
     "glm-5": "glm-5",
+    "glm-5-agent": "glm-5",
+    "glm-5-search": "glm-5",
     "glm-5.1": "GLM-5.1",
+    "glm-5.1-agent": "GLM-5.1",
+    "glm-5.1-search": "GLM-5.1",
     "glm-5-turbo": "GLM-5-Turbo",
     "glm-4.7": "glm-4.7",
     "glm-4.6v": "glm-4.6v",
@@ -40,7 +48,11 @@ MODEL_MAPPING = {
     "glm-4.5v": "glm-4.5v",
     "glm-4.5-air": "glm-4.5-air",
     "GLM-5": "glm-5",
+    "GLM-5-Agent": "glm-5",
+    "GLM-5-Search": "glm-5",
     "GLM-5.1": "GLM-5.1",
+    "GLM-5.1-Agent": "GLM-5.1",
+    "GLM-5.1-Search": "GLM-5.1",
     "GLM-5-Turbo": "GLM-5-Turbo",
     "GLM-4.7": "glm-4.7",
     "GLM-4.6V": "glm-4.6v",
@@ -54,11 +66,18 @@ SESSION_LOCK = threading.RLock()
 
 
 def supports_model(model: str) -> bool:
-    return str(model or "") in MODEL_MAPPING or str(model or "").lower() in MODEL_MAPPING
+    return (
+        str(model or "") in MODEL_MAPPING or str(model or "").lower() in MODEL_MAPPING
+    )
 
 
 def debug_enabled() -> bool:
-    return os.environ.get("DEBUG_LOGGING", "").strip().lower() in {"1", "true", "yes", "on"}
+    return os.environ.get("DEBUG_LOGGING", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def debug_log(message: str, **fields):
@@ -66,7 +85,10 @@ def debug_log(message: str, **fields):
         return
 
     payload = {"message": message, **fields}
-    print(f"[zai-proxy] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}", flush=True)
+    print(
+        f"[zai-proxy] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}",
+        flush=True,
+    )
 
 
 def env_int(name: str, default: int, minimum: int = 0, maximum: int = 10) -> int:
@@ -85,7 +107,10 @@ def empty_retry_count() -> int:
 
 
 def empty_retry_delay_seconds() -> float:
-    return env_int("ZAI_EMPTY_RETRY_DELAY_MS", default=250, minimum=0, maximum=5000) / 1000.0
+    return (
+        env_int("ZAI_EMPTY_RETRY_DELAY_MS", default=250, minimum=0, maximum=5000)
+        / 1000.0
+    )
 
 
 def decode_payload(token: str) -> dict:
@@ -97,7 +122,13 @@ def decode_payload(token: str) -> dict:
 def extract_user_id(token: str) -> str:
     try:
         payload = decode_payload(token)
-        return str(payload.get("id") or payload.get("user_id") or payload.get("uid") or payload.get("sub") or "guest")
+        return str(
+            payload.get("id")
+            or payload.get("user_id")
+            or payload.get("uid")
+            or payload.get("sub")
+            or "guest"
+        )
     except Exception:
         return "guest"
 
@@ -121,21 +152,36 @@ def latest_user_text(messages) -> str:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            return "\n".join(part.get("text", "") for part in content if isinstance(part, dict) and part.get("type") == "text")
+            return "\n".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
         return ""
     return ""
 
 
-def signature_for(message: str, request_id: str, timestamp_ms: int, user_id: str) -> str:
+def signature_for(
+    message: str, request_id: str, timestamp_ms: int, user_id: str
+) -> str:
     window_index = timestamp_ms // (5 * 60 * 1000)
-    derived_key_hex = hmac.new(SECRET, str(window_index).encode(), hashlib.sha256).hexdigest().encode()
+    derived_key_hex = (
+        hmac.new(SECRET, str(window_index).encode(), hashlib.sha256)
+        .hexdigest()
+        .encode()
+    )
     message_b64 = base64.b64encode(message.encode()).decode()
     canonical = f"requestId,{request_id},timestamp,{timestamp_ms},user_id,{user_id}|{message_b64}|{timestamp_ms}"
     return hmac.new(derived_key_hex, canonical.encode(), hashlib.sha256).hexdigest()
 
 
 def map_model(name: str) -> str:
-    return MODEL_MAPPING.get(name) or MODEL_MAPPING.get(str(name).lower()) or name or "glm-5"
+    return (
+        MODEL_MAPPING.get(name)
+        or MODEL_MAPPING.get(str(name).lower())
+        or name
+        or "glm-5"
+    )
 
 
 def build_common_headers(token: str):
@@ -199,7 +245,13 @@ def create_chat(token: str, model: str, messages: list, chat_id: str = None):
             },
             "tags": [],
             "flags": [],
-            "features": [{"type": "tool_selector", "server": "tool_selector_h", "status": "hidden"}],
+            "features": [
+                {
+                    "type": "tool_selector",
+                    "server": "tool_selector_h",
+                    "status": "hidden",
+                }
+            ],
             "mcp_servers": [],
             "enable_thinking": False,
             "auto_web_search": False,
@@ -209,10 +261,17 @@ def create_chat(token: str, model: str, messages: list, chat_id: str = None):
         }
     }
 
-    response = requests.post(f"{BASE}/api/v1/chats/new", headers=build_common_headers(token), json=body, timeout=30)
+    response = requests.post(
+        f"{BASE}/api/v1/chats/new",
+        headers=build_common_headers(token),
+        json=body,
+        timeout=30,
+    )
     response.raise_for_status()
     actual_chat_id = response.json()["id"]
-    debug_log("create_chat", model=model, message_count=len(messages), chat_id=actual_chat_id)
+    debug_log(
+        "create_chat", model=model, message_count=len(messages), chat_id=actual_chat_id
+    )
     return actual_chat_id, current_id
 
 
@@ -250,7 +309,9 @@ def _touch_session_messages(key: str, messages: list):
         return state
 
 
-def _append_session_assistant_message(key: str, content: str, reasoning_content: str = ""):
+def _append_session_assistant_message(
+    key: str, content: str, reasoning_content: str = ""
+):
     if not key:
         return
 
@@ -264,8 +325,15 @@ def _append_session_assistant_message(key: str, content: str, reasoning_content:
             return
 
         messages = list(state.get("messages") or [])
-        if messages and messages[-1].get("role") == "assistant" and messages[-1].get("content", "") == assistant_message["content"]:
-            if reasoning_content and messages[-1].get("reasoning_content", "") != reasoning_content:
+        if (
+            messages
+            and messages[-1].get("role") == "assistant"
+            and messages[-1].get("content", "") == assistant_message["content"]
+        ):
+            if (
+                reasoning_content
+                and messages[-1].get("reasoning_content", "") != reasoning_content
+            ):
                 messages[-1]["reasoning_content"] = reasoning_content
         else:
             messages.append(assistant_message)
@@ -274,7 +342,9 @@ def _append_session_assistant_message(key: str, content: str, reasoning_content:
         state["updated_at"] = time.time()
 
 
-def build_query(token: str, chat_id: str, request_id: str, timestamp_ms: int, user_id: str):
+def build_query(
+    token: str, chat_id: str, request_id: str, timestamp_ms: int, user_id: str
+):
     now = dt.datetime.utcnow()
     query = {
         "timestamp": str(timestamp_ms),
@@ -320,13 +390,17 @@ def build_query(token: str, chat_id: str, request_id: str, timestamp_ms: int, us
 
 def build_features(request_model: str, web_search=False, reasoning_effort=None):
     lowered = str(request_model or "").lower()
+    agent_mode = "agent" in lowered or "browse" in lowered
     return {
         "image_generation": False,
         "web_search": False,
-        "auto_web_search": bool(web_search) or "search" in lowered,
+        "auto_web_search": bool(web_search) or "search" in lowered or agent_mode,
         "preview_mode": True,
         "flags": [],
-        "enable_thinking": bool(reasoning_effort) or "think" in lowered or "r1" in lowered,
+        "enable_thinking": bool(reasoning_effort)
+        or "think" in lowered
+        or "r1" in lowered
+        or agent_mode,
     }
 
 
@@ -357,27 +431,106 @@ def openai_stream_chunks(response, model: str, chat_id: str, session_key: str = 
             thinking_chunks += 1
             reasoning_parts.append(item["delta_content"])
             if not sent_role:
-                yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": ""}, "finish_reason": None}]}
+                yield {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "reasoning_content": ""},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
                 sent_role = True
-            yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"reasoning_content": item["delta_content"]}, "finish_reason": None}]}
+            yield {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"reasoning_content": item["delta_content"]},
+                        "finish_reason": None,
+                    }
+                ],
+            }
         elif item.get("phase") == "answer" and item.get("delta_content"):
             answer_chunks += 1
             total_answer_chars += len(item["delta_content"])
             content_parts.append(item["delta_content"])
             if not sent_role:
-                yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]}
+                yield {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": ""},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
                 sent_role = True
-            yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": item["delta_content"]}, "finish_reason": None}]}
+            yield {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": item["delta_content"]},
+                        "finish_reason": None,
+                    }
+                ],
+            }
         elif item.get("phase") == "done" and item.get("done"):
             saw_done = True
-            debug_log("stream_done", chat_id=chat_id, model=model, answer_chunks=answer_chunks, thinking_chunks=thinking_chunks, total_answer_chars=total_answer_chars)
-            yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
-            _append_session_assistant_message(session_key, "".join(content_parts), "".join(reasoning_parts))
+            debug_log(
+                "stream_done",
+                chat_id=chat_id,
+                model=model,
+                answer_chunks=answer_chunks,
+                thinking_chunks=thinking_chunks,
+                total_answer_chars=total_answer_chars,
+            )
+            yield {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            }
+            _append_session_assistant_message(
+                session_key, "".join(content_parts), "".join(reasoning_parts)
+            )
             return
 
-    debug_log("stream_ended_without_done", chat_id=chat_id, model=model, answer_chunks=answer_chunks, thinking_chunks=thinking_chunks, total_answer_chars=total_answer_chars, saw_done=saw_done)
-    _append_session_assistant_message(session_key, "".join(content_parts), "".join(reasoning_parts))
-    yield {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+    debug_log(
+        "stream_ended_without_done",
+        chat_id=chat_id,
+        model=model,
+        answer_chunks=answer_chunks,
+        thinking_chunks=thinking_chunks,
+        total_answer_chars=total_answer_chars,
+        saw_done=saw_done,
+    )
+    _append_session_assistant_message(
+        session_key, "".join(content_parts), "".join(reasoning_parts)
+    )
+    yield {
+        "id": chat_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
 
 
 def chat_completion(token: str, payload: dict):
@@ -392,7 +545,9 @@ def chat_completion(token: str, payload: dict):
     token_session_state = payload.get("_zai_session_state") or {}
     session_key = _session_key(payload)
     current_user_message_parent_id = None
-    current_user_message_id = payload.get("current_user_message_id") or str(uuid.uuid4())
+    current_user_message_id = payload.get("current_user_message_id") or str(
+        uuid.uuid4()
+    )
 
     if token_session_state.get("upstream_chat_id"):
         chat_id = token_session_state["upstream_chat_id"]
@@ -421,11 +576,24 @@ def chat_completion(token: str, payload: dict):
                 "last_user_message_id": current_user_message_id,
             },
         )
-        debug_log("chat_completion_incoming", user_id=user_id, model=model, message_count=len(body_messages), chat_id=chat_id, session_key=session_key)
+        debug_log(
+            "chat_completion_incoming",
+            user_id=user_id,
+            model=model,
+            message_count=len(body_messages),
+            chat_id=chat_id,
+            session_key=session_key,
+        )
     else:
         chat_id, current_user_message_id = create_chat(token, model, messages)
         body_messages = list(messages)
-        debug_log("chat_completion_incoming", user_id=user_id, model=model, message_count=len(messages), chat_id=chat_id)
+        debug_log(
+            "chat_completion_incoming",
+            user_id=user_id,
+            model=model,
+            message_count=len(messages),
+            chat_id=chat_id,
+        )
 
     request_id = str(uuid.uuid4())
     timestamp_ms = int(time.time() * 1000)
@@ -442,7 +610,9 @@ def chat_completion(token: str, payload: dict):
         "tools": payload.get("tools") or [],
         "tool_choice": payload.get("tool_choice"),
         "parallel_tool_calls": payload.get("parallel_tool_calls"),
-        "features": build_features(request_model, payload.get("web_search"), payload.get("reasoning_effort")),
+        "features": build_features(
+            request_model, payload.get("web_search"), payload.get("reasoning_effort")
+        ),
         "variables": {
             "{{USER_NAME}}": "User",
             "{{USER_LOCATION}}": "Unknown",
@@ -491,7 +661,14 @@ def chat_completion(token: str, payload: dict):
     }
     if session_key:
         _touch_session_messages(session_key, body_messages)
-    debug_log("chat_completion_started", chat_id=chat_id, request_id=request_id, model=model, prompt_length=len(prompt), stream_requested=bool(payload.get("stream", True)))
+    debug_log(
+        "chat_completion_started",
+        chat_id=chat_id,
+        request_id=request_id,
+        model=model,
+        prompt_length=len(prompt),
+        stream_requested=bool(payload.get("stream", True)),
+    )
     return response, chat_id, model
 
 
@@ -587,14 +764,25 @@ def complete_non_stream(token: str, payload: dict):
             if continuation_state:
                 meta["continuation_state"] = continuation_state
             if session_key:
-                message = ((result.get("choices") or [{}])[0].get("message") or {})
-                _append_session_assistant_message(session_key, message.get("content", ""), message.get("reasoning_content", ""))
+                message = (result.get("choices") or [{}])[0].get("message") or {}
+                _append_session_assistant_message(
+                    session_key,
+                    message.get("content", ""),
+                    message.get("reasoning_content", ""),
+                )
             if attempt > 1:
-                debug_log("non_stream_retry_recovered", attempt=attempt, attempts=attempts, **meta)
+                debug_log(
+                    "non_stream_retry_recovered",
+                    attempt=attempt,
+                    attempts=attempts,
+                    **meta,
+                )
             return result, meta
 
         if attempt < attempts:
-            debug_log("non_stream_empty_retry", attempt=attempt, attempts=attempts, **meta)
+            debug_log(
+                "non_stream_empty_retry", attempt=attempt, attempts=attempts, **meta
+            )
             delay = empty_retry_delay_seconds()
             if delay > 0:
                 time.sleep(delay)

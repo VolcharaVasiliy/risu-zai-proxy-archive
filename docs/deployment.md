@@ -11,21 +11,27 @@ Use this button to create a Vercel project from the repository.
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
+- `GET /v1/responses/{response_id}`
+- `DELETE /v1/responses/{response_id}`
 - `POST /v1/responses/chat/completions`
 - `GET /health`
 
-`/v1/chat/completions` is the regular one-shot chat path.
-`/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+`/v1/chat/completions` is the regular OpenAI-compatible chat path.
+`/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
+`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses still present in the proxy's in-memory short-lived response state.
+`/v1/responses/chat/completions` is a compatibility route for clients that want response/session state but still expect a chat-completion-shaped response.
 
-In this repository, generic function-tool loops are currently supported only by `Inflection / Pi API` and `UncloseAI`.
-Other providers are chat-only on the responses route and now fail fast when `tools` are supplied.
+Native function-tool passthrough is used for `Inflection / Pi API` and `UncloseAI`.
+For the chat-only providers, `AGENT_TOOL_MODE=auto` enables the prompt tool shim: the proxy prompts the model to request client-side tools as strict JSON, removes unsupported upstream `tools` fields, and converts successful JSON tool requests back into OpenAI `tool_calls`.
 
 ## Environment Naming
 
 Use the exact env names expected by the adapters:
 
-| Provider | Vercel env names |
+| Provider / feature | Vercel env names |
 | --- | --- |
+| Client proxy auth | optional `PROXY_API_KEY` or `RISU_PROXY_API_KEY` |
+| Agent prompt tool shim | optional `AGENT_TOOL_MODE`, `AGENT_TOOL_SCHEMA_MAX_CHARS` |
 | Z.ai | `ZAI_TOKEN` |
 | DeepSeek | `DEEPSEEK_TOKEN` |
 | Arcee | `ARCEE_ACCESS_TOKEN` |
@@ -42,6 +48,14 @@ Use the exact env names expected by the adapters:
 | Kimi | `KIMI_TOKEN` |
 | Inflection / Pi API | `INFLECTION_API_KEY`, `PI_INFLECTION_API_KEY`, optional `INFLECTION_API_BASE` |
 | Inception Cloudflare edge | `INCEPTION_EDGE_URL` |
+
+Agent/tool compatibility variables:
+
+- `AGENT_TOOL_MODE=auto` is the default. Native-tool providers receive tool schemas directly; chat-only providers use the prompt shim.
+- `AGENT_TOOL_MODE=off` disables the prompt shim and makes chat-only providers fail fast when `tools` are supplied.
+- `AGENT_TOOL_MODE=force` uses the prompt shim for every provider, including native-tool providers.
+- `AGENT_TOOL_SCHEMA_MAX_CHARS` caps the injected tool-schema prompt, defaulting to a safe large value.
+- `PROXY_API_KEY` / `RISU_PROXY_API_KEY` is optional client authentication for apps like Zed. When it is set, send it as the normal OpenAI-compatible bearer API key; provider credentials should still live in the proxy env or provider-specific headers.
 
 Local-only variables that should stay off Vercel:
 
@@ -154,12 +168,28 @@ Provider-specific helpers:
 
 `scripts/get-provider-creds.py` is the main aggregation point. The repo is already connected to the Chat2API storage layout, so the script can pull data automatically without manual copying when those sessions are present.
 
+## Local Python Dependencies
+
+For local Python runs, install the pinned dependencies into the ignored `pydeps` directory:
+
+```powershell
+npm run deps:py
+```
+
+Vercel installs from `requirements.txt`; `pydeps` is only for local portable runs.
+
 ## Vercel Sync
 
 Deploy and sync env from local credentials:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\downloads\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
+```
+
+Optional agent/client-auth envs can be pushed during deploy:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\downloads\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv -ProxyApiKey "your-client-key" -AgentToolMode auto
 ```
 
 The script:
@@ -168,14 +198,16 @@ The script:
 - imports optional JSON files from `auth/`
 - loads `credentials.json` when present so the exact file can seed Vercel auth
 - writes Vercel env vars with the exact provider names above
+- optionally writes `PROXY_API_KEY`, `AGENT_TOOL_MODE`, and `AGENT_TOOL_SCHEMA_MAX_CHARS` when those parameters are supplied
 - performs the production deploy
 
 ## Repository Files Used By Deployment
 
-- `vercel.json` - route rewrites for `/health`, `/v1/models`, `/v1/chat/completions`, `/v1/responses`, and `/v1/responses/chat/completions`
+- `vercel.json` - route rewrites for `/health`, `/v1/models`, `/v1/chat/completions`, `/v1/responses`, `/v1/responses/{response_id}`, and `/v1/responses/chat/completions`
 - `api/index.py` - Vercel function entrypoint
 - `py/credentials_bootstrap.py` - loads `credentials.json` into process env before provider imports
-- `py/responses_api.py` - responses-route translation, session state, and agent compatibility rules
+- `py/agent_tools.py` - OpenAI-compatible prompt tool shim, tool-call extraction, and tool-call normalization
+- `py/responses_api.py` - responses-route translation, session state, Responses-format objects, and agent compatibility rules
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
 - `scripts/refresh-inception-creds.ps1` - refresh the local ignored Inception credentials file and optionally restart/redeploy the tunnel path
 - `scripts/setup-inception-named-tunnel.ps1` - prepare the named-tunnel path and fall back to quick tunnel when Cloudflare tunnel auth is still missing

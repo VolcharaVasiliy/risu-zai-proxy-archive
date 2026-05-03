@@ -6,7 +6,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 
 | Provider | Model ids | Required env | Optional env | Manual source | Automatic source | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Z.ai | `GLM-5-Turbo`, `glm-5`, `glm-5.1`, `glm-4.7`, `glm-4.6v`, `glm-4.6`, `glm-4.5v`, `glm-4.5-air` | `ZAI_TOKEN` | `x-zai-token` header | Logged-in `chat.z.ai` session | `scripts/get-zai-token.ps1`, `scripts/get-provider-creds.py` | Stable production provider. |
+| Z.ai | `glm-5-agent`, `glm-5-search`, `glm-5`, `glm-5.1-agent`, `glm-5.1-search`, `glm-5.1`, `GLM-5-Turbo`, `glm-4.7`, `glm-4.6v`, `glm-4.6`, `glm-4.5v`, `glm-4.5-air` | `ZAI_TOKEN` | `x-zai-token` header | Logged-in `chat.z.ai` session | `scripts/get-zai-token.ps1`, `scripts/get-provider-creds.py` | Stable production provider. The `*-agent` aliases enable Z.ai thinking/search flags and are the recommended Z.ai picks for agent clients using the prompt shim. |
 | DeepSeek | `deepseek-chat`, `deepseek-reasoner`, `deepseek-search` | `DEEPSEEK_TOKEN` | `x-deepseek-token` header | Logged-in `chat.deepseek.com` session | `scripts/get-provider-creds.py` | Browser-session style token provider. |
 | Arcee | `trinity-mini`, `trinity-large-preview`, `trinity-large-thinking` | `ARCEE_ACCESS_TOKEN` | `ARCEE_SESSION_ID`, `x-arcee-access-token`, `x-arcee-session-id` | Logged-in `chat.arcee.ai` / `api.arcee.ai` bearer cookie | `scripts/get-arcee-creds.py` | Uses the `api.arcee.ai` `access_token` bearer token; request session id can be any UUID. |
 | Gemini Web | `gemini-3-flash`, `gemini-3-pro`, `gemini-3-flash-thinking`, plus `gemini-web*` aliases | `GEMINI_WEB_SECURE_1PSID` | `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE` | Logged-in `gemini.google.com` / Google cookie session | `scripts/launch-gemini-auth.ps1`, `scripts/get-gemini-web-creds.py`, `scripts/get-provider-creds.py` | Account/region gated. Can auto-use WinINET proxy locally. |
@@ -26,16 +26,17 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 
 ## Responses Route Support
 
-`/v1/chat/completions` is the regular chat path.
-`/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+`/v1/chat/completions` is the regular OpenAI-compatible chat path.
+`/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
+`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses still present in the proxy's in-memory short-lived response state.
+`/v1/responses/chat/completions` is a compatibility route for clients that want response/session state but still expect a chat-completion-shaped response.
 
-Generic function-tool loops are currently supported only by:
+Native OpenAI-style tool passthrough is available for:
 
 - `Inflection / Pi API`
 - `UncloseAI`
 
-All other providers in this repository are chat-only on the responses route.
-When `tools` are supplied to those adapters, the proxy now returns an explicit error instead of pretending the provider is agent-capable.
+All other providers in this repository are chat-only upstreams, but `AGENT_TOOL_MODE=auto` enables the prompt tool shim for them. The shim asks the model to emit strict JSON tool requests, removes unsupported upstream `tools` fields, and converts successful JSON back into OpenAI-compatible `tool_calls` for clients such as Zed. Set `AGENT_TOOL_MODE=off` if you prefer explicit errors for non-native tool providers.
 
 ## Lightweight Picks
 
@@ -160,11 +161,18 @@ Manual sources by provider:
 
 ## Agent Picks
 
-For generic OpenAI-style tool loops in this repository, use:
+Best native-tool picks:
 
 - `pi-api`
 - `uncloseai-hermes`
 - `uncloseai-gpt-oss`
 - `uncloseai-r1-distill`
 
-Do not use browser-session chat adapters like `Z.ai`, `Gemini Web`, `Qwen International`, `Mistral`, `Devstral`, or `Codestral` for generic function-tool loops through `/v1/responses*`.
+Best prompt-shim picks when you want to reuse existing browser/session providers:
+
+- `glm-5-agent` or `glm-5.1-agent` for Z.ai
+- `Qwen3-Coder` for coding-oriented Qwen sessions
+- `devstral-2512` or `codestral-2508` for Mistral sessions
+- `gemini-3-flash-thinking` for Gemini Web sessions
+
+The prompt shim makes these providers usable in OpenAI-compatible agent clients, but it is still prompt-based. Native-tool providers remain more reliable for long tool-heavy loops.

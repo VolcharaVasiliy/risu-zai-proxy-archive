@@ -23,7 +23,7 @@
     },
     {
       "source": "/v1/responses/:path*",
-      "destination": "/api?route=responses"
+      "destination": "/api?route=responses&path=:path*"
     }
   ]
 }

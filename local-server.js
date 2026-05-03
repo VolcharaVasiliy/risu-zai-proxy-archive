@@ -1,38 +1,61 @@
-import http from 'node:http'
-import chatCompletionsHandler from './api/v1/chat/completions.js'
-import modelsHandler from './api/v1/models.js'
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-const port = Number(process.env.PORT || '3000')
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const host = process.env.HOST || "127.0.0.1";
+const port = process.env.PORT || "3001";
 
-const server = http.createServer(async (req, res) => {
-  try {
-    if (req.url === '/health') {
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.end(JSON.stringify({ ok: true }))
-      return
+const pythonCandidates = [
+  process.env.PYTHON,
+  "F:\\DevTools\\Python311\\python.exe",
+  process.platform === "win32" ? "python.exe" : "python3",
+  "python",
+].filter(Boolean);
+
+function pickPython() {
+  for (const candidate of pythonCandidates) {
+    if (path.isAbsolute(candidate) && !existsSync(candidate)) {
+      continue;
     }
-
-    if (req.url === '/v1/models' && req.method === 'GET') {
-      await modelsHandler(req, res)
-      return
-    }
-
-    if (req.url === '/v1/chat/completions') {
-      await chatCompletionsHandler(req, res)
-      return
-    }
-
-    res.statusCode = 404
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ error: { message: 'Not found' } }))
-  } catch (error) {
-    res.statusCode = 500
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.end(JSON.stringify({ error: { message: error instanceof Error ? error.message : String(error) } }))
+    return candidate;
   }
-})
+  return "python";
+}
 
-server.listen(port, () => {
-  console.log(`Risu Z.ai proxy listening on http://127.0.0.1:${port}`)
-})
+const python = pickPython();
+const child = spawn(python, ["py/server.py"], {
+  cwd: rootDir,
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    HOST: host,
+    PORT: port,
+    PYTHONUNBUFFERED: "1",
+  },
+});
+
+child.on("error", (error) => {
+  console.error(
+    `Failed to start Python API server with ${python}: ${error.message}`,
+  );
+  process.exit(1);
+});
+
+child.on("exit", (code, signal) => {
+  if (signal) {
+    console.error(`Python API server stopped after signal ${signal}`);
+    process.exit(1);
+  }
+  process.exit(code ?? 0);
+});
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    if (!child.killed) {
+      child.kill(signal);
+    }
+  });
+}

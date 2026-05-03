@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "deps:py": "F:\\DevTools\\Python311\\python.exe -m pip install --target pydeps -r requirements.txt",
     "dev": "F:\\DevTools\\Python311\\python.exe ./py/server.py",
     "dev:node": "node ./local-server.js",
     "check": "node ./scripts/check.js",

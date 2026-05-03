@@ -5,10 +5,12 @@ import time
 import uuid
 
 try:
+    from py.agent_tools import tool_request_supported, unsupported_tool_message
     from py.openai_stream import OpenAIStreamBuilder, openai_chunk
     from py.provider_registry import complete_non_stream
     from py.zai_proxy import debug_log
 except ImportError:
+    from agent_tools import tool_request_supported, unsupported_tool_message
     from openai_stream import OpenAIStreamBuilder, openai_chunk
     from provider_registry import complete_non_stream
     from zai_proxy import debug_log
@@ -17,8 +19,13 @@ except ImportError:
 _STATE_LOCK = threading.RLock()
 _STATE_TTL_SECONDS = 6 * 60 * 60
 _RESPONSE_STATE = {}
-_TOOL_CALL_RE = re.compile(r"^\s*tool_call\s*:\s*(?P<name>[A-Za-z0-9_.:-]+)(?:\s+for\s+(?P<args>.*))?\s*$", re.IGNORECASE)
-_TOOL_WAIT_RE = re.compile(r"^\s*\(?\s*wait(?:ing)?\s+for\s+tool\s+output.*\)?\s*$", re.IGNORECASE)
+_TOOL_CALL_RE = re.compile(
+    r"^\s*tool_call\s*:\s*(?P<name>[A-Za-z0-9_.:-]+)(?:\s+for\s+(?P<args>.*))?\s*$",
+    re.IGNORECASE,
+)
+_TOOL_WAIT_RE = re.compile(
+    r"^\s*\(?\s*wait(?:ing)?\s+for\s+tool\s+output.*\)?\s*$", re.IGNORECASE
+)
 _SHELL_TOOL_NAMES = {"bash", "shell", "powershell", "pwsh", "cmd", "terminal"}
 _PATH_TOOL_NAMES = {"ls", "list", "read_file", "read", "cat", "open", "image"}
 _STATEFUL_REQUEST_FIELDS = (
@@ -36,24 +43,6 @@ _STATEFUL_REQUEST_FIELDS = (
     "metadata",
     "user",
 )
-_AGENT_TOOL_SUPPORTED = {"inflection", "uncloseai"}
-_AGENT_TOOL_UNSUPPORTED = {
-    "arcee": "Arcee in this proxy does not support generic function tools on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "deepseek": "DeepSeek in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "gemini-web": "Gemini Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "grok": "Grok in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "inception": "Inception in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "kimi": "Kimi in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "longcat": "LongCat in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "mimo": "Mimo in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "mistral": "Mistral, Devstral, and Codestral in this proxy do not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "openai-web": "OpenAI Web in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "perplexity": "Perplexity in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "phind": "Phind in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "pi-local": "Pi Web Local in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "qwen-ai": "Qwen AI in this proxy does not support tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-    "zai": "Z.ai in this proxy does not support reliable tools/tool_choice on the responses route. Use pi-api or uncloseai-* for agent loops.",
-}
 
 
 def _now() -> int:
@@ -70,7 +59,11 @@ def _content_text(content) -> str:
     if isinstance(content, list):
         parts = []
         for item in content:
-            if isinstance(item, dict) and item.get("type") in {"input_text", "output_text", "text"}:
+            if isinstance(item, dict) and item.get("type") in {
+                "input_text",
+                "output_text",
+                "text",
+            }:
                 text = item.get("text")
                 if text:
                     parts.append(str(text))
@@ -117,6 +110,8 @@ def _pseudo_tool_call_arguments(name: str, args_text: str) -> str:
             return json.dumps({}, ensure_ascii=False)
         return json.dumps({"path": text}, ensure_ascii=False)
 
+    if not text:
+        return json.dumps({}, ensure_ascii=False)
     return json.dumps({"input": text}, ensure_ascii=False)
 
 
@@ -156,7 +151,7 @@ def _extract_pseudo_tool_calls(content) -> tuple[str, list]:
 
 def _normalize_result_tool_calls(result: dict, request_config: dict) -> dict:
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     existing_calls = message.get("tool_calls")
     if isinstance(existing_calls, list) and existing_calls:
         return result
@@ -221,7 +216,9 @@ def _content_to_chat_content(content):
                 if url:
                     parts.append({"type": "image_url", "image_url": {"url": url}})
                 elif file_id:
-                    parts.append({"type": "text", "text": f"[image file_id: {file_id}]"})
+                    parts.append(
+                        {"type": "text", "text": f"[image file_id: {file_id}]"}
+                    )
                 continue
 
             if item_type == "input_file":
@@ -284,9 +281,13 @@ def _normalize_message_item(item: dict):
         return {"role": "user", "content": content}
 
     if item_type == "function_call_output":
-        call_id = str(item.get("call_id") or item.get("tool_call_id") or item.get("id") or "").strip()
+        call_id = str(
+            item.get("call_id") or item.get("tool_call_id") or item.get("id") or ""
+        ).strip()
         output = item.get("output")
-        content = output if isinstance(output, str) else _content_to_chat_content(output)
+        content = (
+            output if isinstance(output, str) else _content_to_chat_content(output)
+        )
         if not content and output is not None:
             content = _content_text(output)
         message = {
@@ -300,8 +301,13 @@ def _normalize_message_item(item: dict):
         return message
 
     if item_type == "function_call":
-        function = item.get("function") if isinstance(item.get("function"), dict) else {}
-        call_id = str(item.get("call_id") or item.get("id") or "").strip() or f"call_{uuid.uuid4().hex}"
+        function = (
+            item.get("function") if isinstance(item.get("function"), dict) else {}
+        )
+        call_id = (
+            str(item.get("call_id") or item.get("id") or "").strip()
+            or f"call_{uuid.uuid4().hex}"
+        )
         name = str(item.get("name") or function.get("name") or "").strip()
         arguments = item.get("arguments")
         if arguments is None and function:
@@ -393,7 +399,11 @@ def _session_key(payload: dict) -> str:
 def _prune_state():
     cutoff = time.time() - _STATE_TTL_SECONDS
     with _STATE_LOCK:
-        stale_keys = [key for key, state in _RESPONSE_STATE.items() if float(state.get("updated_at") or 0) < cutoff]
+        stale_keys = [
+            key
+            for key, state in _RESPONSE_STATE.items()
+            if float(state.get("updated_at") or 0) < cutoff
+        ]
         for key in stale_keys:
             _RESPONSE_STATE.pop(key, None)
 
@@ -418,6 +428,25 @@ def _save_state(response_id: str, state: dict):
         _RESPONSE_STATE[response_id] = state
 
 
+def get_stored_response(response_id: str) -> dict | None:
+    response_id = str(response_id or "").strip()
+    if not response_id:
+        return None
+    _prune_state()
+    with _STATE_LOCK:
+        state = _RESPONSE_STATE.get(response_id) or {}
+        response = state.get("response")
+        return dict(response) if isinstance(response, dict) else None
+
+
+def delete_stored_response(response_id: str) -> bool:
+    response_id = str(response_id or "").strip()
+    if not response_id:
+        return False
+    with _STATE_LOCK:
+        return _RESPONSE_STATE.pop(response_id, None) is not None
+
+
 def _request_config_from_payload(payload: dict, state: dict | None = None) -> dict:
     state = state if isinstance(state, dict) else {}
     config = {}
@@ -433,14 +462,9 @@ def _request_config_from_payload(payload: dict, state: dict | None = None) -> di
 def _validate_provider_request(provider_id: str, request_config: dict):
     if not request_config.get("tools"):
         return
-    if provider_id in _AGENT_TOOL_SUPPORTED:
+    if tool_request_supported(provider_id, request_config):
         return
-    if provider_id in _AGENT_TOOL_UNSUPPORTED:
-        raise RuntimeError(_AGENT_TOOL_UNSUPPORTED[provider_id])
-    raise RuntimeError(
-        f"Provider '{provider_id}' in this proxy does not support tools/tool_choice on the responses route. "
-        "Use pi-api or uncloseai-* for agent loops."
-    )
+    raise RuntimeError(unsupported_tool_message(provider_id))
 
 
 def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, dict]:
@@ -463,15 +487,22 @@ def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, d
     for field, value in request_config.items():
         chat_payload[field] = value
 
-    return messages, {"state_key": state_key, "stored_state": state, "chat_payload": chat_payload, "request_config": request_config}
+    return messages, {
+        "state_key": state_key,
+        "stored_state": state,
+        "chat_payload": chat_payload,
+        "request_config": request_config,
+    }
 
 
 def _assistant_message_from_result(result: dict) -> dict:
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     reasoning = _content_text(message.get("reasoning_content")).strip()
-    tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+    tool_calls = (
+        message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+    )
     if not tool_calls:
         tool_calls = pseudo_tool_calls
 
@@ -491,7 +522,7 @@ def _assistant_message_from_result(result: dict) -> dict:
 
 def _tool_calls_from_result(result: dict) -> list:
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     tool_calls = message.get("tool_calls")
     if isinstance(tool_calls, list):
         return tool_calls
@@ -501,7 +532,7 @@ def _tool_calls_from_result(result: dict) -> list:
 
 def _output_items_from_result(result: dict) -> list:
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     tool_calls = _tool_calls_from_result(result)
     if not tool_calls:
@@ -520,10 +551,19 @@ def _output_items_from_result(result: dict) -> list:
         )
 
     for tool_call in tool_calls:
-        function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
-        call_id = str(tool_call.get("id") or tool_call.get("call_id") or "").strip() or f"call_{uuid.uuid4().hex}"
+        function = (
+            tool_call.get("function")
+            if isinstance(tool_call.get("function"), dict)
+            else {}
+        )
+        call_id = (
+            str(tool_call.get("id") or tool_call.get("call_id") or "").strip()
+            or f"call_{uuid.uuid4().hex}"
+        )
         item_id = f"fc_{uuid.uuid4().hex}"
-        arguments = function.get("arguments") if function else tool_call.get("arguments")
+        arguments = (
+            function.get("arguments") if function else tool_call.get("arguments")
+        )
         if isinstance(arguments, (dict, list)):
             arguments = json.dumps(arguments, ensure_ascii=False)
         output.append(
@@ -551,16 +591,20 @@ def _output_items_from_result(result: dict) -> list:
     return output
 
 
-def _chat_completion_from_result(result: dict, response_id: str, previous_response_id: str, payload: dict) -> dict:
+def _chat_completion_from_result(
+    result: dict, response_id: str, previous_response_id: str, payload: dict
+) -> dict:
     created_at = _now()
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     tool_calls = _tool_calls_from_result(result)
     if not tool_calls:
         tool_calls = pseudo_tool_calls
     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
-    finish_reason = ((choices[0] or {}).get("finish_reason")) or ("tool_calls" if tool_calls else "stop")
+    finish_reason = ((choices[0] or {}).get("finish_reason")) or (
+        "tool_calls" if tool_calls else "stop"
+    )
     reasoning_text = _content_text(message.get("reasoning_content")).strip()
     if tool_calls and content:
         reasoning_text = content
@@ -603,15 +647,97 @@ def _chat_completion_from_result(result: dict, response_id: str, previous_respon
     return response
 
 
+def _response_usage_from_result(result: dict) -> dict:
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    output_tokens = int(
+        usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    )
+    total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
+    return {
+        "input_tokens": input_tokens,
+        "input_tokens_details": {"cached_tokens": 0},
+        "output_tokens": output_tokens,
+        "output_tokens_details": {"reasoning_tokens": 0},
+        "total_tokens": total_tokens,
+    }
+
+
+def _output_text_from_items(output_items: list) -> str:
+    texts = []
+    for item in output_items or []:
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        for part in item.get("content") or []:
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                text = part.get("text")
+                if text:
+                    texts.append(str(text))
+    return "".join(texts)
+
+
+def _response_api_from_result(
+    result: dict, response_id: str, previous_response_id: str, payload: dict
+) -> dict:
+    output = _output_items_from_result(result)
+    request_tools = (
+        payload.get("tools") if isinstance(payload.get("tools"), list) else []
+    )
+    response = {
+        "id": response_id,
+        "object": "response",
+        "created_at": _now(),
+        "status": "completed",
+        "background": False,
+        "error": None,
+        "incomplete_details": None,
+        "instructions": payload.get("instructions"),
+        "model": result.get("model") or payload.get("model") or "",
+        "output": output,
+        "output_text": _output_text_from_items(output),
+        "parallel_tool_calls": payload.get("parallel_tool_calls", True),
+        "previous_response_id": previous_response_id or None,
+        "store": payload.get("store", True),
+        "tool_choice": payload.get("tool_choice", "auto"),
+        "tools": request_tools,
+        "usage": _response_usage_from_result(result),
+    }
+
+    optional_fields = (
+        "max_output_tokens",
+        "metadata",
+        "reasoning",
+        "temperature",
+        "text",
+        "top_p",
+        "truncation",
+        "user",
+    )
+    for field in optional_fields:
+        if field in payload and payload[field] is not None:
+            response[field] = payload[field]
+
+    if "reasoning" not in response and payload.get("reasoning_effort") is not None:
+        response["reasoning"] = {"effort": payload.get("reasoning_effort")}
+
+    return response
+
+
 def _tool_call_delta(tool_call: dict, index: int) -> dict:
-    function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    function = (
+        tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    )
     return {
         "index": index,
-        "id": str(tool_call.get("id") or tool_call.get("call_id") or "").strip() or f"call_{uuid.uuid4().hex}",
+        "id": str(tool_call.get("id") or tool_call.get("call_id") or "").strip()
+        or f"call_{uuid.uuid4().hex}",
         "type": "function",
         "function": {
             "name": str(function.get("name") or tool_call.get("name") or ""),
-            "arguments": str(function.get("arguments") if function else tool_call.get("arguments") or ""),
+            "arguments": str(
+                function.get("arguments") if function else tool_call.get("arguments")
+            ).strip()
+            or "{}",
         },
     }
 
@@ -624,7 +750,7 @@ def _stream_chunks_from_result(result: dict):
     builder.created = created
 
     choices = result.get("choices") or [{}]
-    message = ((choices[0] or {}).get("message") or {})
+    message = (choices[0] or {}).get("message") or {}
     content, pseudo_tool_calls = _extract_pseudo_tool_calls(message.get("content"))
     tool_calls = _tool_calls_from_result(result)
     if not tool_calls:
@@ -644,7 +770,10 @@ def _stream_chunks_from_result(result: dict):
             model,
             created,
             {
-                "tool_calls": [_tool_call_delta(tool_call, index) for index, tool_call in enumerate(tool_calls)],
+                "tool_calls": [
+                    _tool_call_delta(tool_call, index)
+                    for index, tool_call in enumerate(tool_calls)
+                ],
             },
         )
 
@@ -656,11 +785,18 @@ def _stream_chunks_from_result(result: dict):
         if role_chunk is not None:
             yield role_chunk
 
-    finish_reason = ((choices[0] or {}).get("finish_reason")) or ("tool_calls" if tool_calls else "stop")
+    finish_reason = ((choices[0] or {}).get("finish_reason")) or (
+        "tool_calls" if tool_calls else "stop"
+    )
     yield builder.finish(finish_reason=finish_reason)
 
 
-def complete_response(provider_id: str, credentials: dict, payload: dict):
+def complete_response(
+    provider_id: str,
+    credentials: dict,
+    payload: dict,
+    response_format: str = "chat",
+):
     previous_response_id = _session_key(payload)
     messages, context = _chat_payload_from_request(payload, provider_id)
     _validate_provider_request(provider_id, context.get("request_config") or {})
@@ -669,7 +805,14 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
     result = _normalize_result_tool_calls(result, context.get("request_config") or {})
 
     response_id = f"resp_{uuid.uuid4().hex}"
-    response = _chat_completion_from_result(result, response_id, previous_response_id, payload)
+    if str(response_format or "chat").strip().lower() in {"response", "responses"}:
+        response = _response_api_from_result(
+            result, response_id, previous_response_id, chat_payload
+        )
+    else:
+        response = _chat_completion_from_result(
+            result, response_id, previous_response_id, payload
+        )
     assistant_message = _assistant_message_from_result(result)
 
     if payload.get("store", True) is not False:
@@ -677,6 +820,14 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
         if assistant_message:
             next_messages.append(assistant_message)
         request_config = dict(context.get("request_config") or {})
+        stored_response = (
+            response
+            if str(response_format or "chat").strip().lower()
+            in {"response", "responses"}
+            else _response_api_from_result(
+                result, response_id, previous_response_id, chat_payload
+            )
+        )
         _save_state(
             response_id,
             {
@@ -684,6 +835,7 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
                 "provider": provider_id,
                 "model": response.get("model") or payload.get("model") or "",
                 "previous_response_id": previous_response_id,
+                "response": stored_response,
                 **request_config,
             },
         )
@@ -695,7 +847,11 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
             "response_id": response_id,
             "previous_response_id": previous_response_id,
             "message_count": len(messages),
-            "output_text_length": len(_content_text((result.get("choices") or [{}])[0].get("message", {}).get("content")).strip()),
+            "output_text_length": len(
+                _content_text(
+                    (result.get("choices") or [{}])[0].get("message", {}).get("content")
+                ).strip()
+            ),
             "tool_call_count": len(_tool_calls_from_result(result)),
         }
     )
@@ -704,9 +860,117 @@ def complete_response(provider_id: str, credentials: dict, payload: dict):
     return response, meta
 
 
-def stream_response_events(provider_id: str, credentials: dict, payload: dict):
-    response, meta = complete_response(provider_id, credentials, payload)
-    debug_log("responses_stream", provider=provider_id, response_id=response["id"], tool_call_count=meta.get("tool_call_count", 0))
+def _response_created_snapshot(response: dict) -> dict:
+    snapshot = dict(response)
+    snapshot["status"] = "in_progress"
+    snapshot["output"] = []
+    snapshot["output_text"] = ""
+    return snapshot
+
+
+def _stream_response_api_events(response: dict):
+    response_id = str(response.get("id") or "")
+    yield _event("response.created", response=_response_created_snapshot(response))
+
+    for output_index, item in enumerate(response.get("output") or []):
+        if not isinstance(item, dict):
+            continue
+
+        item_id = str(item.get("id") or "")
+        in_progress_item = dict(item)
+        if in_progress_item.get("status") == "completed":
+            in_progress_item["status"] = "in_progress"
+        if in_progress_item.get("type") == "message":
+            in_progress_item["content"] = []
+        elif in_progress_item.get("type") == "function_call":
+            in_progress_item["arguments"] = ""
+        yield _event(
+            "response.output_item.added",
+            response_id=response_id,
+            output_index=output_index,
+            item=in_progress_item,
+        )
+
+        if item.get("type") == "message":
+            for content_index, part in enumerate(item.get("content") or []):
+                if not isinstance(part, dict):
+                    continue
+                yield _event(
+                    "response.content_part.added",
+                    response_id=response_id,
+                    item_id=item_id,
+                    output_index=output_index,
+                    content_index=content_index,
+                    part={**part, "text": ""}
+                    if part.get("type") == "output_text"
+                    else part,
+                )
+                if part.get("type") == "output_text":
+                    yield _event(
+                        "response.output_text.delta",
+                        response_id=response_id,
+                        item_id=item_id,
+                        output_index=output_index,
+                        content_index=content_index,
+                        delta=str(part.get("text") or ""),
+                    )
+                yield _event(
+                    "response.content_part.done",
+                    response_id=response_id,
+                    item_id=item_id,
+                    output_index=output_index,
+                    content_index=content_index,
+                    part=part,
+                )
+
+        if item.get("type") == "function_call":
+            arguments = str(item.get("arguments") or "{}")
+            yield _event(
+                "response.function_call_arguments.delta",
+                response_id=response_id,
+                item_id=item_id,
+                output_index=output_index,
+                delta=arguments,
+            )
+            yield _event(
+                "response.function_call_arguments.done",
+                response_id=response_id,
+                item_id=item_id,
+                output_index=output_index,
+                arguments=arguments,
+            )
+
+        yield _event(
+            "response.output_item.done",
+            response_id=response_id,
+            output_index=output_index,
+            item=item,
+        )
+
+    yield _event("response.completed", response=response)
+
+
+def stream_response_events(
+    provider_id: str,
+    credentials: dict,
+    payload: dict,
+    response_format: str = "chat",
+):
+    response, meta = complete_response(
+        provider_id, credentials, payload, response_format=response_format
+    )
+    debug_log(
+        "responses_stream",
+        provider=provider_id,
+        response_id=response["id"],
+        tool_call_count=meta.get("tool_call_count", 0),
+        response_format=response_format,
+    )
+    if str(response_format or "chat").strip().lower() in {"response", "responses"}:
+        for event in _stream_response_api_events(response):
+            yield event
+        return
+
     result = {
         "id": response["id"],
         "created": response.get("created"),

@@ -9,6 +9,8 @@
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
+- `GET /v1/responses/{response_id}`
+- `DELETE /v1/responses/{response_id}`
 - `POST /v1/responses/chat/completions`
 - `GET /health`
 
@@ -18,12 +20,16 @@
 - [Deployment and env guide](docs/deployment.md)
 - [Repeat deploy notes](REDEPLOY.md)
 
-## Responses Route
+## Agent and Tool Routes
 
-- `/v1/chat/completions` remains the regular one-shot chat path.
-- `/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
-- On this proxy, generic function-tool loops are currently supported only by `Inflection / Pi API` and `UncloseAI`.
-- Chat-only providers fail fast on `responses+tools` instead of pretending to be agent-capable.
+- `/v1/chat/completions` remains the regular OpenAI-compatible chat path.
+- `/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
+- `GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses still present in the proxy's in-memory short-lived response state.
+- `/v1/responses/chat/completions` is a compatibility route for clients that want response/session semantics but still expect a chat-completion-shaped response.
+- Native OpenAI-style tool passthrough is used for `Inflection / Pi API` and `UncloseAI`.
+- Other chat-only providers can still be used by agent clients through the prompt tool shim. The shim injects a strict client-side tool protocol into the prompt, removes unsupported upstream tool fields, and converts the model's JSON tool request back into OpenAI `tool_calls`.
+- The prompt shim is enabled by default with `AGENT_TOOL_MODE=auto`. Set `AGENT_TOOL_MODE=off` to fail fast for providers without native tools, or `AGENT_TOOL_MODE=force` to use the shim even for native-tool providers.
+- `PROXY_API_KEY` / `RISU_PROXY_API_KEY` is optional client authentication for OpenAI-compatible apps. When it is set, clients send it as their normal bearer API key while provider credentials stay in server env vars or provider-specific headers.
 
 ## Provider Overview
 
@@ -61,25 +67,79 @@ The full model list, required env vars, manual acquisition paths, and automatic 
 1. `api/index.py` exposes an OpenAI-compatible API surface.
 2. `py/credentials_bootstrap.py` loads `credentials.json` into the runtime environment before provider modules import.
 3. `py/provider_registry.py` resolves a model id to the correct provider.
-4. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
-5. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
-6. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
-7. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
-8. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
-9. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
-10. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
-11. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
+4. `py/agent_tools.py` handles OpenAI-compatible prompt-shim tool instructions, `tool_calls` extraction, and normalization for chat-only upstreams.
+5. `py/responses_api.py` translates OpenAI Responses-style input/output and keeps short-lived response/session state for multi-turn tool loops.
+6. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
+7. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
+8. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
+9. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
+10. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
+11. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
+12. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
+13. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
+
+## Zed / OpenAI-Compatible Agent Setup
+
+Configure Zed as an OpenAI API Compatible provider with your proxy URL as `api_url`. Keep upstream provider credentials on the proxy itself; use `PROXY_API_KEY` as the client-facing key if you want Zed to authenticate to the proxy. In Zed's provider API-key field, paste the same `PROXY_API_KEY` value; if you configure Zed via env vars, use the API-key env var name Zed derives from your provider display name.
+
+Example Zed settings shape:
+
+```json
+{
+  "language_models": {
+    "openai_compatible": {
+      "Risu ZAI Proxy": {
+        "api_url": "http://127.0.0.1:3001/v1",
+        "available_models": [
+          {
+            "name": "glm-5-agent",
+            "display_name": "GLM-5 Agent via Proxy",
+            "max_tokens": 128000,
+            "capabilities": {
+              "tools": true,
+              "images": false,
+              "parallel_tool_calls": false,
+              "chat_completions": true
+            }
+          },
+          {
+            "name": "uncloseai-hermes",
+            "display_name": "UncloseAI Hermes Tools",
+            "max_tokens": 128000,
+            "capabilities": {
+              "tools": true,
+              "images": false,
+              "parallel_tool_calls": true,
+              "chat_completions": true
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+For Zed MCP servers, configure MCP in Zed itself. Zed executes MCP tools locally and sends them to this proxy as OpenAI-compatible `tools`; the proxy's job is to make the selected upstream model request structured `tool_calls` instead of writing commands as plain text.
 
 ## Local Run
 
+Install Python dependencies into the ignored local `pydeps` directory once:
+
 ```powershell
-F:\DevTools\Portable\NodeJS\node.exe F:\Projects\risu-zai-proxy-archive\local-server.js
+npm run deps:py
+```
+
+Start through the Node wrapper:
+
+```powershell
+F:\DevTools\Portable\NodeJS\node.exe F:\downloads\risu-zai-proxy-archive\local-server.js
 ```
 
 Python server path:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\py\server.py
+F:\DevTools\Python311\python.exe F:\downloads\risu-zai-proxy-archive\py\server.py
 ```
 
 Or from the repo root:
@@ -174,5 +234,5 @@ This path is for `Inception` only. The rest of the providers still stay on Verce
 - LongCat exposes separate slugs for convenience: `LongCat-Flash-Chat` for regular answers and `LongCat-Flash-Thinking` / `LongCat-Flash-Thinking-2601` for reasoning.
 - `Pi Web Local` is intentionally local-only and does not need Vercel env vars.
 - `UncloseAI` does not require credentials.
-- For OpenAI Agents / long-running tool loops, use `pi-api` or an `uncloseai-*` model.
-- `Z.ai` remains the stable chat path, but it is not the right backend for generic tool-heavy agent runs.
+- For the most reliable OpenAI Agents / long-running tool loops, use `pi-api` or an `uncloseai-*` model because those providers receive native tool schemas.
+- `Z.ai` remains the stable general chat path. For agent clients that must use Z.ai, prefer `glm-5-agent` or `glm-5.1-agent`; those aliases use the prompt tool shim plus Z.ai thinking/search flags.

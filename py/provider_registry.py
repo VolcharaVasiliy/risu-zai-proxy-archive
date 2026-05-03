@@ -1,15 +1,15 @@
 try:
     from py import (
-        deepseek_proxy,
         arcee_proxy,
+        deepseek_proxy,
         gemini_web_proxy,
-        inception_proxy,
-        longcat_proxy,
         grok_proxy,
+        inception_proxy,
         inflection_proxy,
         kimi_proxy,
-        mistral_proxy,
+        longcat_proxy,
         mimo_proxy,
+        mistral_proxy,
         openai_web_proxy,
         perplexity_proxy,
         phind_proxy,
@@ -18,19 +18,35 @@ try:
         uncloseai_proxy,
         zai_proxy,
     )
-    from py.http_helpers import cookie_value, env_or_header_token, env_token, header_token
-    from py.openai_stream import OpenAIStreamBuilder
+    from py.agent_tools import (
+        normalize_tool_result,
+        prepare_prompt_tool_payload,
+        provider_has_native_tools,
+        request_config_from_payload,
+        request_has_tools,
+        should_use_prompt_tool_shim,
+        tool_call_delta,
+        tool_request_supported,
+        unsupported_tool_message,
+    )
+    from py.http_helpers import (
+        cookie_value,
+        env_or_header_token,
+        env_token,
+        header_token,
+    )
+    from py.openai_stream import OpenAIStreamBuilder, openai_chunk
 except ImportError:
-    import deepseek_proxy
     import arcee_proxy
+    import deepseek_proxy
     import gemini_web_proxy
-    import inception_proxy
-    import longcat_proxy
     import grok_proxy
+    import inception_proxy
     import inflection_proxy
     import kimi_proxy
-    import mistral_proxy
+    import longcat_proxy
     import mimo_proxy
+    import mistral_proxy
     import openai_web_proxy
     import perplexity_proxy
     import phind_proxy
@@ -38,27 +54,63 @@ except ImportError:
     import qwen_ai_proxy
     import uncloseai_proxy
     import zai_proxy
+    from agent_tools import (
+        normalize_tool_result,
+        prepare_prompt_tool_payload,
+        provider_has_native_tools,
+        request_config_from_payload,
+        request_has_tools,
+        should_use_prompt_tool_shim,
+        tool_call_delta,
+        tool_request_supported,
+        unsupported_tool_message,
+    )
     from http_helpers import cookie_value, env_or_header_token, env_token, header_token
-    from openai_stream import OpenAIStreamBuilder
+    from openai_stream import OpenAIStreamBuilder, openai_chunk
 
 import json
 import os
 
 try:
-    with open('credentials.json', 'r') as f:
+    with open("credentials.json", "r") as f:
         credentials = json.load(f)
 except FileNotFoundError:
     credentials = {}
 
 
 def env_or_kv_token(key):
-    return credentials.get(key, os.environ.get(key, ''))
+    return credentials.get(key, os.environ.get(key, ""))
 
 
 MODEL_SPECS = []
+_TOOL_CAPABILITY_PROBE = {
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "probe_tool",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+}
+
+
+def _model_capabilities(provider_id: str) -> dict:
+    native_tools = provider_has_native_tools(provider_id)
+    tools_supported = tool_request_supported(provider_id, _TOOL_CAPABILITY_PROBE)
+    return {
+        "chat_completions": True,
+        "responses": True,
+        "tools": tools_supported,
+        "native_tools": native_tools,
+        "prompt_tool_shim": tools_supported and not native_tools,
+        "streaming": True,
+    }
 
 
 def _add_models(provider_id: str, owned_by: str, models, requires_env):
+    capabilities = _model_capabilities(provider_id)
     for model in models:
         MODEL_SPECS.append(
             {
@@ -68,33 +120,75 @@ def _add_models(provider_id: str, owned_by: str, models, requires_env):
                 "owned_by": owned_by,
                 "provider": provider_id,
                 "requires_env": list(requires_env),
+                "capabilities": dict(capabilities),
             }
         )
 
 
 _add_models("zai", "z.ai", zai_proxy.SUPPORTED_MODELS, ["ZAI_TOKEN"])
-_add_models("deepseek", deepseek_proxy.OWNED_BY, deepseek_proxy.SUPPORTED_MODELS, ["DEEPSEEK_TOKEN"])
-_add_models("arcee", arcee_proxy.OWNED_BY, arcee_proxy.SUPPORTED_MODELS, ["ARCEE_ACCESS_TOKEN"])
+_add_models(
+    "deepseek",
+    deepseek_proxy.OWNED_BY,
+    deepseek_proxy.SUPPORTED_MODELS,
+    ["DEEPSEEK_TOKEN"],
+)
+_add_models(
+    "arcee", arcee_proxy.OWNED_BY, arcee_proxy.SUPPORTED_MODELS, ["ARCEE_ACCESS_TOKEN"]
+)
 _add_models(
     "gemini-web",
     gemini_web_proxy.OWNED_BY,
     gemini_web_proxy.SUPPORTED_MODELS,
-    ["GEMINI_WEB_SECURE_1PSID", "GEMINI_WEB_SECURE_1PSIDTS (optional)", "GEMINI_WEB_COOKIE (optional)"],
+    [
+        "GEMINI_WEB_SECURE_1PSID",
+        "GEMINI_WEB_SECURE_1PSIDTS (optional)",
+        "GEMINI_WEB_COOKIE (optional)",
+    ],
 )
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
 _add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
-_add_models("inception", inception_proxy.OWNED_BY, inception_proxy.SUPPORTED_MODELS, ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"])
-_add_models("longcat", longcat_proxy.OWNED_BY, longcat_proxy.SUPPORTED_MODELS, ["LONGCAT_COOKIE"])
-_add_models("mistral", mistral_proxy.OWNED_BY, mistral_proxy.SUPPORTED_MODELS, ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"])
+_add_models(
+    "inception",
+    inception_proxy.OWNED_BY,
+    inception_proxy.SUPPORTED_MODELS,
+    ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"],
+)
+_add_models(
+    "longcat",
+    longcat_proxy.OWNED_BY,
+    longcat_proxy.SUPPORTED_MODELS,
+    ["LONGCAT_COOKIE"],
+)
+_add_models(
+    "mistral",
+    mistral_proxy.OWNED_BY,
+    mistral_proxy.SUPPORTED_MODELS,
+    ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"],
+)
 _add_models(
     "mimo",
     mimo_proxy.OWNED_BY,
     mimo_proxy.SUPPORTED_MODELS,
     ["MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN", "MIMO_COOKIE (optional)"],
 )
-_add_models("openai-web", openai_web_proxy.OWNED_BY, openai_web_proxy.SUPPORTED_MODELS, ["OPENAI_WEB_ACCESS_TOKEN"])
-_add_models("perplexity", perplexity_proxy.OWNED_BY, perplexity_proxy.SUPPORTED_MODELS, ["PERPLEXITY_COOKIE"])
-_add_models("phind", phind_proxy.OWNED_BY, phind_proxy.SUPPORTED_MODELS, ["PHIND_COOKIE", "PHIND_NONCE (optional)"])
+_add_models(
+    "openai-web",
+    openai_web_proxy.OWNED_BY,
+    openai_web_proxy.SUPPORTED_MODELS,
+    ["OPENAI_WEB_ACCESS_TOKEN"],
+)
+_add_models(
+    "perplexity",
+    perplexity_proxy.OWNED_BY,
+    perplexity_proxy.SUPPORTED_MODELS,
+    ["PERPLEXITY_COOKIE"],
+)
+_add_models(
+    "phind",
+    phind_proxy.OWNED_BY,
+    phind_proxy.SUPPORTED_MODELS,
+    ["PHIND_COOKIE", "PHIND_NONCE (optional)"],
+)
 _add_models(
     "inflection",
     inflection_proxy.OWNED_BY,
@@ -102,7 +196,12 @@ _add_models(
     ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"],
 )
 _add_models("pi-local", pi_local_proxy.OWNED_BY, pi_local_proxy.SUPPORTED_MODELS, [])
-_add_models("qwen-ai", qwen_ai_proxy.OWNED_BY, qwen_ai_proxy.SUPPORTED_MODELS, ["QWEN_AI_COOKIE"])
+_add_models(
+    "qwen-ai",
+    qwen_ai_proxy.OWNED_BY,
+    qwen_ai_proxy.SUPPORTED_MODELS,
+    ["QWEN_AI_COOKIE"],
+)
 _add_models("uncloseai", uncloseai_proxy.OWNED_BY, uncloseai_proxy.SUPPORTED_MODELS, [])
 
 
@@ -202,14 +301,24 @@ def resolve_credentials(handler, provider_id: str):
         return {"token": token} if token else None
 
     if provider_id == "arcee":
-        token = env_or_header_token(handler, ["ARCEE_ACCESS_TOKEN"], ["x-arcee-access-token"])
-        session_id = env_or_kv_token("ARCEE_SESSION_ID") or header_token(handler, "x-arcee-session-id")
+        token = env_or_header_token(
+            handler, ["ARCEE_ACCESS_TOKEN"], ["x-arcee-access-token"]
+        )
+        session_id = env_or_kv_token("ARCEE_SESSION_ID") or header_token(
+            handler, "x-arcee-session-id"
+        )
         return {"token": token, "session_id": session_id} if token else None
 
     if provider_id == "gemini-web":
-        cookie = env_or_kv_token("GEMINI_WEB_COOKIE") or header_token(handler, "x-gemini-web-cookie")
-        secure_1psid = env_or_kv_token("GEMINI_WEB_SECURE_1PSID") or header_token(handler, "x-gemini-web-secure-1psid")
-        secure_1psidts = env_or_kv_token("GEMINI_WEB_SECURE_1PSIDTS") or header_token(handler, "x-gemini-web-secure-1psidts")
+        cookie = env_or_kv_token("GEMINI_WEB_COOKIE") or header_token(
+            handler, "x-gemini-web-cookie"
+        )
+        secure_1psid = env_or_kv_token("GEMINI_WEB_SECURE_1PSID") or header_token(
+            handler, "x-gemini-web-secure-1psid"
+        )
+        secure_1psidts = env_or_kv_token("GEMINI_WEB_SECURE_1PSIDTS") or header_token(
+            handler, "x-gemini-web-secure-1psidts"
+        )
 
         if cookie:
             secure_1psid = secure_1psid or cookie_value(cookie, "__Secure-1PSID")
@@ -249,15 +358,23 @@ def resolve_credentials(handler, provider_id: str):
                 parts.append(f"cf_clearance={cf_clearance}")
             cookie = "; ".join(parts)
 
-        return {"cookie": cookie, "sso": sso, "cf_clearance": cf_clearance} if cookie else None
+        return (
+            {"cookie": cookie, "sso": sso, "cf_clearance": cf_clearance}
+            if cookie
+            else None
+        )
 
     if provider_id == "kimi":
         token = env_or_header_token(handler, ["KIMI_TOKEN"], ["x-kimi-token"])
         return {"token": token} if token else None
 
     if provider_id == "inception":
-        cookie = env_or_kv_token("INCEPTION_COOKIE") or header_token(handler, "x-inception-cookie")
-        session_token = env_or_kv_token("INCEPTION_SESSION_TOKEN") or header_token(handler, "x-inception-session-token")
+        cookie = env_or_kv_token("INCEPTION_COOKIE") or header_token(
+            handler, "x-inception-cookie"
+        )
+        session_token = env_or_kv_token("INCEPTION_SESSION_TOKEN") or header_token(
+            handler, "x-inception-session-token"
+        )
         if not session_token and cookie:
             for part in cookie.split(";"):
                 key, sep, value = part.partition("=")
@@ -266,15 +383,25 @@ def resolve_credentials(handler, provider_id: str):
                     break
         if not cookie and session_token:
             cookie = f"session={session_token}"
-        return {"cookie": cookie, "session_token": session_token} if session_token else None
+        return (
+            {"cookie": cookie, "session_token": session_token}
+            if session_token
+            else None
+        )
 
     if provider_id == "longcat":
-        cookie = env_or_kv_token("LONGCAT_COOKIE") or header_token(handler, "x-longcat-cookie")
+        cookie = env_or_kv_token("LONGCAT_COOKIE") or header_token(
+            handler, "x-longcat-cookie"
+        )
         return {"cookie": cookie} if cookie else None
 
     if provider_id == "mistral":
-        cookie = env_or_kv_token("MISTRAL_COOKIE") or header_token(handler, "x-mistral-cookie")
-        csrf_token = env_or_kv_token("MISTRAL_CSRF_TOKEN") or header_token(handler, "x-mistral-csrf-token")
+        cookie = env_or_kv_token("MISTRAL_COOKIE") or header_token(
+            handler, "x-mistral-cookie"
+        )
+        csrf_token = env_or_kv_token("MISTRAL_CSRF_TOKEN") or header_token(
+            handler, "x-mistral-csrf-token"
+        )
         if not csrf_token and cookie:
             for part in cookie.split(";"):
                 key, sep, value = part.partition("=")
@@ -284,10 +411,18 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "csrf_token": csrf_token} if cookie else None
 
     if provider_id == "mimo":
-        cookie = env_or_kv_token("MIMO_COOKIE") or header_token(handler, "x-mimo-cookie")
-        service_token = env_or_kv_token("MIMO_SERVICE_TOKEN") or header_token(handler, "x-mimo-service-token")
-        user_id = env_or_kv_token("MIMO_USER_ID") or header_token(handler, "x-mimo-user-id")
-        ph_token = env_or_kv_token("MIMO_PH_TOKEN") or header_token(handler, "x-mimo-ph-token")
+        cookie = env_or_kv_token("MIMO_COOKIE") or header_token(
+            handler, "x-mimo-cookie"
+        )
+        service_token = env_or_kv_token("MIMO_SERVICE_TOKEN") or header_token(
+            handler, "x-mimo-service-token"
+        )
+        user_id = env_or_kv_token("MIMO_USER_ID") or header_token(
+            handler, "x-mimo-user-id"
+        )
+        ph_token = env_or_kv_token("MIMO_PH_TOKEN") or header_token(
+            handler, "x-mimo-ph-token"
+        )
 
         if cookie:
             service_token = service_token or cookie_value(cookie, "serviceToken")
@@ -312,17 +447,32 @@ def resolve_credentials(handler, provider_id: str):
         }
 
     if provider_id == "openai-web":
-        access_token = env_or_header_token(handler, ["OPENAI_WEB_ACCESS_TOKEN"], ["x-openai-web-token"])
-        cookie = env_or_kv_token("OPENAI_WEB_COOKIE") or header_token(handler, "x-openai-web-cookie")
-        account_id = env_or_kv_token("OPENAI_WEB_ACCOUNT_ID") or header_token(handler, "x-openai-web-account-id")
-        device_id = env_or_kv_token("OPENAI_WEB_DEVICE_ID") or header_token(handler, "x-openai-web-device-id")
+        access_token = env_or_header_token(
+            handler, ["OPENAI_WEB_ACCESS_TOKEN"], ["x-openai-web-token"]
+        )
+        cookie = env_or_kv_token("OPENAI_WEB_COOKIE") or header_token(
+            handler, "x-openai-web-cookie"
+        )
+        account_id = env_or_kv_token("OPENAI_WEB_ACCOUNT_ID") or header_token(
+            handler, "x-openai-web-account-id"
+        )
+        device_id = env_or_kv_token("OPENAI_WEB_DEVICE_ID") or header_token(
+            handler, "x-openai-web-device-id"
+        )
         if not access_token and not cookie:
             return None
-        return {"access_token": access_token, "cookie": cookie, "account_id": account_id, "device_id": device_id}
+        return {
+            "access_token": access_token,
+            "cookie": cookie,
+            "account_id": account_id,
+            "device_id": device_id,
+        }
 
     if provider_id == "perplexity":
         cookie = env_or_kv_token("PERPLEXITY_COOKIE")
-        session_token = env_or_header_token(handler, ["PERPLEXITY_SESSION_TOKEN"], ["x-perplexity-session"])
+        session_token = env_or_header_token(
+            handler, ["PERPLEXITY_SESSION_TOKEN"], ["x-perplexity-session"]
+        )
         if not session_token and cookie:
             session_token = cookie_value(cookie, "__Secure-next-auth.session-token")
         if not cookie and session_token:
@@ -339,18 +489,32 @@ def resolve_credentials(handler, provider_id: str):
         return {"cookie": cookie, "nonce": nonce} if cookie else None
 
     if provider_id == "inflection":
-        token = env_or_header_token(handler, ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY", "INFLECTION_TOKEN"], ["x-inflection-api-key"])
+        token = env_or_header_token(
+            handler,
+            ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY", "INFLECTION_TOKEN"],
+            ["x-inflection-api-key"],
+        )
         return {"token": token} if token else None
 
     if provider_id == "pi-local":
         return {"local": True}
 
     if provider_id == "qwen-ai":
-        cookie = env_or_kv_token("QWEN_AI_COOKIE") or header_token(handler, "x-qwen-ai-cookie")
-        bx_umidtoken = env_or_kv_token("QWEN_AI_BX_UMIDTOKEN") or header_token(handler, "x-qwen-ai-bx-umidtoken")
-        bx_ua = env_or_kv_token("QWEN_AI_BX_UA") or header_token(handler, "x-qwen-ai-bx-ua")
-        bx_ua_create = env_or_kv_token("QWEN_AI_BX_UA_CREATE") or header_token(handler, "x-qwen-ai-bx-ua-create")
-        bx_ua_chat = env_or_kv_token("QWEN_AI_BX_UA_CHAT") or header_token(handler, "x-qwen-ai-bx-ua-chat")
+        cookie = env_or_kv_token("QWEN_AI_COOKIE") or header_token(
+            handler, "x-qwen-ai-cookie"
+        )
+        bx_umidtoken = env_or_kv_token("QWEN_AI_BX_UMIDTOKEN") or header_token(
+            handler, "x-qwen-ai-bx-umidtoken"
+        )
+        bx_ua = env_or_kv_token("QWEN_AI_BX_UA") or header_token(
+            handler, "x-qwen-ai-bx-ua"
+        )
+        bx_ua_create = env_or_kv_token("QWEN_AI_BX_UA_CREATE") or header_token(
+            handler, "x-qwen-ai-bx-ua-create"
+        )
+        bx_ua_chat = env_or_kv_token("QWEN_AI_BX_UA_CHAT") or header_token(
+            handler, "x-qwen-ai-bx-ua-chat"
+        )
         token = env_or_header_token(handler, ["QWEN_AI_TOKEN"], ["x-qwen-ai-token"])
         if not token and cookie:
             token = cookie_value(cookie, "token")
@@ -364,8 +528,10 @@ def resolve_credentials(handler, provider_id: str):
             "bx_ua": bx_ua,
             "bx_ua_create": bx_ua_create or bx_ua,
             "bx_ua_chat": bx_ua_chat or bx_ua,
-            "bx_v": env_or_kv_token("QWEN_AI_BX_V") or header_token(handler, "x-qwen-ai-bx-v"),
-            "timezone": env_or_kv_token("QWEN_AI_TIMEZONE") or header_token(handler, "x-qwen-ai-timezone"),
+            "bx_v": env_or_kv_token("QWEN_AI_BX_V")
+            or header_token(handler, "x-qwen-ai-bx-v"),
+            "timezone": env_or_kv_token("QWEN_AI_TIMEZONE")
+            or header_token(handler, "x-qwen-ai-timezone"),
         }
 
     if provider_id == "uncloseai":
@@ -378,7 +544,7 @@ def _buffered_stream_chunks(result):
     created = result.get("created", 0)
     model = result.get("model", "")
     response_id = result.get("id", "")
-    message = ((result.get("choices") or [{}])[0].get("message") or {})
+    message = (result.get("choices") or [{}])[0].get("message") or {}
     finish_reason = ((result.get("choices") or [{}])[0].get("finish_reason")) or "stop"
     builder = OpenAIStreamBuilder(response_id, model)
     builder.created = created
@@ -386,62 +552,134 @@ def _buffered_stream_chunks(result):
     for chunk in builder.reasoning(message.get("reasoning_content") or ""):
         yield chunk
 
-    content = message.get("content") or ""
-    if content:
-        for chunk in builder.content(content):
-            yield chunk
-    elif not builder.role_sent:
+    tool_calls = (
+        message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+    )
+    if tool_calls:
         role_chunk = builder.ensure_role("content")
         if role_chunk is not None:
             yield role_chunk
+        yield openai_chunk(
+            response_id,
+            model,
+            created,
+            {
+                "tool_calls": [
+                    tool_call_delta(tool_call, index)
+                    for index, tool_call in enumerate(tool_calls)
+                ]
+            },
+        )
+    else:
+        content = message.get("content") or ""
+        if content:
+            for chunk in builder.content(content):
+                yield chunk
+        elif not builder.role_sent:
+            role_chunk = builder.ensure_role("content")
+            if role_chunk is not None:
+                yield role_chunk
 
     yield builder.finish(finish_reason=finish_reason)
 
 
 def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
+    request_config = request_config_from_payload(payload)
+    if request_has_tools(request_config):
+        if not tool_request_supported(provider_id, request_config):
+            raise RuntimeError(unsupported_tool_message(provider_id))
+        if should_use_prompt_tool_shim(provider_id, request_config):
+            prepared_payload = prepare_prompt_tool_payload(
+                payload, provider_id, request_config
+            )
+            result, meta = complete_non_stream(
+                provider_id, credentials, prepared_payload
+            )
+            result, tool_call_count = normalize_tool_result(result, request_config)
+            meta = dict(meta or {})
+            meta.update(
+                {"agent_tool_mode": "prompt", "tool_call_count": tool_call_count}
+            )
+            return result, meta
+
     if provider_id == "zai":
-        return zai_proxy.complete_non_stream(credentials["token"], payload)
+        result, meta = zai_proxy.complete_non_stream(credentials["token"], payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "deepseek":
-        return deepseek_proxy.complete_non_stream(credentials["token"], payload)
+        result, meta = deepseek_proxy.complete_non_stream(credentials["token"], payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "arcee":
-        return arcee_proxy.complete_non_stream(credentials, payload)
+        result, meta = arcee_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "gemini-web":
-        return gemini_web_proxy.complete_non_stream(credentials, payload)
+        result, meta = gemini_web_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "grok":
-        return grok_proxy.complete_non_stream(credentials["cookie"], payload)
+        result, meta = grok_proxy.complete_non_stream(credentials["cookie"], payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "kimi":
-        return kimi_proxy.complete_non_stream(credentials["token"], payload)
+        result, meta = kimi_proxy.complete_non_stream(credentials["token"], payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "inception":
-        return inception_proxy.complete_non_stream(credentials, payload)
+        result, meta = inception_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "longcat":
-        return longcat_proxy.complete_non_stream(credentials, payload)
+        result, meta = longcat_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "mistral":
-        return mistral_proxy.complete_non_stream(credentials, payload)
+        result, meta = mistral_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "mimo":
-        return mimo_proxy.complete_non_stream(credentials, payload)
+        result, meta = mimo_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "openai-web":
-        return openai_web_proxy.complete_non_stream(credentials, payload)
+        result, meta = openai_web_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "perplexity":
-        return perplexity_proxy.complete_non_stream(credentials["cookie"], payload)
+        result, meta = perplexity_proxy.complete_non_stream(
+            credentials["cookie"], payload
+        )
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "phind":
-        return phind_proxy.complete_non_stream(credentials, payload)
+        result, meta = phind_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "inflection":
-        return inflection_proxy.complete_non_stream(credentials, payload)
+        result, meta = inflection_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "pi-local":
-        return pi_local_proxy.complete_non_stream(credentials, payload)
+        result, meta = pi_local_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "qwen-ai":
-        return qwen_ai_proxy.complete_non_stream(credentials, payload)
+        result, meta = qwen_ai_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "uncloseai":
-        return uncloseai_proxy.complete_non_stream(credentials, payload)
+        result, meta = uncloseai_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     raise RuntimeError(f"Unsupported provider: {provider_id}")
 
 
 def stream_chunks(provider_id: str, credentials: dict, payload: dict):
+    request_config = request_config_from_payload(payload)
+    if request_has_tools(request_config):
+        if not tool_request_supported(provider_id, request_config):
+            raise RuntimeError(unsupported_tool_message(provider_id))
+        if should_use_prompt_tool_shim(provider_id, request_config):
+            result, _meta = complete_non_stream(provider_id, credentials, payload)
+            for chunk in _buffered_stream_chunks(result):
+                yield chunk
+            return
+
     if provider_id == "zai":
-        upstream, chat_id, model = zai_proxy.chat_completion(credentials["token"], payload)
+        upstream, chat_id, model = zai_proxy.chat_completion(
+            credentials["token"], payload
+        )
         try:
-            session_key = str(payload.get("conversation_id") or payload.get("chat_id") or "").strip()
-            for chunk in zai_proxy.openai_stream_chunks(upstream, model, chat_id, session_key=session_key):
+            session_key = str(
+                payload.get("conversation_id") or payload.get("chat_id") or ""
+            ).strip()
+            for chunk in zai_proxy.openai_stream_chunks(
+                upstream, model, chat_id, session_key=session_key
+            ):
                 yield chunk
         finally:
             upstream.close()

@@ -17,13 +17,15 @@ def send_json(handler, status, payload):
 
 
 def bearer_token(handler):
-    env_token = os.environ.get("ZAI_TOKEN", "").strip()
-    if env_token:
-        return env_token
+    env_value = os.environ.get("ZAI_TOKEN", "").strip()
+    if env_value:
+        return env_value
 
     auth = handler.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
-        return auth[7:].strip()
+        token = auth[7:].strip()
+        if token and token != configured_proxy_api_key():
+            return token
 
     alt = handler.headers.get("x-zai-token", "").strip()
     return alt
@@ -42,11 +44,18 @@ def header_token(handler, *header_names):
     return ""
 
 
-def header_bearer_token(handler):
+def configured_proxy_api_key() -> str:
+    return env_token("PROXY_API_KEY", "RISU_PROXY_API_KEY")
+
+
+def header_bearer_token(handler, include_proxy_key: bool = False):
     auth = handler.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:].strip()
-    return ""
+    if not auth.startswith("Bearer "):
+        return ""
+    token = auth[7:].strip()
+    if not include_proxy_key and token and token == configured_proxy_api_key():
+        return ""
+    return token
 
 
 def env_token(*env_names):
@@ -62,11 +71,34 @@ def env_or_header_token(handler, env_names, header_names=()):
     if token:
         return token
 
-    token = header_bearer_token(handler)
+    token = header_token(handler, *header_names)
     if token:
         return token
 
-    return header_token(handler, *header_names)
+    return header_bearer_token(handler)
+
+
+def proxy_authorized(handler) -> bool:
+    expected = configured_proxy_api_key()
+    if not expected:
+        return True
+
+    presented = header_bearer_token(handler, include_proxy_key=True) or header_token(
+        handler,
+        "x-api-key",
+        "x-proxy-api-key",
+        "x-risu-proxy-api-key",
+    )
+    return bool(presented and presented == expected)
+
+
+def proxy_auth_error() -> dict:
+    return {
+        "error": {
+            "message": "Proxy API key is required",
+            "type": "authentication_error",
+        }
+    }
 
 
 def cookie_value(cookie_header: str, cookie_name: str) -> str:
