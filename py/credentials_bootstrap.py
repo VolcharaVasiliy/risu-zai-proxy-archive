@@ -2,12 +2,13 @@ import json
 import os
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CREDENTIALS_PATH = PROJECT_ROOT / "credentials.json"
 
 
 def _normalize_value(value) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     text = str(value or "").strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         return text[1:-1]

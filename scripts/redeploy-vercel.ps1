@@ -6,6 +6,7 @@ param(
   [string]$ArceeCredsFile = '',
   [string]$QwenCredsFile = '',
   [string]$GeminiWebCredsFile = '',
+  [string]$GoogleAIStudioWebCredsFile = '',
   [string]$GrokCredsFile = '',
   [string]$MistralCredsFile = '',
   [string]$InceptionCredsFile = '',
@@ -29,6 +30,7 @@ $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
 $defaultArceeCredsFile = Join-Path $projectRoot 'auth\arcee-creds.json'
 $defaultQwenCredsFile = Join-Path $projectRoot 'auth\qwen-creds.json'
 $defaultGeminiWebCredsFile = Join-Path $projectRoot 'auth\gemini-web-creds.json'
+$defaultGoogleAIStudioWebCredsFile = Join-Path $projectRoot 'auth\google-ai-studio-web-creds.json'
 $defaultGrokCredsFile = Join-Path $projectRoot 'auth\grok-creds.json'
 $defaultMistralCredsFile = Join-Path $projectRoot 'auth\mistral-creds.json'
 $defaultInceptionCredsFile = Join-Path $projectRoot 'auth\inception-creds.json'
@@ -92,12 +94,33 @@ function Set-VercelEnvFromJson {
   $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
   foreach ($property in $json.PSObject.Properties) {
     $name = [string]$property.Name
-    $value = [string]$property.Value
+    $rawValue = $property.Value
+    if ($null -eq $rawValue) {
+      continue
+    }
+    if ($rawValue -is [string]) {
+      $value = [string]$rawValue
+    }
+    else {
+      $value = ($rawValue | ConvertTo-Json -Depth 10 -Compress)
+    }
     if ([string]::IsNullOrWhiteSpace($value)) {
       continue
     }
 
     switch ($name) {
+      'google_ai_studio_api_key' {
+        Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_API_KEY' -Value $value
+      }
+      'gemini_api_key' {
+        Set-VercelEnv -Name 'GEMINI_API_KEY' -Value $value
+      }
+      'google_api_key' {
+        Set-VercelEnv -Name 'GOOGLE_API_KEY' -Value $value
+      }
+      'google_ai_studio_models' {
+        Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_MODELS' -Value $value
+      }
       'INFLECTION_TOKEN' {
         Set-VercelEnv -Name 'INFLECTION_API_KEY' -Value $value
         Set-VercelEnv -Name 'PI_INFLECTION_API_KEY' -Value $value
@@ -172,6 +195,9 @@ if ($SyncEnv) {
   if (-not $GeminiWebCredsFile -and (Test-Path -LiteralPath $defaultGeminiWebCredsFile)) {
     $GeminiWebCredsFile = $defaultGeminiWebCredsFile
   }
+  if (-not $GoogleAIStudioWebCredsFile -and (Test-Path -LiteralPath $defaultGoogleAIStudioWebCredsFile)) {
+    $GoogleAIStudioWebCredsFile = $defaultGoogleAIStudioWebCredsFile
+  }
   if (-not $GrokCredsFile -and (Test-Path -LiteralPath $defaultGrokCredsFile)) {
     $GrokCredsFile = $defaultGrokCredsFile
   }
@@ -227,6 +253,27 @@ if ($SyncEnv) {
     Set-VercelEnv -Name 'GEMINI_WEB_SECURE_1PSIDTS' -Value $geminiWebCreds.gemini_web_secure_1psidts
     if ($geminiWebCreds.gemini_web_models) {
       Set-VercelEnv -Name 'GEMINI_WEB_MODELS' -Value (($geminiWebCreds.gemini_web_models | ConvertTo-Json -Depth 10 -Compress))
+    }
+  }
+
+  if ($GoogleAIStudioWebCredsFile) {
+    if (-not (Test-Path -LiteralPath $GoogleAIStudioWebCredsFile)) {
+      throw "Google AI Studio Web credentials file not found: $GoogleAIStudioWebCredsFile"
+    }
+
+    $aiStudioWebCreds = Get-Content -LiteralPath $GoogleAIStudioWebCredsFile -Raw | ConvertFrom-Json
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_COOKIE' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_COOKIE
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_SAPISID' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_SAPISID
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_SECURE_1PAPISID' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_SECURE_1PAPISID
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_SECURE_3PAPISID' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_SECURE_3PAPISID
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_API_KEY' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_API_KEY
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_VISIT_ID' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_VISIT_ID
+    Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN' -Value $aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN
+    if ($aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_HEADERS) {
+      Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_HEADERS' -Value (($aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_HEADERS | ConvertTo-Json -Depth 10 -Compress))
+    }
+    if ($aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE) {
+      Set-VercelEnv -Name 'GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE' -Value (($aiStudioWebCreds.GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE | ConvertTo-Json -Depth 20 -Compress))
     }
   }
 

@@ -3,6 +3,8 @@ try:
         arcee_proxy,
         deepseek_proxy,
         gemini_web_proxy,
+        google_ai_studio_proxy,
+        google_ai_studio_web_proxy,
         grok_proxy,
         inception_proxy,
         inflection_proxy,
@@ -10,6 +12,7 @@ try:
         longcat_proxy,
         mimo_proxy,
         mistral_proxy,
+        multimodal,
         openai_web_proxy,
         perplexity_proxy,
         phind_proxy,
@@ -40,6 +43,8 @@ except ImportError:
     import arcee_proxy
     import deepseek_proxy
     import gemini_web_proxy
+    import google_ai_studio_proxy
+    import google_ai_studio_web_proxy
     import grok_proxy
     import inception_proxy
     import inflection_proxy
@@ -47,6 +52,7 @@ except ImportError:
     import longcat_proxy
     import mimo_proxy
     import mistral_proxy
+    import multimodal
     import openai_web_proxy
     import perplexity_proxy
     import phind_proxy
@@ -96,9 +102,10 @@ _TOOL_CAPABILITY_PROBE = {
 }
 
 
-def _model_capabilities(provider_id: str) -> dict:
+def _model_capabilities(provider_id: str, model: str = "") -> dict:
     native_tools = provider_has_native_tools(provider_id)
     tools_supported = tool_request_supported(provider_id, _TOOL_CAPABILITY_PROBE)
+    native_images = multimodal.provider_accepts_native_images(provider_id, model)
     return {
         "chat_completions": True,
         "responses": True,
@@ -106,12 +113,15 @@ def _model_capabilities(provider_id: str) -> dict:
         "native_tools": native_tools,
         "prompt_tool_shim": tools_supported and not native_tools,
         "streaming": True,
+        "images": True,
+        "native_images": native_images,
+        "image_descriptions": not native_images,
     }
 
 
 def _add_models(provider_id: str, owned_by: str, models, requires_env):
-    capabilities = _model_capabilities(provider_id)
     for model in models:
+        capabilities = _model_capabilities(provider_id, model)
         MODEL_SPECS.append(
             {
                 "id": model,
@@ -143,6 +153,22 @@ _add_models(
         "GEMINI_WEB_SECURE_1PSID",
         "GEMINI_WEB_SECURE_1PSIDTS (optional)",
         "GEMINI_WEB_COOKIE (optional)",
+    ],
+)
+_add_models(
+    "google-ai-studio",
+    google_ai_studio_proxy.OWNED_BY,
+    google_ai_studio_proxy.SUPPORTED_MODELS,
+    ["GOOGLE_AI_STUDIO_API_KEY"],
+)
+_add_models(
+    "google-ai-studio-web",
+    google_ai_studio_web_proxy.OWNED_BY,
+    google_ai_studio_web_proxy.SUPPORTED_MODELS,
+    [
+        "GOOGLE_AI_STUDIO_WEB_COOKIE",
+        "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE (required for GenerateContent)",
+        "GOOGLE_AI_STUDIO_WEB_HEADERS (optional)",
     ],
 )
 _add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
@@ -218,6 +244,10 @@ def resolve_provider_id(model: str) -> str:
         return "arcee"
     if gemini_web_proxy.supports_model(model):
         return "gemini-web"
+    if google_ai_studio_web_proxy.supports_model(model):
+        return "google-ai-studio-web"
+    if google_ai_studio_proxy.supports_model(model):
+        return "google-ai-studio"
     if grok_proxy.supports_model(model):
         return "grok"
     if kimi_proxy.supports_model(model):
@@ -256,6 +286,10 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure ARCEE_ACCESS_TOKEN in server env or pass the Arcee bearer access token via Authorization / x-arcee-access-token"
     if provider_id == "gemini-web":
         return "Configure GEMINI_WEB_SECURE_1PSID plus optional GEMINI_WEB_SECURE_1PSIDTS or GEMINI_WEB_COOKIE in server env"
+    if provider_id == "google-ai-studio":
+        return "Configure GOOGLE_AI_STUDIO_API_KEY from Google AI Studio, or pass x-google-ai-studio-api-key"
+    if provider_id == "google-ai-studio-web":
+        return "Configure GOOGLE_AI_STUDIO_WEB_COOKIE from a logged-in AI Studio browser session; GenerateContent also requires GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE captured from a matching AI Studio web request"
     if provider_id == "grok":
         return "Configure GROK_COOKIE in server env or pass GROK_SSO plus optional GROK_CF_CLEARANCE"
     if provider_id == "kimi":
@@ -337,6 +371,85 @@ def resolve_credentials(handler, provider_id: str):
             "cookie": cookie,
             "secure_1psid": secure_1psid,
             "secure_1psidts": secure_1psidts,
+        }
+
+    if provider_id == "google-ai-studio":
+        api_key = env_or_header_token(
+            handler,
+            ["GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
+            ["x-google-ai-studio-api-key", "x-gemini-api-key", "x-google-api-key"],
+        )
+        return {"api_key": api_key} if api_key else None
+
+    if provider_id == "google-ai-studio-web":
+        cookie = env_or_kv_token("GOOGLE_AI_STUDIO_WEB_COOKIE") or header_token(
+            handler, "x-google-ai-studio-web-cookie"
+        )
+        secure_1psid = env_or_kv_token(
+            "GOOGLE_AI_STUDIO_WEB_SECURE_1PSID"
+        ) or header_token(handler, "x-google-ai-studio-web-secure-1psid")
+        secure_3psid = env_or_kv_token(
+            "GOOGLE_AI_STUDIO_WEB_SECURE_3PSID"
+        ) or header_token(handler, "x-google-ai-studio-web-secure-3psid")
+        sapisid = env_or_kv_token("GOOGLE_AI_STUDIO_WEB_SAPISID") or header_token(
+            handler, "x-google-ai-studio-web-sapisid"
+        )
+        secure_1papisid = env_or_kv_token(
+            "GOOGLE_AI_STUDIO_WEB_SECURE_1PAPISID"
+        ) or header_token(handler, "x-google-ai-studio-web-secure-1papisid")
+        secure_3papisid = env_or_kv_token(
+            "GOOGLE_AI_STUDIO_WEB_SECURE_3PAPISID"
+        ) or header_token(handler, "x-google-ai-studio-web-secure-3papisid")
+        if cookie:
+            sapisid = sapisid or cookie_value(cookie, "SAPISID")
+            secure_1papisid = secure_1papisid or cookie_value(
+                cookie, "__Secure-1PAPISID"
+            )
+            secure_3papisid = secure_3papisid or cookie_value(
+                cookie, "__Secure-3PAPISID"
+            )
+            secure_1psid = secure_1psid or cookie_value(cookie, "__Secure-1PSID")
+            secure_3psid = secure_3psid or cookie_value(cookie, "__Secure-3PSID")
+        if not cookie:
+            parts = []
+            for name, value in (
+                ("SAPISID", sapisid),
+                ("__Secure-1PAPISID", secure_1papisid),
+                ("__Secure-3PAPISID", secure_3papisid),
+                ("__Secure-1PSID", secure_1psid),
+                ("__Secure-3PSID", secure_3psid),
+            ):
+                if value:
+                    parts.append(f"{name}={value}")
+            cookie = "; ".join(parts)
+        if not cookie and not sapisid and not secure_1papisid and not secure_3papisid:
+            return None
+        return {
+            "cookie": cookie,
+            "sapisid": sapisid,
+            "secure_1papisid": secure_1papisid,
+            "secure_3papisid": secure_3papisid,
+            "secure_1psid": secure_1psid,
+            "secure_3psid": secure_3psid,
+            "headers": env_or_kv_token("GOOGLE_AI_STUDIO_WEB_HEADERS")
+            or header_token(handler, "x-google-ai-studio-web-headers"),
+            "api_key": env_or_kv_token("GOOGLE_AI_STUDIO_WEB_API_KEY")
+            or header_token(handler, "x-google-ai-studio-web-api-key"),
+            "authorization": env_or_kv_token("GOOGLE_AI_STUDIO_WEB_AUTHORIZATION")
+            or header_token(handler, "x-google-ai-studio-web-authorization"),
+            "visit_id": env_or_kv_token("GOOGLE_AI_STUDIO_WEB_VISIT_ID")
+            or header_token(handler, "x-google-ai-studio-web-visit-id"),
+            "ext_519733851_bin": env_or_kv_token(
+                "GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN"
+            )
+            or header_token(handler, "x-google-ai-studio-web-ext-519733851-bin"),
+            "generate_template": env_or_kv_token(
+                "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE"
+            )
+            or env_or_kv_token("GOOGLE_AI_STUDIO_WEB_GENERATE_BODY")
+            or header_token(handler, "x-google-ai-studio-web-generate-template"),
+            "bootstrap_path": env_or_kv_token("GOOGLE_AI_STUDIO_WEB_BOOTSTRAP_PATH")
+            or header_token(handler, "x-google-ai-studio-web-bootstrap-path"),
         }
 
     if provider_id == "grok":
@@ -584,6 +697,7 @@ def _buffered_stream_chunks(result):
 
 
 def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
+    payload = multimodal.prepare_payload_for_provider(provider_id, credentials, payload)
     request_config = request_config_from_payload(payload)
     if request_has_tools(request_config):
         if not tool_request_supported(provider_id, request_config):
@@ -613,6 +727,14 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "gemini-web":
         result, meta = gemini_web_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
+    if provider_id == "google-ai-studio":
+        result, meta = google_ai_studio_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
+    if provider_id == "google-ai-studio-web":
+        result, meta = google_ai_studio_web_proxy.complete_non_stream(
+            credentials, payload
+        )
         return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "grok":
         result, meta = grok_proxy.complete_non_stream(credentials["cookie"], payload)
@@ -659,6 +781,8 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
 
 
 def stream_chunks(provider_id: str, credentials: dict, payload: dict):
+    original_payload = payload
+    payload = multimodal.prepare_payload_for_provider(provider_id, credentials, payload)
     request_config = request_config_from_payload(payload)
     if request_has_tools(request_config):
         if not tool_request_supported(provider_id, request_config):
@@ -673,6 +797,10 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
         upstream, chat_id, model = zai_proxy.chat_completion(
             credentials["token"], payload
         )
+        if original_payload is not payload and payload.get("_zai_continuation_state"):
+            original_payload["_zai_continuation_state"] = payload.get(
+                "_zai_continuation_state"
+            )
         try:
             session_key = str(
                 payload.get("conversation_id") or payload.get("chat_id") or ""
@@ -692,6 +820,16 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "arcee":
         for chunk in arcee_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "google-ai-studio":
+        for chunk in google_ai_studio_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "google-ai-studio-web":
+        for chunk in google_ai_studio_web_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 

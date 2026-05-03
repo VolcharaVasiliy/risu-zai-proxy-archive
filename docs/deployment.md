@@ -36,6 +36,9 @@ Use the exact env names expected by the adapters:
 | DeepSeek | `DEEPSEEK_TOKEN` |
 | Arcee | `ARCEE_ACCESS_TOKEN` |
 | Gemini Web | `GEMINI_WEB_SECURE_1PSID`, `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS` |
+| Google AI Studio Web | `GOOGLE_AI_STUDIO_WEB_COOKIE`, optional `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE`, `GOOGLE_AI_STUDIO_WEB_HEADERS`, `GOOGLE_AI_STUDIO_WEB_API_KEY`, `GOOGLE_AI_STUDIO_WEB_VISIT_ID`, `GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN` |
+| Google AI Studio / Gemini API | `GOOGLE_AI_STUDIO_API_KEY` or `GEMINI_API_KEY`, optional `GOOGLE_AI_STUDIO_MODELS`, `GOOGLE_AI_STUDIO_API_BASE`, `GOOGLE_AI_STUDIO_FETCH_IMAGE_URLS`, `GOOGLE_AI_STUDIO_MAX_IMAGE_BYTES` |
+| Multimodal image descriptions | optional `MULTIMODAL_IMAGE_MODE`, `MULTIMODAL_MAX_IMAGES`, `MULTIMODAL_CAPTION_MODEL`, `MULTIMODAL_CAPTION_PROMPT`, `MULTIMODAL_CAPTION_MAX_OUTPUT_TOKENS` |
 | Grok | `GROK_COOKIE`, `GROK_SSO`, `GROK_CF_CLEARANCE` |
 | OpenAI Web | `OPENAI_WEB_ACCESS_TOKEN`, `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` |
 | Qwen International | `QWEN_AI_COOKIE`, `QWEN_AI_BX_UMIDTOKEN`, optional `QWEN_AI_TOKEN`, `QWEN_AI_BX_UA`, `QWEN_AI_BX_UA_CREATE`, `QWEN_AI_BX_UA_CHAT`, `QWEN_AI_BX_V`, `QWEN_AI_TIMEZONE` |
@@ -56,6 +59,9 @@ Agent/tool compatibility variables:
 - `AGENT_TOOL_MODE=force` uses the prompt shim for every provider, including native-tool providers.
 - `AGENT_TOOL_SCHEMA_MAX_CHARS` caps the injected tool-schema prompt, defaulting to a safe large value.
 - `PROXY_API_KEY` / `RISU_PROXY_API_KEY` is optional client authentication for apps like Zed. When it is set, send it as the normal OpenAI-compatible bearer API key; provider credentials should still live in the proxy env or provider-specific headers.
+- `GOOGLE_AI_STUDIO_API_KEY` / `GEMINI_API_KEY` enables the official Gemini API provider. This provider receives images natively and supports Gemini function calling without the prompt shim.
+- `GOOGLE_AI_STUDIO_WEB_COOKIE` enables the experimental private AI Studio Web RPC provider. `CountTokens` can work with cookies alone, while `GenerateContent` also needs `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE` captured from the same browser UI flow because the private request contains a capability/attestation blob.
+- `MULTIMODAL_IMAGE_MODE=auto` is the default. For text-only providers, image inputs are replaced with Gemini-generated descriptions when a Gemini API key is available. Use `placeholder` to avoid caption calls while still showing image references, or `off` to leave image payloads untouched.
 
 Local-only variables that should stay off Vercel:
 
@@ -93,6 +99,8 @@ Named tunnel notes:
 | Z.ai | Logged-in `chat.z.ai` session, then export the JWT or copy it from local auth storage. |
 | DeepSeek | Logged-in `chat.deepseek.com` session and the stored `userToken`. |
 | Gemini Web | Google login cookies from `gemini.google.com`, usually `__Secure-1PSID` and optional `__Secure-1PSIDTS`. |
+| Google AI Studio Web | Logged-in `aistudio.google.com` Google cookies (`SAPISID`, `__Secure-*PAPISID`, `__Secure-*PSID`) and, for generation, a browser-captured `GenerateContent` body/template. |
+| Google AI Studio / Gemini API | Official API key from `https://aistudio.google.com/app/apikey`. |
 | Grok | Logged-in `grok.com` cookies. |
 | OpenAI Web | `chatgpt.com` session `accessToken`, plus optional cookie header/device id/account id. |
 | Qwen International | `chat.qwen.ai` cookies plus `bx-ua` / `bx-umidtoken` from the live web requests, and optional token cookie. |
@@ -157,6 +165,7 @@ Provider-specific helpers:
 - `scripts/get-openai-web-creds.py`
 - `scripts/launch-gemini-auth.ps1`
 - `scripts/get-gemini-web-creds.py`
+- `scripts/get-google-ai-studio-web-creds.py`
 - `scripts/launch-longcat-auth.ps1`
 - `scripts/get-longcat-creds.py`
 - `scripts/launch-mistral-auth.ps1`
@@ -207,6 +216,8 @@ The script:
 - `api/index.py` - Vercel function entrypoint
 - `py/credentials_bootstrap.py` - loads `credentials.json` into process env before provider imports
 - `py/agent_tools.py` - OpenAI-compatible prompt tool shim, tool-call extraction, and tool-call normalization
+- `py/google_ai_studio_proxy.py` - official Gemini API provider with native images, streaming, and Gemini function calling
+- `py/multimodal.py` - shared image detection and text-provider image-description preprocessing
 - `py/responses_api.py` - responses-route translation, session state, Responses-format objects, and agent compatibility rules
 - `scripts/redeploy-vercel.ps1` - env sync and deployment automation
 - `scripts/refresh-inception-creds.ps1` - refresh the local ignored Inception credentials file and optionally restart/redeploy the tunnel path

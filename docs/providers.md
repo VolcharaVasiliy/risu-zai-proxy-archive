@@ -10,6 +10,8 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | DeepSeek | `deepseek-chat`, `deepseek-reasoner`, `deepseek-search` | `DEEPSEEK_TOKEN` | `x-deepseek-token` header | Logged-in `chat.deepseek.com` session | `scripts/get-provider-creds.py` | Browser-session style token provider. |
 | Arcee | `trinity-mini`, `trinity-large-preview`, `trinity-large-thinking` | `ARCEE_ACCESS_TOKEN` | `ARCEE_SESSION_ID`, `x-arcee-access-token`, `x-arcee-session-id` | Logged-in `chat.arcee.ai` / `api.arcee.ai` bearer cookie | `scripts/get-arcee-creds.py` | Uses the `api.arcee.ai` `access_token` bearer token; request session id can be any UUID. |
 | Gemini Web | `gemini-3-flash`, `gemini-3-pro`, `gemini-3-flash-thinking`, plus `gemini-web*` aliases | `GEMINI_WEB_SECURE_1PSID` | `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE` | Logged-in `gemini.google.com` / Google cookie session | `scripts/launch-gemini-auth.ps1`, `scripts/get-gemini-web-creds.py`, `scripts/get-provider-creds.py` | Account/region gated. Can auto-use WinINET proxy locally. |
+| Google AI Studio Web | `google-ai-studio-web`, `ai-studio-web`, `ai-studio-web-pro`, `ai-studio-web-3-pro`, `ai-studio-web-3-flash`, `ai-studio-web-flash`, `ai-studio-web-lite` | `GOOGLE_AI_STUDIO_WEB_COOKIE` | `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE`, `GOOGLE_AI_STUDIO_WEB_HEADERS`, `GOOGLE_AI_STUDIO_WEB_API_KEY`, `GOOGLE_AI_STUDIO_WEB_VISIT_ID`, `GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN` | Logged-in `aistudio.google.com` Google cookies plus captured web request template for generation | Manual network capture only | Experimental private AI Studio web RPC path. `CountTokens` can work with cookies/SAPISID auth alone; `GenerateContent` needs a browser-captured body/template because slot `4` is a content/session-bound capability blob. |
+| Google AI Studio / Gemini API | `google-ai-studio`, `ai-studio`, `ai-studio-pro`, `ai-studio-flash`, `ai-studio-lite`, configured `gemini-*` ids | `GOOGLE_AI_STUDIO_API_KEY` or `GEMINI_API_KEY` | `GOOGLE_AI_STUDIO_MODELS`, `GOOGLE_AI_STUDIO_API_BASE`, `GOOGLE_AI_STUDIO_*`, `MULTIMODAL_*` | `https://aistudio.google.com/app/apikey` | Manual only | Official API path with native images and native Gemini function calling. Also powers optional image descriptions for text-only providers. |
 | Grok | `grok-3`, `grok-4`, `grok-4-thinking`, `grok-4.1-fast` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE` | Logged-in `grok.com` browser session | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py` | Cookie-based browser provider. |
 | OpenAI Web | `chatgpt-auto` and discovered ChatGPT web slugs | `OPENAI_WEB_ACCESS_TOKEN` | `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS` | Logged-in `chatgpt.com` session | `scripts/launch-openai-auth.ps1`, `scripts/get-openai-web-creds.py` | Uses the web auth/session flow, not the public API. Local `credentials.json` loads are mirrored to uppercase env names, so `openai_web_*` exports work without renaming. |
 | Qwen International | `Qwen3.6-Plus`, `Qwen3.5-Plus`, `Qwen3-Max`, `Qwen3-235B-A22B-2507`, `Qwen3.5-397B-A17B`, `Qwen3-Coder`, `Qwen3-VL-235B-A22B`, `Qwen3-Omni-Flash`, `Qwen2.5-Max` | `QWEN_AI_COOKIE`, `QWEN_AI_BX_UMIDTOKEN` | `QWEN_AI_TOKEN`, `QWEN_AI_BX_UA`, `QWEN_AI_BX_UA_CREATE`, `QWEN_AI_BX_UA_CHAT`, `QWEN_AI_BX_V`, `QWEN_AI_TIMEZONE` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py`, `scripts/get-qwen-creds.py` | Cookie + `bx-*` headers based. |
@@ -33,6 +35,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 
 Native OpenAI-style tool passthrough is available for:
 
+- `Google AI Studio / Gemini API`
 - `Inflection / Pi API`
 - `UncloseAI`
 
@@ -48,6 +51,8 @@ Use these single-model picks for routine traffic when you want the lighter optio
 | DeepSeek | `deepseek-chat` |
 | Arcee | `trinity-mini` |
 | Gemini Web | `gemini-3-flash` |
+| Google AI Studio Web | `google-ai-studio-web` for experimental cookie/RPC tests only |
+| Google AI Studio / Gemini API | `google-ai-studio` |
 | Grok | `grok-3-mini` |
 | Qwen International | `Qwen3.6-Plus` |
 | Inception | `mercury-2` |
@@ -60,7 +65,7 @@ Use these single-model picks for routine traffic when you want the lighter optio
 | Pi Web Local | `pi-web-local` |
 | UncloseAI | `uncloseai-hermes` |
 
-`OpenAI Web` and `Inflection / Pi API` are currently not included in the routine recommended picks because the live deployment is known to be unreliable for those paths.
+`OpenAI Web`, `Google AI Studio Web`, and `Inflection / Pi API` are currently not included in the routine recommended picks because the live deployment is known to be unreliable or experimental for those paths.
 
 ## Stable Provider
 
@@ -73,6 +78,7 @@ These providers depend on logged-in browser sessions or cookies:
 - `Grok`
 - `OpenAI Web`
 - `Gemini Web`
+- `Google AI Studio Web` (experimental)
 - `Arcee`
 - `Qwen International`
 - `Inception`
@@ -90,11 +96,14 @@ For these providers, the manual source is usually the logged-in website session,
 
 These providers use official or public API keys rather than browser cookies:
 
+- `Google AI Studio / Gemini API`
 - `Inflection / Pi API`
 - `Pi Web Local`
 - `UncloseAI`
 
 `Pi Web Local` is local-only and should not be pushed to Vercel.
+
+`Google AI Studio Web` is intentionally separate from the official `Google AI Studio / Gemini API` provider. It uses private `MakerSuiteService` RPCs from the browser UI. `CountTokens` can be replayed with Google cookies and a fresh `SAPISIDHASH`; `GenerateContent` additionally requires `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE`, because the private request slot `4` is a browser-captured capability/attestation blob that may be bound to the exact request content and session.
 
 ## Chat2API Integration
 
@@ -135,6 +144,12 @@ Mistral uses a separate browser-profile extractor:
 
 The extractor stores `MISTRAL_COOKIE` and `MISTRAL_CSRF_TOKEN` in `auth\mistral-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` can push into Vercel.
 
+Google AI Studio Web uses a network-dump extractor:
+
+- `scripts/get-google-ai-studio-web-creds.py`
+
+The extractor reads a browser cookie export plus a "Copy as fetch" dump, then stores `GOOGLE_AI_STUDIO_WEB_*` values in `auth\google-ai-studio-web-creds.json`, which `scripts/redeploy-vercel.ps1 -SyncEnv` can push into Vercel.
+
 That is the preferred automatic path when the local Chat2API session already contains a logged-in provider.
 
 ## Manual Sources
@@ -145,6 +160,8 @@ Manual sources by provider:
 - `DeepSeek` - logged-in `chat.deepseek.com` session
 - `Arcee` - bearer token from the `api.arcee.ai` `access_token` cookie
 - `Gemini Web` - `gemini.google.com` login cookies
+- `Google AI Studio Web` - `aistudio.google.com` Google cookies plus a captured `GenerateContent` request body/template when generation is needed
+- `Google AI Studio / Gemini API` - official API key from `https://aistudio.google.com/app/apikey`
 - `Grok` - `grok.com` cookies
 - `OpenAI Web` - `chatgpt.com` session token and cookies
 - `Qwen International` - `chat.qwen.ai` cookies
@@ -163,6 +180,8 @@ Manual sources by provider:
 
 Best native-tool picks:
 
+- `google-ai-studio`
+- `ai-studio-pro`
 - `pi-api`
 - `uncloseai-hermes`
 - `uncloseai-gpt-oss`
@@ -176,3 +195,11 @@ Best prompt-shim picks when you want to reuse existing browser/session providers
 - `gemini-3-flash-thinking` for Gemini Web sessions
 
 The prompt shim makes these providers usable in OpenAI-compatible agent clients, but it is still prompt-based. Native-tool providers remain more reliable for long tool-heavy loops.
+
+## Image Inputs
+
+- `Google AI Studio / Gemini API` receives OpenAI-style `image_url` / Responses `input_image` content natively. Data URLs and ordinary HTTPS image URLs are converted to Gemini inline image parts.
+- `uncloseai-qwen-vl` is advertised as a native vision model and receives the original OpenAI-style image payload.
+- Other providers are text-only at the upstream layer. When `GOOGLE_AI_STUDIO_API_KEY` / `GEMINI_API_KEY` is configured, `py/multimodal.py` asks Gemini to describe each image and injects those descriptions into the text prompt before forwarding the request.
+- Set `MULTIMODAL_IMAGE_MODE=placeholder` to inject image references without calling Gemini for captions, or `MULTIMODAL_IMAGE_MODE=off` to disable proxy-side image rewriting.
+- Useful optional controls: `MULTIMODAL_MAX_IMAGES`, `MULTIMODAL_CAPTION_MODEL`, `MULTIMODAL_CAPTION_PROMPT`, `MULTIMODAL_CAPTION_MAX_OUTPUT_TOKENS`, and `GOOGLE_AI_STUDIO_FETCH_IMAGE_URLS`.

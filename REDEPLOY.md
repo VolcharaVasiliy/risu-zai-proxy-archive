@@ -36,8 +36,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-a
 
 - `/v1/chat/completions` is the regular chat path.
 - `/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
-- In this repository, generic function-tool loops are currently supported only by `pi-api` and `uncloseai-*`.
-- Other providers now fail fast on `responses+tools` instead of returning misleading ordinary chat output.
+- Native function-tool loops are supported by `google-ai-studio`, `pi-api`, and `uncloseai-*`.
+- Other providers use the prompt tool shim by default with `AGENT_TOOL_MODE=auto`; set `AGENT_TOOL_MODE=off` if you want them to fail fast instead.
 
 ## Automatic Sources
 

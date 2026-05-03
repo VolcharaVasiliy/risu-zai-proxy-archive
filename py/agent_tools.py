@@ -5,7 +5,7 @@ import re
 import uuid
 from typing import Any
 
-NATIVE_TOOL_PROVIDERS = {"inflection", "uncloseai"}
+NATIVE_TOOL_PROVIDERS = {"inflection", "uncloseai", "google-ai-studio"}
 _AGENT_TOOL_MODE_ENV = "AGENT_TOOL_MODE"
 _TOOL_SCHEMA_MAX_CHARS_ENV = "AGENT_TOOL_SCHEMA_MAX_CHARS"
 

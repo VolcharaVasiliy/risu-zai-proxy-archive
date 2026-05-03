@@ -226,6 +226,28 @@ def _content_to_chat_content(content):
                 file_url = str(item.get("file_url") or "").strip()
                 file_id = str(item.get("file_id") or "").strip()
                 file_data = str(item.get("file_data") or "").strip()
+                mime_type = str(
+                    item.get("mime_type") or item.get("media_type") or ""
+                ).strip()
+
+                if mime_type.startswith("image/"):
+                    if file_url:
+                        parts.append(
+                            {"type": "image_url", "image_url": {"url": file_url}}
+                        )
+                    elif file_data:
+                        image_url = file_data
+                        if not image_url.startswith("data:"):
+                            image_url = f"data:{mime_type};base64,{image_url}"
+                        parts.append(
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        )
+                    elif file_id:
+                        parts.append(
+                            {"type": "text", "text": f"[image file_id: {file_id}]"}
+                        )
+                    continue
+
                 text = f"[file: {filename}]"
                 if file_url:
                     text = f"{text} {file_url}"

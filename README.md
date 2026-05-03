@@ -44,6 +44,7 @@ Browser/session providers:
 - `Grok`
 - `OpenAI Web` (alpha)
 - `Gemini Web`
+- `Google AI Studio Web` (experimental private RPC)
 - `Qwen International`
 - `Inception`
 - `LongCat`
@@ -56,6 +57,7 @@ Browser/session providers:
 
 API providers:
 
+- `Google AI Studio` / `Gemini API`
 - `Inflection` / `Pi API`
 - `Pi Web Local`
 - `UncloseAI`
@@ -68,15 +70,17 @@ The full model list, required env vars, manual acquisition paths, and automatic 
 2. `py/credentials_bootstrap.py` loads `credentials.json` into the runtime environment before provider modules import.
 3. `py/provider_registry.py` resolves a model id to the correct provider.
 4. `py/agent_tools.py` handles OpenAI-compatible prompt-shim tool instructions, `tool_calls` extraction, and normalization for chat-only upstreams.
-5. `py/responses_api.py` translates OpenAI Responses-style input/output and keeps short-lived response/session state for multi-turn tool loops.
-6. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
-7. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
-8. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
-9. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
-10. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
-11. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
-12. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
-13. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
+5. `py/multimodal.py` keeps native image payloads for vision providers and can turn images into Gemini-generated descriptions for text-only providers.
+6. `py/responses_api.py` translates OpenAI Responses-style input/output and keeps short-lived response/session state for multi-turn tool loops.
+7. Each provider adapter handles its own auth shape, upstream request format, and streaming behavior.
+8. `scripts/get-provider-creds.py` can auto-collect credentials from the local Chat2API desktop storage at `%APPDATA%\chat2api\Partitions\oauth-*`.
+9. `scripts/get-arcee-creds.py` extracts the Arcee bearer token from a Chromium/Yandex profile into `auth\arcee-creds.json`.
+10. `scripts/get-qwen-creds.py` extracts the Qwen cookie/header bundle into `auth\qwen-creds.json`.
+11. `scripts/get-google-ai-studio-web-creds.py` extracts AI Studio Web cookie/header/template values from a cookie export plus browser "Copy as fetch" dump into `auth\google-ai-studio-web-creds.json`.
+12. `scripts/launch-inception-auth.ps1` and `scripts/get-inception-creds.py` capture the Inception browser session into `auth\inception-creds.json`.
+13. `scripts/launch-longcat-auth.ps1` and `scripts/get-longcat-creds.py` capture the LongCat browser session into `auth\longcat-creds.json`.
+14. `scripts/launch-mistral-auth.ps1` and `scripts/get-mistral-creds.py` capture the Mistral browser session into `auth\mistral-creds.json`.
+15. `scripts/redeploy-vercel.ps1 -SyncEnv` pushes the available credentials into Vercel and deploys the project.
 
 ## Zed / OpenAI-Compatible Agent Setup
 
@@ -97,8 +101,19 @@ Example Zed settings shape:
             "max_tokens": 128000,
             "capabilities": {
               "tools": true,
-              "images": false,
+              "images": true,
               "parallel_tool_calls": false,
+              "chat_completions": true
+            }
+          },
+          {
+            "name": "google-ai-studio",
+            "display_name": "Gemini via Google AI Studio",
+            "max_tokens": 1048576,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
               "chat_completions": true
             }
           },
@@ -108,7 +123,7 @@ Example Zed settings shape:
             "max_tokens": 128000,
             "capabilities": {
               "tools": true,
-              "images": false,
+              "images": true,
               "parallel_tool_calls": true,
               "chat_completions": true
             }
@@ -234,5 +249,8 @@ This path is for `Inception` only. The rest of the providers still stay on Verce
 - LongCat exposes separate slugs for convenience: `LongCat-Flash-Chat` for regular answers and `LongCat-Flash-Thinking` / `LongCat-Flash-Thinking-2601` for reasoning.
 - `Pi Web Local` is intentionally local-only and does not need Vercel env vars.
 - `UncloseAI` does not require credentials.
-- For the most reliable OpenAI Agents / long-running tool loops, use `pi-api` or an `uncloseai-*` model because those providers receive native tool schemas.
+- `Google AI Studio` uses `GOOGLE_AI_STUDIO_API_KEY` / `GEMINI_API_KEY` and supports native images plus native Gemini function calling.
+- `Google AI Studio Web` is a separate experimental cookie-backed provider. `CountTokens` uses the private AI Studio RPC with `GOOGLE_AI_STUDIO_WEB_COOKIE`; `GenerateContent` also requires a captured `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE` because the browser request includes a protected capability blob.
+- When `GOOGLE_AI_STUDIO_API_KEY` is configured, text-only providers can receive image descriptions generated by Gemini. Set `MULTIMODAL_IMAGE_MODE=placeholder` to avoid external image-caption calls, or `MULTIMODAL_IMAGE_MODE=off` to pass requests unchanged.
+- For the most reliable OpenAI Agents / long-running tool loops, use `google-ai-studio`, `pi-api`, or an `uncloseai-*` model because those providers receive native tool schemas.
 - `Z.ai` remains the stable general chat path. For agent clients that must use Z.ai, prefer `glm-5-agent` or `glm-5.1-agent`; those aliases use the prompt tool shim plus Z.ai thinking/search flags.
