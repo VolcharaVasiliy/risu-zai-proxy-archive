@@ -35,7 +35,7 @@ Use the exact env names expected by the adapters:
 | Z.ai | `ZAI_TOKEN` |
 | DeepSeek | `DEEPSEEK_TOKEN` |
 | Arcee | `ARCEE_ACCESS_TOKEN` |
-| Gemini Web | `GEMINI_WEB_SECURE_1PSID`, `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS`, optional `GEMINI_WEB_MAX_PROMPT_CHARS` |
+| Gemini Web | `GEMINI_WEB_SECURE_1PSID`, `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS` |
 | Google AI Studio Web | `GOOGLE_AI_STUDIO_WEB_COOKIE`, optional `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE`, `GOOGLE_AI_STUDIO_WEB_HEADERS`, `GOOGLE_AI_STUDIO_WEB_API_KEY`, `GOOGLE_AI_STUDIO_WEB_VISIT_ID`, `GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN` |
 | Google AI Studio / Gemini API | `GOOGLE_AI_STUDIO_API_KEY` or `GEMINI_API_KEY`, optional `GOOGLE_AI_STUDIO_MODELS`, `GOOGLE_AI_STUDIO_API_BASE`, `GOOGLE_AI_STUDIO_FETCH_IMAGE_URLS`, `GOOGLE_AI_STUDIO_MAX_IMAGE_BYTES` |
 | Multimodal image descriptions | optional `MULTIMODAL_IMAGE_MODE`, `MULTIMODAL_MAX_IMAGES`, `MULTIMODAL_CAPTION_MODEL`, `MULTIMODAL_CAPTION_PROMPT`, `MULTIMODAL_CAPTION_MAX_OUTPUT_TOKENS` |
@@ -59,7 +59,6 @@ Agent/tool compatibility variables:
 - `AGENT_TOOL_MODE=force` uses the prompt shim for every provider, including native-tool providers.
 - `AGENT_TOOL_SCHEMA_MAX_CHARS` caps the injected tool-schema prompt, defaulting to a safe large value.
 - `PROXY_API_KEY` / `RISU_PROXY_API_KEY` is optional client authentication for apps like Zed. When it is set, send it as the normal OpenAI-compatible bearer API key; provider credentials should still live in the proxy env or provider-specific headers.
-- `GEMINI_WEB_MAX_PROMPT_CHARS` limits the single prompt assembled for Gemini Web. Default is `90000`; lower it if long chats start returning `Gemini Web returned no reply candidates`.
 - `GOOGLE_AI_STUDIO_API_KEY` / `GEMINI_API_KEY` enables the official Gemini API provider. This provider receives images natively and supports Gemini function calling without the prompt shim.
 - `GOOGLE_AI_STUDIO_WEB_COOKIE` enables the experimental private AI Studio Web RPC provider. `CountTokens` can work with cookies alone, while `GenerateContent` also needs `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE` captured from the same browser UI flow because the private request contains a capability/attestation blob.
 - `MULTIMODAL_IMAGE_MODE=auto` is the default. For text-only providers, image inputs are replaced with Gemini-generated descriptions when a Gemini API key is available. Use `placeholder` to avoid caption calls while still showing image references, or `off` to leave image payloads untouched.

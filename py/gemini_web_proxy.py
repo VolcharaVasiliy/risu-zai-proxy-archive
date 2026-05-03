@@ -37,9 +37,6 @@ FRAME_PREFIX = ")]}'"
 FRAME_PATTERN = re.compile(r"(\d+)\n")
 CARD_CONTENT_RE = re.compile(r"^http://googleusercontent\.com/card_content/\d+")
 ARTIFACTS_RE = re.compile(r"http://googleusercontent\.com/\w+/\d+\n*")
-DEFAULT_MAX_PROMPT_CHARS = int(
-    os.environ.get("GEMINI_WEB_MAX_PROMPT_CHARS", "90000") or "90000"
-)
 
 KNOWN_MODELS = [
     {
@@ -137,13 +134,7 @@ def configured_model_entries() -> list:
                     if known_entry:
                         parsed_entries.append(known_entry)
                     else:
-                        parsed_entries.append(
-                            {
-                                "id": item.strip(),
-                                "display_name": item.strip(),
-                                "description": "",
-                            }
-                        )
+                        parsed_entries.append({"id": item.strip(), "display_name": item.strip(), "description": ""})
                     continue
 
                 if not isinstance(item, dict):
@@ -166,14 +157,10 @@ def configured_model_entries() -> list:
                     "model_id": str(item.get("model_id") or "").strip(),
                     "capacity": int(item.get("capacity") or 1),
                     "capacity_field": int(item.get("capacity_field") or 12),
-                    "header": item.get("header")
-                    if isinstance(item.get("header"), dict)
-                    else None,
+                    "header": item.get("header") if isinstance(item.get("header"), dict) else None,
                 }
                 if not entry["header"] and entry["model_id"]:
-                    entry["header"] = build_model_header(
-                        entry["model_id"], entry["capacity"], entry["capacity_field"]
-                    )
+                    entry["header"] = build_model_header(entry["model_id"], entry["capacity"], entry["capacity_field"])
                 parsed_entries.append(entry)
 
     if not parsed_entries:
@@ -181,14 +168,7 @@ def configured_model_entries() -> list:
 
     with_aliases = []
     for alias, target in MODEL_ALIASES.items():
-        target_entry = next(
-            (
-                entry
-                for entry in parsed_entries
-                if str(entry.get("id") or "").lower() == target.lower()
-            ),
-            None,
-        )
+        target_entry = next((entry for entry in parsed_entries if str(entry.get("id") or "").lower() == target.lower()), None)
         if not target_entry:
             target_entry = _known_entry_map().get(target.lower())
         if target_entry:
@@ -209,10 +189,7 @@ def supports_model(model: str) -> bool:
         return False
     if lowered in MODEL_ALIASES:
         return True
-    return any(
-        lowered == str(entry.get("id") or "").strip().lower()
-        for entry in configured_model_entries()
-    )
+    return any(lowered == str(entry.get("id") or "").strip().lower() for entry in configured_model_entries())
 
 
 def _model_entry_for(request_model: str):
@@ -226,12 +203,7 @@ def _model_entry_for(request_model: str):
 
 
 def _proxy_disabled() -> bool:
-    return os.environ.get("GEMINI_WEB_NO_SYSTEM_PROXY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return os.environ.get("GEMINI_WEB_NO_SYSTEM_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalized_proxy_url(value: str) -> str:
@@ -244,13 +216,7 @@ def _normalized_proxy_url(value: str) -> str:
 
 
 def _proxy_from_env() -> str:
-    for name in [
-        "GEMINI_WEB_PROXY",
-        "HTTPS_PROXY",
-        "https_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-    ]:
+    for name in ["GEMINI_WEB_PROXY", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]:
         value = _normalized_proxy_url(os.environ.get(name, ""))
         if value:
             return value
@@ -266,10 +232,7 @@ def _proxy_from_windows_internet_settings() -> str:
         return ""
 
     try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
-        ) as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
             enabled = int(winreg.QueryValueEx(key, "ProxyEnable")[0] or 0)
             server = str(winreg.QueryValueEx(key, "ProxyServer")[0] or "").strip()
     except Exception:
@@ -320,12 +283,7 @@ def _new_session(use_curl: bool = True):
 
 
 def _skip_tls_verify() -> bool:
-    return os.environ.get("GEMINI_WEB_SKIP_TLS_VERIFY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return os.environ.get("GEMINI_WEB_SKIP_TLS_VERIFY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _transport_name(use_curl: bool) -> str:
@@ -359,25 +317,13 @@ def _set_cookie_values(session, credentials: dict):
         except Exception:
             parsed = SimpleCookie()
 
-    secure_1psid = str(
-        (credentials or {}).get("secure_1psid")
-        or _morsel_value(parsed, "__Secure-1PSID")
-        or ""
-    ).strip()
-    secure_1psidts = str(
-        (credentials or {}).get("secure_1psidts")
-        or _morsel_value(parsed, "__Secure-1PSIDTS")
-        or ""
-    ).strip()
+    secure_1psid = str((credentials or {}).get("secure_1psid") or _morsel_value(parsed, "__Secure-1PSID") or "").strip()
+    secure_1psidts = str((credentials or {}).get("secure_1psidts") or _morsel_value(parsed, "__Secure-1PSIDTS") or "").strip()
 
     if secure_1psid:
-        session.cookies.set(
-            "__Secure-1PSID", secure_1psid, domain=".google.com", path="/"
-        )
+        session.cookies.set("__Secure-1PSID", secure_1psid, domain=".google.com", path="/")
     if secure_1psidts:
-        session.cookies.set(
-            "__Secure-1PSIDTS", secure_1psidts, domain=".google.com", path="/"
-        )
+        session.cookies.set("__Secure-1PSIDTS", secure_1psidts, domain=".google.com", path="/")
 
     for morsel in parsed.values():
         name = str(morsel.key or "").strip()
@@ -427,16 +373,12 @@ def _bootstrap(credentials: dict):
         )
         if response.status_code != 200:
             preview = response.text[:300] if hasattr(response, "text") else ""
-            raise RuntimeError(
-                f"Gemini Web init failed: HTTP {response.status_code} {preview}"
-            )
+            raise RuntimeError(f"Gemini Web init failed: HTTP {response.status_code} {preview}")
 
         text = response.text
         access_token = _capture_value(text, "SNlM0e")
         if not access_token:
-            raise RuntimeError(
-                "Gemini Web init page does not contain SNlM0e; cookies may be missing or expired"
-            )
+            raise RuntimeError("Gemini Web init page does not contain SNlM0e; cookies may be missing or expired")
 
         state = {
             "access_token": access_token,
@@ -446,11 +388,7 @@ def _bootstrap(credentials: dict):
             "push_id": _capture_value(text, "qKIAYe"),
             "use_curl": use_curl,
         }
-        debug_log(
-            "gemini_web_bootstrap",
-            transport=_transport_name(use_curl),
-            language=state["language"],
-        )
+        debug_log("gemini_web_bootstrap", transport=_transport_name(use_curl), language=state["language"])
         return session, state
     except Exception:
         session.close()
@@ -500,15 +438,11 @@ def _batch_execute(session, state: dict, rpcid: str, payload: str) -> str:
     )
     if response.status_code != 200:
         preview = response.text[:300] if hasattr(response, "text") else ""
-        raise RuntimeError(
-            f"Gemini Web batch execute failed: HTTP {response.status_code} {preview}"
-        )
+        raise RuntimeError(f"Gemini Web batch execute failed: HTTP {response.status_code} {preview}")
     return response.text
 
 
-def _get_char_count_for_utf16_units(
-    text: str, start_idx: int, units_needed: int
-) -> tuple:
+def _get_char_count_for_utf16_units(text: str, start_idx: int, units_needed: int) -> tuple:
     count = 0
     units = 0
     while units < units_needed and start_idx + count < len(text):
@@ -539,9 +473,7 @@ def _parse_response_frames(text: str) -> tuple:
         length_text = match.group(1)
         length_units = int(length_text)
         start = match.start() + len(length_text)
-        char_count, units_found = _get_char_count_for_utf16_units(
-            text, start, length_units
-        )
+        char_count, units_found = _get_char_count_for_utf16_units(text, start, length_units)
         if units_found < length_units:
             break
 
@@ -582,11 +514,7 @@ def _nested_value(data, path, default=None):
     current = data
     for key in path:
         if isinstance(key, int):
-            if (
-                not isinstance(current, list)
-                or key < -len(current)
-                or key >= len(current)
-            ):
+            if not isinstance(current, list) or key < -len(current) or key >= len(current):
                 return default
             current = current[key]
             continue
@@ -639,9 +567,7 @@ def discover_models(credentials: dict) -> list:
             models_list = _nested_value(body, [15], [])
             if not isinstance(models_list, list):
                 continue
-            capacity, capacity_field = _compute_capacity(
-                _nested_value(body, [16], []), _nested_value(body, [17], [])
-            )
+            capacity, capacity_field = _compute_capacity(_nested_value(body, [16], []), _nested_value(body, [17], []))
             for model_data in models_list:
                 if not isinstance(model_data, list):
                     continue
@@ -658,9 +584,7 @@ def discover_models(credentials: dict) -> list:
                         "description": description,
                         "capacity": capacity,
                         "capacity_field": capacity_field,
-                        "header": build_model_header(
-                            model_id, capacity, capacity_field
-                        ),
+                        "header": build_model_header(model_id, capacity, capacity_field),
                     }
                 )
         return _dedupe_models(discovered)
@@ -674,41 +598,13 @@ def _text_from_content(content) -> str:
     if isinstance(content, list):
         parts = []
         for item in content:
-            if (
-                isinstance(item, dict)
-                and item.get("type") == "text"
-                and item.get("text")
-            ):
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text"):
                 parts.append(str(item["text"]))
         return "\n".join(parts)
     return ""
 
 
-def _max_prompt_chars() -> int:
-    raw = os.environ.get("GEMINI_WEB_MAX_PROMPT_CHARS", "").strip()
-    if not raw:
-        return DEFAULT_MAX_PROMPT_CHARS
-    try:
-        value = int(raw)
-    except ValueError:
-        return DEFAULT_MAX_PROMPT_CHARS
-    return max(0, value)
-
-
-def _truncate_prompt(prompt: str) -> tuple[str, bool]:
-    limit = _max_prompt_chars()
-    if not limit or len(prompt) <= limit:
-        return prompt, False
-    marker = (
-        "[Earlier conversation omitted by proxy because Gemini Web returned empty "
-        "responses on overlong prompts.]\n\n"
-    )
-    keep = max(0, limit - len(marker))
-    tail = prompt[-keep:] if keep else ""
-    return marker + tail, True
-
-
-def _prompt_from_messages(messages) -> tuple[str, bool]:
+def _prompt_from_messages(messages) -> str:
     system_parts = []
     conversation_parts = []
     for message in messages or []:
@@ -731,7 +627,7 @@ def _prompt_from_messages(messages) -> tuple[str, bool]:
         parts.append("System:\n" + "\n\n".join(system_parts))
     if conversation_parts:
         parts.append("\n\n".join(conversation_parts))
-    return _truncate_prompt("\n\n".join(parts).strip())
+    return "\n\n".join(parts).strip()
 
 
 def _resolve_model_entry(credentials: dict, request_model: str):
@@ -740,21 +636,14 @@ def _resolve_model_entry(credentials: dict, request_model: str):
         return entry
 
     if entry and entry.get("model_id"):
-        entry["header"] = build_model_header(
-            entry["model_id"],
-            int(entry.get("capacity") or 1),
-            int(entry.get("capacity_field") or 12),
-        )
+        entry["header"] = build_model_header(entry["model_id"], int(entry.get("capacity") or 1), int(entry.get("capacity_field") or 12))
         return entry
 
     if not credentials:
         return entry
 
     for live_entry in discover_models(credentials):
-        if (
-            str(live_entry.get("id") or "").lower()
-            == str(request_model or "").strip().lower()
-        ):
+        if str(live_entry.get("id") or "").lower() == str(request_model or "").strip().lower():
             return live_entry
     return entry
 
@@ -831,12 +720,7 @@ def _parse_generation_payload(text: str, request_model: str) -> tuple:
             candidates[rcid] = {"content": content, "thoughts": thoughts}
 
     if not candidates:
-        raise RuntimeError(
-            "Gemini Web returned no reply candidates. This usually means the web "
-            "endpoint returned an empty/error frame, often because the accumulated "
-            "chat context is too long or the account/model hit a transient limit. "
-            "Try a shorter chat, a fresh conversation, or lower GEMINI_WEB_MAX_PROMPT_CHARS."
-        )
+        raise RuntimeError("Gemini Web returned no reply candidates")
 
     first_candidate = next(iter(candidates.values()))
     return cid, rid, first_candidate["content"], first_candidate["thoughts"]
@@ -844,7 +728,7 @@ def _parse_generation_payload(text: str, request_model: str) -> tuple:
 
 def complete_non_stream(credentials: dict, payload: dict):
     request_model = str(payload.get("model") or "gemini-web").strip() or "gemini-web"
-    prompt, prompt_truncated = _prompt_from_messages(payload.get("messages") or [])
+    prompt = _prompt_from_messages(payload.get("messages") or [])
     if not prompt:
         raise RuntimeError("Gemini Web prompt is empty after normalization")
 
@@ -877,13 +761,9 @@ def complete_non_stream(credentials: dict, payload: dict):
         )
         if response.status_code != 200:
             preview = response.text[:500] if hasattr(response, "text") else ""
-            raise RuntimeError(
-                f"Gemini Web generation failed: HTTP {response.status_code} {preview}"
-            )
+            raise RuntimeError(f"Gemini Web generation failed: HTTP {response.status_code} {preview}")
 
-        cid, rid, content, thoughts = _parse_generation_payload(
-            response.text, request_model
-        )
+        cid, rid, content, thoughts = _parse_generation_payload(response.text, request_model)
         if not content and not thoughts:
             raise RuntimeError("Gemini Web returned an empty completion")
 
@@ -907,8 +787,6 @@ def complete_non_stream(credentials: dict, payload: dict):
             "content_length": len(content),
             "reasoning_length": len(thoughts),
             "empty_content": not bool(content),
-            "prompt_length": len(prompt),
-            "prompt_truncated": prompt_truncated,
         }
         debug_log("gemini_web_non_stream_done", **meta)
         return result, meta
