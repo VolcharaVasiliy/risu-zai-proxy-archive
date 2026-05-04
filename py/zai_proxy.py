@@ -133,15 +133,69 @@ def extract_user_id(token: str) -> str:
         return "guest"
 
 
+def _content_to_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") in {"text", "input_text", "output_text"}:
+                text = part.get("text")
+                if text:
+                    parts.append(str(text))
+            elif part.get("type") in {"image_url", "input_image"}:
+                parts.append("[image]")
+        return "\n".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
 def normalize_messages(messages):
     result = []
+    system_parts = []
     for message in messages or []:
         role = message.get("role")
+        content = message.get("content", "")
         if role == "system":
+            system_text = _content_to_text(content).strip()
+            if system_text:
+                system_parts.append(system_text)
             continue
         if role in ("user", "assistant"):
-            result.append({"role": role, "content": message.get("content", "")})
+            result.append({"role": role, "content": content})
+
+    if system_parts and result:
+        system_text = "\n\n".join(system_parts)
+        for index, message in enumerate(result):
+            if message.get("role") != "user":
+                continue
+            original = _content_to_text(message.get("content", ""))
+            result[index] = {
+                **message,
+                "content": f"{system_text}\n\nUser: {original}"
+                if original
+                else system_text,
+            }
+            break
+
     return result
+
+
+def zai_stateful_sessions_enabled() -> bool:
+    mode = os.environ.get("ZAI_SESSION_MODE", "").strip().lower()
+    if mode in {"stateful", "sticky", "upstream"}:
+        return True
+    if mode in {"stateless", "single", "risu", "off"}:
+        return False
+    return os.environ.get("ZAI_STATEFUL_SESSIONS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def latest_user_text(messages) -> str:
@@ -542,37 +596,44 @@ def chat_completion(token: str, payload: dict):
     if not prompt:
         raise RuntimeError("Z.ai request requires a user message")
 
+    stateful_sessions = zai_stateful_sessions_enabled()
     token_session_state = payload.get("_zai_session_state") or {}
-    session_key = _session_key(payload)
+    session_key = _session_key(payload) if stateful_sessions else ""
     current_user_message_parent_id = None
     current_user_message_id = payload.get("current_user_message_id") or str(
         uuid.uuid4()
     )
 
-    if token_session_state.get("upstream_chat_id"):
+    if stateful_sessions and token_session_state.get("upstream_chat_id"):
         chat_id = token_session_state["upstream_chat_id"]
         body_messages = [{"role": "user", "content": prompt}]
-        current_user_message_parent_id = token_session_state.get("last_user_message_id")
+        current_user_message_parent_id = token_session_state.get(
+            "parent_message_id"
+        ) or token_session_state.get("last_user_message_id")
         debug_log(
             "chat_completion_token_session",
             user_id=user_id,
             model=model,
             chat_id=chat_id,
             parent_id=current_user_message_parent_id,
+            session_mode="stateful",
         )
-    elif session_key:
+    elif stateful_sessions and session_key:
         session_state = _get_session_state(session_key) or {}
         stored_messages = list(session_state.get("messages") or [])
         body_messages = _merge_session_messages(stored_messages, messages)
         chat_id = session_state.get("chat_id")
         if not chat_id:
-            chat_id, _ = create_chat(token, model, body_messages)
-        current_user_message_parent_id = session_state.get("last_user_message_id")
+            chat_id, current_user_message_id = create_chat(token, model, body_messages)
+        current_user_message_parent_id = session_state.get(
+            "parent_message_id"
+        ) or session_state.get("last_user_message_id")
         _set_session_state(
             session_key,
             {
                 "chat_id": chat_id,
                 "messages": list(body_messages),
+                "parent_message_id": current_user_message_id,
                 "last_user_message_id": current_user_message_id,
             },
         )
@@ -583,6 +644,7 @@ def chat_completion(token: str, payload: dict):
             message_count=len(body_messages),
             chat_id=chat_id,
             session_key=session_key,
+            session_mode="stateful",
         )
     else:
         chat_id, current_user_message_id = create_chat(token, model, messages)
@@ -593,6 +655,7 @@ def chat_completion(token: str, payload: dict):
             model=model,
             message_count=len(messages),
             chat_id=chat_id,
+            session_mode="stateless",
         )
 
     request_id = str(uuid.uuid4())
@@ -655,12 +718,14 @@ def chat_completion(token: str, payload: dict):
         stream=True,
     )
     response.raise_for_status()
-    payload["_zai_continuation_state"] = {
-        "upstream_chat_id": chat_id,
-        "last_user_message_id": current_user_message_id,
-    }
-    if session_key:
-        _touch_session_messages(session_key, body_messages)
+    if stateful_sessions:
+        payload["_zai_continuation_state"] = {
+            "upstream_chat_id": chat_id,
+            "parent_message_id": current_user_message_id,
+            "last_user_message_id": current_user_message_id,
+        }
+        if session_key:
+            _touch_session_messages(session_key, body_messages)
     debug_log(
         "chat_completion_started",
         chat_id=chat_id,
@@ -668,6 +733,7 @@ def chat_completion(token: str, payload: dict):
         model=model,
         prompt_length=len(prompt),
         stream_requested=bool(payload.get("stream", True)),
+        session_mode="stateful" if stateful_sessions else "stateless",
     )
     return response, chat_id, model
 
