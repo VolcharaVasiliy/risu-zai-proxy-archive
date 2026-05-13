@@ -46,7 +46,7 @@ Browser/session providers:
 - `Gemini Web`
 - `Google AI Studio Web` (experimental private RPC)
 - `Qwen International`
-- `Inception`
+- `Inception` (Only Local)
 - `LongCat`
 - `Mistral` (Playground)
 - `Perplexity`
