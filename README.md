@@ -33,11 +33,6 @@
 
 ## Provider Overview
 
-Stable production provider:
-
-- `Z.ai`
-- env: `ZAI_TOKEN`
-
 Browser/session providers:
 
 - `Arcee`
