@@ -81,6 +81,47 @@ The full model list, required env vars, manual acquisition paths, and automatic 
 
 Configure Zed as an OpenAI API Compatible provider with your proxy URL as `api_url`. Keep upstream provider credentials on the proxy itself; use `PROXY_API_KEY` as the client-facing key if you want Zed to authenticate to the proxy. In Zed's provider API-key field, paste the same `PROXY_API_KEY` value; if you configure Zed via env vars, use the API-key env var name Zed derives from your provider display name.
 
+## Codex Setup
+
+Codex 0.130+ can use this proxy directly because the proxy already serves the Responses API at `/v1/responses`. `api2codex` is only needed when the upstream exposes `/v1/chat/completions` but not `/v1/responses`.
+
+Generate a Codex model catalog from the proxy registry:
+
+```powershell
+F:\DevTools\Python311\python.exe .\scripts\generate-codex-catalog.py --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
+```
+
+Then add a Codex provider profile to `~/.codex/config.toml`:
+
+```toml
+model_provider = "risu-zai"
+model = "mistral-small-2603"
+model_reasoning_effort = "xhigh"
+preferred_auth_method = "apikey"
+model_catalog_json = "C:/Users/<you>/.codex/risu-zai-model-catalog.json"
+
+[model_providers.risu-zai]
+name = "Risu ZAI Proxy"
+base_url = "http://127.0.0.1:3001/v1"
+wire_api = "responses"
+env_key = "CODEX_API_KEY"
+```
+
+Start the proxy locally, set `CODEX_API_KEY` to `PROXY_API_KEY` if proxy auth is enabled or to any placeholder if it is not, and run Codex with any model id generated in the catalog. Mistral is a useful smoke-test target:
+
+```powershell
+$env:CODEX_API_KEY = "local"
+$env:MISTRAL_COOKIE = "<console.mistral.ai cookie header>"
+$env:MISTRAL_CSRF_TOKEN = "<optional csrf token>"
+npm run dev
+
+codex -m mistral-small-2603
+```
+
+You can also keep this in a separate Codex profile as `~/.codex/risu-zai.config.toml` and run it with `codex -p risu-zai`.
+
+The proxy maps Codex Responses fields such as `max_output_tokens` and `reasoning.effort` into chat-style fields before provider dispatch, so providers like Mistral receive the same limits and reasoning intent Codex sent.
+
 Example Zed settings shape:
 
 ```json

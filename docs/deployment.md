@@ -24,6 +24,48 @@ Use this button to create a Vercel project from the repository.
 Native function-tool passthrough is used for `Inflection / Pi API` and `UncloseAI`.
 For the chat-only providers, `AGENT_TOOL_MODE=auto` enables the prompt tool shim: the proxy prompts the model to request client-side tools as strict JSON, removes unsupported upstream `tools` fields, and converts successful JSON tool requests back into OpenAI `tool_calls`.
 
+## OpenAI Codex CLI
+
+Codex can talk to this proxy directly when the configured provider uses `wire_api = "responses"`, because `/v1/responses`, `/v1/responses/{response_id}`, and `/v1/models` are already implemented here. Do not put `api2codex` between Codex and this proxy unless you are deliberately targeting a different chat-completions-only upstream.
+
+Generate the Codex model catalog from the current provider registry:
+
+```powershell
+F:\DevTools\Python311\python.exe .\scripts\generate-codex-catalog.py --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
+```
+
+Use a provider entry like this in `~/.codex/config.toml`:
+
+```toml
+model_provider = "risu-zai"
+model = "mistral-small-2603"
+model_reasoning_effort = "xhigh"
+preferred_auth_method = "apikey"
+model_catalog_json = "C:/Users/<you>/.codex/risu-zai-model-catalog.json"
+
+[model_providers.risu-zai]
+name = "Risu ZAI Proxy"
+base_url = "http://127.0.0.1:3001/v1"
+wire_api = "responses"
+env_key = "CODEX_API_KEY"
+```
+
+If `PROXY_API_KEY` or `RISU_PROXY_API_KEY` is set on the proxy, `CODEX_API_KEY` must match it. If proxy auth is disabled, `CODEX_API_KEY` can be any non-empty placeholder. Provider credentials such as `MISTRAL_COOKIE` remain on the proxy process, not in Codex.
+
+For a Mistral local smoke test:
+
+```powershell
+$env:CODEX_API_KEY = "local"
+$env:MISTRAL_COOKIE = "<console.mistral.ai cookie header>"
+$env:MISTRAL_CSRF_TOKEN = "<optional csrf token>"
+npm run dev
+codex -m mistral-small-2603
+```
+
+You can put the same settings in `~/.codex/risu-zai.config.toml` and run Codex with `codex -p risu-zai`.
+
+Codex sends Responses-style request fields. The proxy normalizes `max_output_tokens` to `max_tokens` and `reasoning.effort` to `reasoning_effort` before dispatching to chat-style provider adapters.
+
 ## Environment Naming
 
 Use the exact env names expected by the adapters:

@@ -30,6 +30,7 @@ const requiredFiles = [
   "REDEPLOY.md",
   "requirements.txt",
   "scripts/test_agent_tools.py",
+  "scripts/generate-codex-catalog.py",
   "scripts/get-arcee-creds.py",
   "scripts/get-qwen-creds.py",
   "scripts/get-grok-creds.py",
@@ -103,6 +104,40 @@ if (agentToolsTest.status !== 0) {
   throw new Error(
     `Agent tool tests failed:\n${agentToolsTest.stdout || ""}${agentToolsTest.stderr || ""}`,
   );
+}
+
+const codexCatalog = spawnSync(
+  python,
+  [
+    "scripts/generate-codex-catalog.py",
+    "--provider",
+    "mistral",
+    "--model",
+    "mistral-small-2603",
+    "--indent",
+    "0",
+  ],
+  {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  },
+);
+if (codexCatalog.status !== 0) {
+  throw new Error(
+    `Codex catalog generation failed:\n${codexCatalog.stdout || ""}${codexCatalog.stderr || ""}`,
+  );
+}
+
+try {
+  const catalog = JSON.parse(codexCatalog.stdout);
+  if (!Array.isArray(catalog.models) || catalog.models.length !== 1) {
+    throw new Error("expected one generated Mistral model");
+  }
+  if (catalog.models[0].slug !== "mistral-small-2603") {
+    throw new Error("unexpected generated model slug");
+  }
+} catch (error) {
+  throw new Error(`Codex catalog JSON validation failed: ${error.message}`);
 }
 
 console.log("check: ok");

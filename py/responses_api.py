@@ -35,8 +35,10 @@ _STATEFUL_REQUEST_FIELDS = (
     "response_format",
     "temperature",
     "top_p",
+    "max_output_tokens",
     "max_tokens",
     "max_completion_tokens",
+    "reasoning",
     "reasoning_effort",
     "seed",
     "stop",
@@ -481,6 +483,28 @@ def _request_config_from_payload(payload: dict, state: dict | None = None) -> di
     return config
 
 
+def _apply_responses_chat_aliases(chat_payload: dict) -> dict:
+    if not isinstance(chat_payload, dict):
+        return chat_payload
+
+    if (
+        chat_payload.get("max_output_tokens") is not None
+        and chat_payload.get("max_tokens") is None
+        and chat_payload.get("max_completion_tokens") is None
+    ):
+        chat_payload["max_tokens"] = chat_payload["max_output_tokens"]
+
+    reasoning = chat_payload.get("reasoning")
+    if (
+        chat_payload.get("reasoning_effort") is None
+        and isinstance(reasoning, dict)
+        and reasoning.get("effort")
+    ):
+        chat_payload["reasoning_effort"] = reasoning["effort"]
+
+    return chat_payload
+
+
 def _validate_provider_request(provider_id: str, request_config: dict):
     if not request_config.get("tools"):
         return
@@ -508,6 +532,8 @@ def _chat_payload_from_request(payload: dict, provider_id: str) -> tuple[list, d
 
     for field, value in request_config.items():
         chat_payload[field] = value
+
+    _apply_responses_chat_aliases(chat_payload)
 
     return messages, {
         "state_key": state_key,

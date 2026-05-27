@@ -26,6 +26,7 @@ from py.multimodal import (  # noqa: E402
     provider_accepts_native_images,
 )
 from py.responses_api import _content_to_chat_content  # noqa: E402
+from py.responses_api import _chat_payload_from_request  # noqa: E402
 
 READ_TOOL = {
     "type": "function",
@@ -355,6 +356,21 @@ def test_responses_input_file_image_is_preserved_as_image_url():
     }
 
 
+def test_responses_request_maps_codex_fields_to_chat_payload():
+    _messages, context = _chat_payload_from_request(
+        {
+            "model": "mistral-small-2603",
+            "input": "hello",
+            "max_output_tokens": 123,
+            "reasoning": {"effort": "high"},
+        },
+        "mistral",
+    )
+    chat_payload = context["chat_payload"]
+    assert chat_payload["max_tokens"] == 123
+    assert chat_payload["reasoning_effort"] == "high"
+
+
 def main():
     test_structured_tool_call()
     test_parallel_tool_calls_can_be_limited()
@@ -370,6 +386,7 @@ def main():
     test_google_ai_studio_function_call_extraction()
     test_google_ai_studio_tool_history_includes_function_response_id()
     test_responses_input_file_image_is_preserved_as_image_url()
+    test_responses_request_maps_codex_fields_to_chat_payload()
     print("agent_tools_test: ok")
 
 
