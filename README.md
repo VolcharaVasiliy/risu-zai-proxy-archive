@@ -92,6 +92,19 @@ Generate a Codex model catalog from the proxy registry:
 F:\DevTools\Python311\python.exe .\scripts\generate-codex-catalog.py --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
 ```
 
+Or install the portable `rzai` launcher, provider profile, model catalog, and user PATH entry in one step:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-rzai.ps1
+```
+
+Open a new terminal after installation, then run:
+
+```powershell
+rzai -Print
+rzai -Model mistral-small-2603 exec --ephemeral -s read-only -a never "reply ok"
+```
+
 Then add a Codex provider profile to `~/.codex/config.toml`:
 
 ```toml

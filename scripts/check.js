@@ -31,6 +31,8 @@ const requiredFiles = [
   "requirements.txt",
   "scripts/test_agent_tools.py",
   "scripts/generate-codex-catalog.py",
+  "scripts/install-rzai.ps1",
+  "scripts/rzai-launcher.ps1",
   "scripts/get-arcee-creds.py",
   "scripts/get-qwen-creds.py",
   "scripts/get-grok-creds.py",

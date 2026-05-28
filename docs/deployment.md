@@ -34,6 +34,18 @@ Generate the Codex model catalog from the current provider registry:
 F:\DevTools\Python311\python.exe .\scripts\generate-codex-catalog.py --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
 ```
 
+On a fresh Windows machine, the shortest setup path is the `rzai` installer:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-rzai.ps1
+```
+
+It installs `rzai` and `risu-zai` into `%USERPROFILE%\.codex\bin`, adds that directory to the user PATH, writes `%USERPROFILE%\.codex\risu-zai.config.toml`, and generates `%USERPROFILE%\.codex\risu-zai-model-catalog.json`. Open a new terminal and check it with:
+
+```powershell
+rzai -Print
+```
+
 Use a provider entry like this in `~/.codex/config.toml`:
 
 ```toml
