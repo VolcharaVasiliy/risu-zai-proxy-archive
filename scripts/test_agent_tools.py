@@ -378,18 +378,18 @@ def test_public_model_catalog_hides_alias_duplicates():
         for item in provider_registry.MODEL_SPECS
         if item["provider"] == "gemini-web"
     ]
-    assert "gemini-3.1-pro" in model_ids
-    assert "gemini-3.5-pro" in model_ids
+    assert "gemini-3-flash" in model_ids
+    assert "gemini-3-pro" in model_ids
     assert "gemini-web" not in model_ids
     assert gemini_web_proxy.supports_model("gemini-web") is True
-    assert gemini_web_proxy.supports_model("gemini-web-3.5-pro") is True
+    assert gemini_web_proxy.supports_model("gemini-web-3.5-pro") is False
 
 
 def test_qwen_37_models_are_supported():
-    assert "Qwen3.7-Plus" in qwen_ai_proxy.SUPPORTED_MODELS
     assert "Qwen3.7-Max" in qwen_ai_proxy.SUPPORTED_MODELS
+    assert "Qwen3.7-Plus" not in qwen_ai_proxy.SUPPORTED_MODELS
     assert qwen_ai_proxy.supports_model("qwen") is True
-    assert qwen_ai_proxy.map_model("qwen") == "qwen3.7-plus"
+    assert qwen_ai_proxy.map_model("qwen") == "qwen3.7-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Max") == "qwen3.7-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Max-Preview") == "qwen3.7-max"
 

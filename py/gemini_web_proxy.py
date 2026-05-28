@@ -40,38 +40,6 @@ ARTIFACTS_RE = re.compile(r"http://googleusercontent\.com/\w+/\d+\n*")
 
 KNOWN_MODELS = [
     {
-        "id": "gemini-3.5-pro",
-        "model_id": "",
-        "display_name": "3.5 Pro",
-        "description": "Gemini Web 3.5 Pro. Availability is account and quota gated.",
-        "capacity": 1,
-        "capacity_field": 12,
-    },
-    {
-        "id": "gemini-3.5-flash",
-        "model_id": "",
-        "display_name": "3.5 Flash",
-        "description": "Gemini Web 3.5 Flash. Availability is account and quota gated.",
-        "capacity": 1,
-        "capacity_field": 12,
-    },
-    {
-        "id": "gemini-3.1-pro",
-        "model_id": "",
-        "display_name": "3.1 Pro",
-        "description": "Gemini Web 3.1 Pro.",
-        "capacity": 1,
-        "capacity_field": 12,
-    },
-    {
-        "id": "gemini-3.1-flash",
-        "model_id": "",
-        "display_name": "3.1 Flash",
-        "description": "Gemini Web 3.1 Flash.",
-        "capacity": 1,
-        "capacity_field": 12,
-    },
-    {
         "id": "gemini-3-flash",
         "model_id": "fbb127bbb056c959",
         "display_name": "Flash",
@@ -100,24 +68,13 @@ MODEL_ALIASES = {
     "gemini-web": "gemini-3-flash",
     "gemini-web-fast": "gemini-3-flash",
     "gemini-web-pro": "gemini-3-pro",
-    "gemini-web-3.5": "gemini-3.5-pro",
-    "gemini-web-3.5-pro": "gemini-3.5-pro",
-    "gemini-web-3.5-flash": "gemini-3.5-flash",
-    "gemini-web-3.1": "gemini-3.1-pro",
-    "gemini-web-3.1-pro": "gemini-3.1-pro",
-    "gemini-web-3.1-flash": "gemini-3.1-flash",
     "gemini-web-thinking": "gemini-3-flash-thinking",
 }
 KNOWN_MODEL_IDS = {entry["model_id"]: entry["id"] for entry in KNOWN_MODELS if entry.get("model_id")}
 KNOWN_DISPLAY_NAMES = {
-    "3-5-pro": "gemini-3.5-pro",
-    "3-5-flash": "gemini-3.5-flash",
-    "3-1-pro": "gemini-3.1-pro",
-    "3-1-flash": "gemini-3.1-flash",
-    "gemini-3-5-pro": "gemini-3.5-pro",
-    "gemini-3-5-flash": "gemini-3.5-flash",
-    "gemini-3-1-pro": "gemini-3.1-pro",
-    "gemini-3-1-flash": "gemini-3.1-flash",
+    "flash": "gemini-3-flash",
+    "pro": "gemini-3-pro",
+    "thinking": "gemini-3-flash-thinking",
 }
 
 
