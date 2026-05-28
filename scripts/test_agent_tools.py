@@ -7,6 +7,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from py.agent_tools import (  # noqa: E402
+    build_tool_protocol_prompt,
     extract_tool_calls_from_content,
     normalize_tool_result,
     prepare_prompt_tool_payload,
@@ -125,6 +126,34 @@ def test_empty_arguments_are_valid_json_objects():
     assert text == ""
     assert len(calls) == 1
     assert calls[0]["function"]["arguments"] == "{}"
+
+
+def test_shell_aliases_resolve_to_available_command_tool():
+    content = json.dumps(
+        {"tool_calls": [{"name": "shell", "arguments": {"command": "dir"}}]}
+    )
+    text, calls = extract_tool_calls_from_content(content, _request_config())
+    assert text == ""
+    assert len(calls) == 1
+    assert calls[0]["function"]["name"] == "terminal"
+    assert json.loads(calls[0]["function"]["arguments"]) == {"command": "dir"}
+
+    text, calls = extract_tool_calls_from_content(
+        "tool_call: bash for Get-ChildItem", _request_config()
+    )
+    assert text == ""
+    assert len(calls) == 1
+    assert calls[0]["function"]["name"] == "terminal"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "command": "Get-ChildItem"
+    }
+
+
+def test_tool_protocol_prompt_describes_codex_command_tool():
+    prompt = build_tool_protocol_prompt(_request_config())
+    assert "Codex exposes emulated client tools" in prompt
+    assert "exact names in `Available tools`" in prompt
+    assert "Windows command line" in prompt
 
 
 def test_normalize_chat_result_to_openai_tool_calls():
@@ -399,6 +428,8 @@ def main():
     test_parallel_tool_calls_can_be_limited()
     test_bare_single_tool_arguments()
     test_empty_arguments_are_valid_json_objects()
+    test_shell_aliases_resolve_to_available_command_tool()
+    test_tool_protocol_prompt_describes_codex_command_tool()
     test_normalize_chat_result_to_openai_tool_calls()
     test_proxy_api_key_is_not_reused_as_upstream_bearer()
     test_prepare_prompt_tool_payload_hides_native_tool_schema()

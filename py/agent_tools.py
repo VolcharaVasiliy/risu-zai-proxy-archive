@@ -22,16 +22,28 @@ _CODE_FENCE_RE = re.compile(
 _TOOL_TAG_RE = re.compile(
     r"<tool_calls?>\s*(?P<body>.*?)\s*</tool_calls?>", re.IGNORECASE | re.DOTALL
 )
-_SHELL_TOOL_NAMES = {"bash", "shell", "powershell", "pwsh", "cmd", "terminal"}
+_SHELL_TOOL_NAMES = {
+    "bash",
+    "shell",
+    "shell_command",
+    "powershell",
+    "pwsh",
+    "cmd",
+    "terminal",
+}
 _PATH_TOOL_NAMES = {"ls", "list", "read_file", "read", "cat", "open", "image"}
 
 
-TOOL_PROTOCOL_HEADER = """You are a helpful AI assistant operating inside "Codex" — an advanced AI coding assistant environment.
+TOOL_PROTOCOL_HEADER = """You are a helpful AI assistant operating inside "Codex" — an OpenAI-compatible agent runtime and advanced AI coding assistant environment.
 
 Local Environment & OS (Windows):
 - You are running on a Windows OS. When running shell commands, you must use PowerShell or CMD syntax. Use standard Windows paths (e.g. `C:\\path\\`). Do NOT assume a Linux environment.
 - Python 3.11 is installed and available if you need to execute Python scripts.
 - You have optional access to the user's local machine (filesystem, terminal) via client-side tool calls.
+- You are not calling a real built-in Linux `shell` tool. Codex exposes emulated client tools through the exact names in `Available tools`.
+- For local commands, prefer the available command tool named `shell_command` when it is listed. If the available tool is named `terminal` or `powershell`, use that exact listed name instead.
+- Put the Windows command line in the tool argument named `command`. Examples: `Get-ChildItem`, `Get-Content README.md`, `rg "pattern" .`, `git status --short`, `python script.py`.
+- Do not request tool names that are not listed, such as `shell` or `bash`, unless those exact names appear in `Available tools`.
 - If you need to know how to use Codex features, you can search the web for Codex documentation.
 - If the user asks you to perform local actions (writing/editing files, running commands), request the appropriate tool calls to execute them. Do not state that you cannot access the system.
 - If the user is just chatting or asking general questions, reply normally without requesting tools.
@@ -382,6 +394,28 @@ def _available_name_map(request_config: dict | None) -> dict[str, str]:
         mapping[name] = name
         mapping[name.lower()] = name
         mapping[_name_key(name)] = name
+
+    command_tools = [
+        _tool_name(tool)
+        for tool in _available_tools(request_config)
+        if "command" in _schema_property_names(tool)
+    ]
+    preferred = ""
+    for candidate in ("shell_command", "terminal", "powershell", "pwsh", "cmd"):
+        match = next(
+            (name for name in command_tools if name.lower() == candidate),
+            "",
+        )
+        if match:
+            preferred = match
+            break
+    if not preferred and len(command_tools) == 1:
+        preferred = command_tools[0]
+    if preferred:
+        for alias in _SHELL_TOOL_NAMES:
+            mapping[alias] = preferred
+            mapping[alias.lower()] = preferred
+            mapping[_name_key(alias)] = preferred
     return mapping
 
 
