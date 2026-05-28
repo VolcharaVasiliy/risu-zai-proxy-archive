@@ -58,6 +58,7 @@ API providers:
 - `UncloseAI`
 
 The full model list, required env vars, manual acquisition paths, and automatic extraction scripts are documented in [docs/providers.md](docs/providers.md).
+`/v1/models` intentionally shows canonical model ids and hides most convenience aliases, so clients such as Codex do not list the same upstream model several times. Alias ids still resolve for compatibility.
 
 ## How It Works
 

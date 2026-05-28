@@ -18,6 +18,8 @@ QWEN_AI_BASE = "https://chat.qwen.ai"
 OWNED_BY = "chat.qwen.ai"
 
 SUPPORTED_MODELS = [
+    "Qwen3.7-Max",
+    "Qwen3.7-Plus",
     "Qwen3.6-Plus",
     "Qwen3.5-Plus",
     "Qwen3-235B-A22B-2507",
@@ -30,6 +32,10 @@ SUPPORTED_MODELS = [
 ]
 
 MODEL_MAP = {
+    "Qwen3.7-Max": "qwen3.7-max",
+    "Qwen3.7-Plus": "qwen3.7-plus",
+    "Qwen3.7-Max-Preview": "qwen3.7-max",
+    "Qwen3.7-Plus-Preview": "qwen3.7-plus",
     "Qwen3.6-Plus": "qwen3.6-plus",
     "Qwen3.5-Plus": "qwen3.5-plus",
     "Qwen3.5-397B-A17B": "qwen3.5-397b-a17b",
@@ -39,8 +45,13 @@ MODEL_MAP = {
     "Qwen3-VL-235B-A22B": "qwen3-vl-235b-a22b",
     "Qwen3-Omni-Flash": "qwen3-omni-flash",
     "Qwen2.5-Max": "qwen2.5-max",
-    "qwen": "qwen3.6-plus",
-    "qwen3": "qwen3.6-plus",
+    "qwen": "qwen3.7-plus",
+    "qwen3": "qwen3.7-plus",
+    "qwen3.7": "qwen3.7-plus",
+    "qwen3.7-plus": "qwen3.7-plus",
+    "qwen3.7-plus-preview": "qwen3.7-plus",
+    "qwen3.7-max": "qwen3.7-max",
+    "qwen3.7-max-preview": "qwen3.7-max",
     "qwen3.6": "qwen3.6-plus",
     "qwen3.6-plus": "qwen3.6-plus",
     "qwen3.5": "qwen3.5-plus",

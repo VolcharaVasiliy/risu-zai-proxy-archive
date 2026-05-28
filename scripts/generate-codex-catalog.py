@@ -112,29 +112,13 @@ STATIC_PROVIDERS = [
         "requires_env": ["ARCEE_ACCESS_TOKEN"],
     },
     {
-        "provider": "gemini-web",
-        "owned_by": "gemini.google.com",
-        "models": [
-            "gemini-web",
-            "gemini-web-fast",
-            "gemini-web-pro",
-            "gemini-web-thinking",
-            "gemini-3-flash",
-            "gemini-3-pro",
-            "gemini-3-flash-thinking",
-        ],
-        "requires_env": ["GEMINI_WEB_SECURE_1PSID"],
-    },
-    {
         "provider": "google-ai-studio",
         "owned_by": "Google AI Studio / Gemini API",
         "models": [
-            "google-ai-studio",
-            "ai-studio",
-            "ai-studio-pro",
-            "ai-studio-flash",
-            "ai-studio-lite",
+            "gemini-3.5-pro-preview",
+            "gemini-3.5-flash-preview",
             "gemini-3.1-pro-preview",
+            "gemini-3.1-flash-preview",
             "gemini-3-pro-preview",
             "gemini-3-flash-preview",
             "gemini-2.5-pro",
@@ -148,15 +132,32 @@ STATIC_PROVIDERS = [
         "provider": "google-ai-studio-web",
         "owned_by": "aistudio.google.com",
         "models": [
-            "google-ai-studio-web",
-            "ai-studio-web",
-            "ai-studio-web-pro",
-            "ai-studio-web-3-pro",
-            "ai-studio-web-3-flash",
-            "ai-studio-web-flash",
-            "ai-studio-web-lite",
+            "gemini-3.5-pro-preview",
+            "gemini-3.5-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-3.1-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
         ],
         "requires_env": ["GOOGLE_AI_STUDIO_WEB_COOKIE"],
+    },
+    {
+        "provider": "gemini-web",
+        "owned_by": "gemini.google.com",
+        "models": [
+            "gemini-3.5-pro",
+            "gemini-3.5-flash",
+            "gemini-3.1-pro",
+            "gemini-3.1-flash",
+            "gemini-3-flash",
+            "gemini-3-pro",
+            "gemini-3-flash-thinking",
+        ],
+        "requires_env": ["GEMINI_WEB_SECURE_1PSID"],
     },
     {
         "provider": "grok",
@@ -203,7 +204,7 @@ STATIC_PROVIDERS = [
     {
         "provider": "openai-web",
         "owned_by": "chatgpt.com",
-        "models": ["chatgpt", "chatgpt-auto", "openai-web"],
+        "models": ["chatgpt-auto"],
         "requires_env": ["OPENAI_WEB_ACCESS_TOKEN"],
     },
     {
@@ -223,8 +224,7 @@ STATIC_PROVIDERS = [
     {
         "provider": "inflection",
         "owned_by": "Inflection AI (api.inflection.ai)",
-        "module": "inflection_proxy.py",
-        "models": "MODEL_UPSTREAM",
+        "models": ["pi-api", "pi-3.1"],
         "requires_env": ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"],
     },
     {
@@ -253,6 +253,39 @@ STATIC_PROVIDERS = [
 NATIVE_TOOL_PROVIDERS = {"inflection", "uncloseai", "google-ai-studio"}
 NATIVE_IMAGE_PROVIDERS = {"google-ai-studio"}
 NATIVE_IMAGE_MODELS = {"uncloseai-qwen-vl"}
+MODEL_ALIASES = {
+    "gemini-web": "gemini-3-flash",
+    "gemini-web-fast": "gemini-3-flash",
+    "gemini-web-pro": "gemini-3-pro",
+    "gemini-web-thinking": "gemini-3-flash-thinking",
+    "gemini-web-3.5": "gemini-3.5-pro",
+    "gemini-web-3.5-pro": "gemini-3.5-pro",
+    "gemini-web-3.5-flash": "gemini-3.5-flash",
+    "gemini-web-3.1": "gemini-3.1-pro",
+    "gemini-web-3.1-pro": "gemini-3.1-pro",
+    "gemini-web-3.1-flash": "gemini-3.1-flash",
+    "google-ai-studio": "gemini-2.5-flash",
+    "ai-studio": "gemini-2.5-flash",
+    "ai-studio-pro": "gemini-2.5-pro",
+    "ai-studio-flash": "gemini-2.5-flash",
+    "ai-studio-lite": "gemini-2.5-flash-lite",
+    "ai-studio-3.5-pro": "gemini-3.5-pro-preview",
+    "ai-studio-3.5-flash": "gemini-3.5-flash-preview",
+    "ai-studio-3.1-pro": "gemini-3.1-pro-preview",
+    "ai-studio-3.1-flash": "gemini-3.1-flash-preview",
+    "chatgpt": "chatgpt-auto",
+    "openai-web": "chatgpt-auto",
+    "inflection-pi": "pi-api",
+    "inflection_3_pi": "pi-api",
+    "pi-3-1": "pi-3.1",
+    "qwen": "Qwen3.7-Plus",
+    "qwen3": "Qwen3.7-Plus",
+    "qwen3.7": "Qwen3.7-Plus",
+    "qwen3.7-plus": "Qwen3.7-Plus",
+    "qwen3.7-plus-preview": "Qwen3.7-Plus",
+    "qwen3.7-max": "Qwen3.7-Max",
+    "qwen3.7-max-preview": "Qwen3.7-Max",
+}
 
 
 def _display_provider(provider_id: str) -> str:
@@ -430,7 +463,15 @@ def _codex_model(spec: dict, index: int, default_context_window: int) -> dict:
 
 def _selected_specs(args) -> list[dict]:
     providers = {item.strip().lower() for item in args.provider or [] if item.strip()}
-    models = {item.strip().lower() for item in args.model or [] if item.strip()}
+    models = set()
+    for item in args.model or []:
+        text = item.strip()
+        if not text:
+            continue
+        models.add(text.lower())
+        alias_target = MODEL_ALIASES.get(text.lower())
+        if alias_target:
+            models.add(alias_target.lower())
     selected = []
     for spec in load_model_specs(args.static):
         provider_id = str(spec.get("provider") or "").strip().lower()

@@ -48,9 +48,16 @@ MODEL_ALIASES = {
     "ai-studio-web-3-flash": "gemini-3-flash-preview",
     "ai-studio-web-flash": "gemini-2.5-flash",
     "ai-studio-web-lite": "gemini-2.5-flash-lite",
+    "ai-studio-web-3.5-pro": "gemini-3.5-pro-preview",
+    "ai-studio-web-3.5-flash": "gemini-3.5-flash-preview",
+    "ai-studio-web-3.1-pro": "gemini-3.1-pro-preview",
+    "ai-studio-web-3.1-flash": "gemini-3.1-flash-preview",
 }
 DEFAULT_UPSTREAM_MODELS = [
+    "gemini-3.5-pro-preview",
+    "gemini-3.5-flash-preview",
     "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-preview",
     "gemini-3-pro-preview",
     "gemini-3-flash-preview",
     "gemini-2.5-pro",

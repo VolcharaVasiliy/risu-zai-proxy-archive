@@ -27,6 +27,7 @@ from py.multimodal import (  # noqa: E402
 )
 from py.responses_api import _content_to_chat_content  # noqa: E402
 from py.responses_api import _chat_payload_from_request  # noqa: E402
+from py import gemini_web_proxy, provider_registry, qwen_ai_proxy  # noqa: E402
 
 READ_TOOL = {
     "type": "function",
@@ -371,6 +372,28 @@ def test_responses_request_maps_codex_fields_to_chat_payload():
     assert chat_payload["reasoning_effort"] == "high"
 
 
+def test_public_model_catalog_hides_alias_duplicates():
+    model_ids = [
+        item["id"]
+        for item in provider_registry.MODEL_SPECS
+        if item["provider"] == "gemini-web"
+    ]
+    assert "gemini-3.1-pro" in model_ids
+    assert "gemini-3.5-pro" in model_ids
+    assert "gemini-web" not in model_ids
+    assert gemini_web_proxy.supports_model("gemini-web") is True
+    assert gemini_web_proxy.supports_model("gemini-web-3.5-pro") is True
+
+
+def test_qwen_37_models_are_supported():
+    assert "Qwen3.7-Plus" in qwen_ai_proxy.SUPPORTED_MODELS
+    assert "Qwen3.7-Max" in qwen_ai_proxy.SUPPORTED_MODELS
+    assert qwen_ai_proxy.supports_model("qwen") is True
+    assert qwen_ai_proxy.map_model("qwen") == "qwen3.7-plus"
+    assert qwen_ai_proxy.map_model("Qwen3.7-Max") == "qwen3.7-max"
+    assert qwen_ai_proxy.map_model("Qwen3.7-Max-Preview") == "qwen3.7-max"
+
+
 def main():
     test_structured_tool_call()
     test_parallel_tool_calls_can_be_limited()
@@ -387,6 +410,8 @@ def main():
     test_google_ai_studio_tool_history_includes_function_response_id()
     test_responses_input_file_image_is_preserved_as_image_url()
     test_responses_request_maps_codex_fields_to_chat_payload()
+    test_public_model_catalog_hides_alias_duplicates()
+    test_qwen_37_models_are_supported()
     print("agent_tools_test: ok")
 
 

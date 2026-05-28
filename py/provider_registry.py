@@ -89,6 +89,21 @@ def env_or_kv_token(key):
 
 
 MODEL_SPECS = []
+PUBLIC_MODEL_IDS_BY_PROVIDER = {
+    "gemini-web": set(getattr(gemini_web_proxy, "PUBLIC_MODELS", gemini_web_proxy.SUPPORTED_MODELS)),
+    "google-ai-studio": {
+        model
+        for model in google_ai_studio_proxy.SUPPORTED_MODELS
+        if model not in getattr(google_ai_studio_proxy, "MODEL_ALIASES", {})
+    },
+    "google-ai-studio-web": set(google_ai_studio_web_proxy.SUPPORTED_MODELS),
+    "openai-web": {
+        model
+        for model in openai_web_proxy.SUPPORTED_MODELS
+        if model != "chatgpt"
+    },
+    "inflection": {"pi-api", "pi-3.1"},
+}
 _TOOL_CAPABILITY_PROBE = {
     "tools": [
         {
@@ -121,6 +136,9 @@ def _model_capabilities(provider_id: str, model: str = "") -> dict:
 
 def _add_models(provider_id: str, owned_by: str, models, requires_env):
     for model in models:
+        public_ids = PUBLIC_MODEL_IDS_BY_PROVIDER.get(provider_id)
+        if public_ids is not None and model not in public_ids:
+            continue
         capabilities = _model_capabilities(provider_id, model)
         MODEL_SPECS.append(
             {
