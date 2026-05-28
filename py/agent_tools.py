@@ -22,6 +22,15 @@ _CODE_FENCE_RE = re.compile(
 _TOOL_TAG_RE = re.compile(
     r"<tool_calls?>\s*(?P<body>.*?)\s*</tool_calls?>", re.IGNORECASE | re.DOTALL
 )
+_MALFORMED_TOOL_FRAGMENT_RE = re.compile(
+    r'(?is)(?:"tool_calls?"|tool_calls?)\s*:\s*(?P<body>.+)'
+)
+_TOOL_NAME_FRAGMENT_RE = re.compile(
+    r'(?is)(?:"name"|name)\s*:\s*"(?P<name>[A-Za-z0-9_.:-]+)"'
+)
+_COMMAND_FRAGMENT_RE = re.compile(
+    r'(?is)(?:"command"|command)\s*:\s*"(?P<command>.*?)(?:"\s*(?:[,}\]]|$)|$)'
+)
 _SHELL_TOOL_NAMES = {
     "bash",
     "shell",
@@ -43,6 +52,7 @@ Local Environment & OS (Windows):
 - You are not calling a real built-in Linux `shell` tool. Codex exposes emulated client tools through the exact names in `Available tools`.
 - For local commands, prefer the available command tool named `shell_command` when it is listed. If the available tool is named `terminal` or `powershell`, use that exact listed name instead.
 - Put the Windows command line in the tool argument named `command`. Examples: `Get-ChildItem`, `Get-Content README.md`, `rg "pattern" .`, `git status --short`, `python script.py`.
+- To open a local HTML/file on Windows, first verify it exists with `Test-Path -LiteralPath "F:\\path\\file.html"`, then use `Invoke-Item -LiteralPath "F:\\path\\file.html"` or `Start-Process -FilePath "F:\\path\\file.html"`.
 - Do not request tool names that are not listed, such as `shell` or `bash`, unless those exact names appear in `Available tools`.
 - If you need to know how to use Codex features, you can search the web for Codex documentation.
 - If the user asks you to perform local actions (writing/editing files, running commands), request the appropriate tool calls to execute them. Do not state that you cannot access the system.
@@ -647,6 +657,16 @@ def _requested_tool_names_from_lines(text: str) -> list[str]:
     return names
 
 
+def _requested_tool_names_from_malformed_fragments(text: str) -> list[str]:
+    names = []
+    for match in _MALFORMED_TOOL_FRAGMENT_RE.finditer(str(text or "")):
+        body = match.group("body")
+        name_match = _TOOL_NAME_FRAGMENT_RE.search(body)
+        if name_match:
+            names.append(name_match.group("name"))
+    return names
+
+
 def _unavailable_tool_message(
     requested_names: list[str], request_config: dict | None
 ) -> str:
@@ -697,6 +717,7 @@ def unavailable_tool_message_from_content(
         requested_names.extend(_requested_tool_names_from_value(parsed))
 
     requested_names.extend(_requested_tool_names_from_lines(text))
+    requested_names.extend(_requested_tool_names_from_malformed_fragments(text))
     unavailable = [
         name
         for name in requested_names
@@ -712,6 +733,50 @@ def _limit_parallel_calls(calls: list[dict], request_config: dict | None) -> lis
     if (request_config or {}).get("parallel_tool_calls") is False and len(calls) > 1:
         return calls[:1]
     return calls
+
+
+def _decode_jsonish_string_fragment(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return json.loads(f'"{text}"')
+    except Exception:
+        return text.replace('\\"', '"').replace("\\\\", "\\")
+
+
+def _normalize_wrapped_command(value: str) -> str:
+    text = _decode_jsonish_string_fragment(value)
+    return re.sub(r"\s*\r?\n\s*", " ", text).strip()
+
+
+def _extract_malformed_tool_calls(
+    text: str, request_config: dict | None
+) -> tuple[str, list[dict]]:
+    calls = []
+    remaining = str(text or "").strip()
+
+    for match in _MALFORMED_TOOL_FRAGMENT_RE.finditer(remaining):
+        body = match.group("body")
+        name_match = _TOOL_NAME_FRAGMENT_RE.search(body)
+        if not name_match:
+            continue
+
+        name = name_match.group("name")
+        command_match = _COMMAND_FRAGMENT_RE.search(body)
+        if command_match:
+            arguments: Any = {"command": _normalize_wrapped_command(command_match.group("command"))}
+        else:
+            arguments = {}
+
+        call = _tool_call(name, arguments, request_config)
+        if call:
+            calls.append(call)
+
+    if not calls:
+        return "", []
+
+    return "", _limit_parallel_calls(calls, request_config)
 
 
 def _pseudo_tool_call_arguments(name: str, args_text: str) -> str:
@@ -919,6 +984,10 @@ def extract_tool_calls_from_content(
         if calls:
             remaining = text.replace(original, "", 1).strip()
             return remaining, calls
+
+    remaining, calls = _extract_malformed_tool_calls(text, request_config)
+    if calls:
+        return remaining, calls
 
     return _extract_pseudo_tool_calls(text, request_config)
 

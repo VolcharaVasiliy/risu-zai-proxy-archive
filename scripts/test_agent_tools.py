@@ -149,11 +149,26 @@ def test_shell_aliases_resolve_to_available_command_tool():
     }
 
 
+def test_malformed_tool_fragment_recovers_shell_command():
+    content = (
+        '"tool_calls":"name":"shell_command","arguments":"command":"gh search repos --topic=creative-coding '
+        '--sort=stars\n  --limit=5 --json name,owner,stargazersCount,description,url"'
+    )
+    text, calls = extract_tool_calls_from_content(content, _request_config())
+    assert text == ""
+    assert len(calls) == 1
+    assert calls[0]["function"]["name"] == "terminal"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "command": "gh search repos --topic=creative-coding --sort=stars --limit=5 --json name,owner,stargazersCount,description,url"
+    }
+
+
 def test_tool_protocol_prompt_describes_codex_command_tool():
     prompt = build_tool_protocol_prompt(_request_config())
     assert "Codex exposes emulated client tools" in prompt
     assert "exact names in `Available tools`" in prompt
     assert "Windows command line" in prompt
+    assert "Invoke-Item -LiteralPath" in prompt
     assert "Available tool names (use exactly)" in prompt
     assert "`read_file`, `terminal`" in prompt
     assert "Command-capable tools: `terminal`" in prompt
@@ -457,6 +472,7 @@ def main():
     test_bare_single_tool_arguments()
     test_empty_arguments_are_valid_json_objects()
     test_shell_aliases_resolve_to_available_command_tool()
+    test_malformed_tool_fragment_recovers_shell_command()
     test_tool_protocol_prompt_describes_codex_command_tool()
     test_normalize_chat_result_to_openai_tool_calls()
     test_unavailable_tool_request_returns_available_tool_list()
