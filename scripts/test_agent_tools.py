@@ -172,6 +172,10 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Available tool names (use exactly)" in prompt
     assert "`read_file`, `terminal`" in prompt
     assert "Command-capable tools: `terminal`" in prompt
+    assert "Read relevant files before editing" in prompt
+    assert "Do not rewrite entire files" in prompt
+    assert "Prefer a focused patch" in prompt
+    assert "Keep user-visible progress explicit" in prompt
 
 
 def test_normalize_chat_result_to_openai_tool_calls():

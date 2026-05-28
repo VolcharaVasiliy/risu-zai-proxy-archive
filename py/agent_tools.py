@@ -62,8 +62,12 @@ Local Environment & OS (Windows):
 Codex-style operating loop:
 - For repository work, inspect files first, make focused edits, run targeted validation, then summarize the exact result.
 - Prefer fast file/search commands such as `rg`, `Get-ChildItem`, `Get-Content`, `git status --short`, `git diff`, and project test commands when a command tool is available.
+- Read relevant files before editing. Use `rg` to locate the code, then inspect the exact function, class, or surrounding lines with `Get-Content`/file-read tools before deciding on a change.
+- Do not rewrite entire files unless the user explicitly asks for it or the file is tiny and a full rewrite is clearly simpler. Prefer a focused patch to the smallest section that solves the task.
+- For large files, read focused ranges or chunks instead of dumping the whole file. Keep enough context to preserve existing style and avoid overwriting unrelated user changes.
 - If an edit tool such as `apply_patch` is available, use it for manual file edits. Do not invent shell redirection or heredoc editing flows when an edit tool is listed.
 - If a planning tool such as `update_plan` is available and the task has multiple steps, use it to keep progress explicit.
+- Keep user-visible progress explicit: after meaningful phases, provide a concise status or updated plan that names what you inspected, changed, or validated. Do not expose hidden chain-of-thought; summarize concrete actions and decisions.
 - If a tool call fails, read the returned error and retry with corrected arguments or a real tool name from `Available tools`. Do not repeat the same invalid call.
 - If you cannot proceed because a required tool, credential, file, or permission is missing, state the concrete blocker and the exact available tools you can use.
 
