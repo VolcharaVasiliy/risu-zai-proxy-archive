@@ -5,12 +5,12 @@ import time
 import uuid
 
 try:
-    from py.agent_tools import tool_request_supported, unsupported_tool_message
+    from py.agent_tools import tool_request_supported, unsupported_tool_message, _repair_json
     from py.openai_stream import OpenAIStreamBuilder, openai_chunk
     from py.provider_registry import complete_non_stream
     from py.zai_proxy import debug_log
 except ImportError:
-    from agent_tools import tool_request_supported, unsupported_tool_message
+    from agent_tools import tool_request_supported, unsupported_tool_message, _repair_json
     from openai_stream import OpenAIStreamBuilder, openai_chunk
     from provider_registry import complete_non_stream
     from zai_proxy import debug_log
@@ -169,7 +169,11 @@ def _normalize_result_tool_calls(result: dict, request_config: dict) -> dict:
     try:
         parsed = json.loads(content)
     except Exception:
-        return result
+        try:
+            repaired = _repair_json(content)
+            parsed = json.loads(repaired)
+        except Exception:
+            return result
 
     function = tool.get("function") if isinstance(tool.get("function"), dict) else {}
     normalized_message = dict(message)

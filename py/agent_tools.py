@@ -665,6 +665,63 @@ def _balanced_json_substrings(text: str) -> list[str]:
     return results
 
 
+def _repair_json(text: str) -> str:
+    result = []
+    in_string = False
+    i = 0
+    n = len(text)
+    
+    while i < n:
+        char = text[i]
+        
+        if in_string:
+            if char == "\\":
+                # Check if it's a valid escape sequence.
+                if i + 1 < n:
+                    next_char = text[i + 1]
+                    is_valid = False
+                    if next_char in ('"', '\\', '/', 'b', 'f', 'n', 'r', 't'):
+                        is_valid = True
+                    elif next_char == 'u' and i + 5 < n:
+                        if all(c in '0123456789abcdefABCDEF' for c in text[i+2:i+6]):
+                            is_valid = True
+                    
+                    if is_valid:
+                        result.append(char)
+                        result.append(next_char)
+                        i += 2
+                        continue
+                result.append("\\\\")
+                i += 1
+                continue
+            
+            if char == '"':
+                # Check if valid closing quote
+                next_non_ws = ""
+                j = i + 1
+                while j < n:
+                    if not text[j].isspace():
+                        next_non_ws = text[j]
+                        break
+                    j += 1
+                
+                if next_non_ws in ("", ":", ",", "}", "]"):
+                    in_string = False
+                    result.append(char)
+                else:
+                    result.append('\\"')
+            else:
+                result.append(char)
+        else:
+            if char == '"':
+                in_string = True
+            result.append(char)
+        
+        i += 1
+        
+    return "".join(result)
+
+
 def extract_tool_calls_from_content(
     content: Any, request_config: dict | None = None
 ) -> tuple[str, list[dict]]:
@@ -676,7 +733,11 @@ def extract_tool_calls_from_content(
         try:
             parsed = json.loads(body)
         except Exception:
-            continue
+            try:
+                repaired = _repair_json(body)
+                parsed = json.loads(repaired)
+            except Exception:
+                continue
         calls = _calls_from_value(
             parsed, request_config, allow_bare_arguments=(body.strip() == text)
         )
