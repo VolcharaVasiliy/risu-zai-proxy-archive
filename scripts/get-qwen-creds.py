@@ -5,9 +5,15 @@ import json
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 from ctypes import Structure, byref, c_void_p, windll, wintypes
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+PYDEPS_DIR = ROOT_DIR / "pydeps"
+if PYDEPS_DIR.is_dir() and str(PYDEPS_DIR) not in sys.path:
+    sys.path.insert(0, str(PYDEPS_DIR))
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 

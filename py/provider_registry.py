@@ -3,6 +3,7 @@ try:
         arcee_proxy,
         deepseek_proxy,
         gemini_web_proxy,
+        glm_web_proxy,
         google_ai_studio_proxy,
         google_ai_studio_web_proxy,
         grok_proxy,
@@ -43,6 +44,7 @@ except ImportError:
     import arcee_proxy
     import deepseek_proxy
     import gemini_web_proxy
+    import glm_web_proxy
     import google_ai_studio_proxy
     import google_ai_studio_web_proxy
     import grok_proxy
@@ -246,6 +248,12 @@ _add_models(
     qwen_ai_proxy.SUPPORTED_MODELS,
     ["QWEN_AI_COOKIE"],
 )
+_add_models(
+    "glm-web",
+    glm_web_proxy.OWNED_BY,
+    glm_web_proxy.SUPPORTED_MODELS,
+    ["GLM_REFRESH_TOKEN"],
+)
 _add_models("uncloseai", uncloseai_proxy.OWNED_BY, uncloseai_proxy.SUPPORTED_MODELS, [])
 
 
@@ -290,6 +298,8 @@ def resolve_provider_id(model: str) -> str:
         return "pi-local"
     if qwen_ai_proxy.supports_model(model):
         return "qwen-ai"
+    if glm_web_proxy.supports_model(model):
+        return "glm-web"
     if uncloseai_proxy.supports_model(model):
         return "uncloseai"
     return ""
@@ -332,6 +342,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Run scripts\\launch-pi-auth.ps1, log in to pi.ai, and use the local Python server with the saved pi-edge-profile"
     if provider_id == "qwen-ai":
         return "Configure QWEN_AI_COOKIE in server env"
+    if provider_id == "glm-web":
+        return "Configure GLM_REFRESH_TOKEN in server env or pass the GLM refresh token as Bearer token / x-glm-refresh-token header"
     if provider_id == "uncloseai":
         return "UncloseAI public endpoints do not require credentials"
     return "Provider credentials are not configured"
@@ -668,6 +680,12 @@ def resolve_credentials(handler, provider_id: str):
     if provider_id == "uncloseai":
         return {"public": True}
 
+    if provider_id == "glm-web":
+        token = env_or_header_token(
+            handler, ["GLM_REFRESH_TOKEN", "GLM_TOKEN"], ["x-glm-refresh-token", "x-glm-token"]
+        )
+        return {"refresh_token": token} if token else None
+
     return None
 
 
@@ -792,6 +810,11 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     if provider_id == "qwen-ai":
         result, meta = qwen_ai_proxy.complete_non_stream(credentials, payload)
         return normalize_tool_result(result, request_config)[0], meta
+    if provider_id == "glm-web":
+        result, meta = glm_web_proxy.complete_non_stream(
+            credentials["refresh_token"], payload
+        )
+        return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "uncloseai":
         result, meta = uncloseai_proxy.complete_non_stream(credentials, payload)
         return normalize_tool_result(result, request_config)[0], meta
@@ -898,6 +921,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "qwen-ai":
         for chunk in qwen_ai_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "glm-web":
+        for chunk in glm_web_proxy.stream_chunks(credentials["refresh_token"], payload):
             yield chunk
         return
 

@@ -199,9 +199,7 @@ def create_chat(credentials: dict, model_id: str, title: str = "OpenAI_API_Chat"
 def chat_completion(credentials: dict, payload: dict):
     request_model = payload.get("model", "Qwen3-Max")
     model_id = map_model(request_model)
-    prompt = _prompt_from_messages(payload.get("messages") or [])
-    chat_id = create_chat(credentials, model_id)
-
+    
     lowered = str(request_model or "").lower()
     should_enable_thinking = bool(payload.get("enable_thinking") or payload.get("reasoning_effort"))
     if request_model.endswith("-thinking") or "think" in lowered or "r1" in lowered:
@@ -209,44 +207,66 @@ def chat_completion(credentials: dict, payload: dict):
     if request_model.endswith("-fast"):
         should_enable_thinking = False
 
+    chat_id = create_chat(credentials, model_id)
+
+    body_messages = []
+    parent_id = None
     now_s = int(time.time())
-    fid = str(uuid.uuid4())
-    child_id = str(uuid.uuid4())
+    model_name = model_id.replace("-thinking", "").replace("-fast", "")
+    
+    normalized_msgs = payload.get("messages") or []
+    for i, msg in enumerate(normalized_msgs):
+        fid = str(uuid.uuid4())
+        role = msg.get("role")
+        text = _text_from_content(msg.get("content", ""))
+        
+        role_mapped = "user" if role in ("user", "system") else "assistant"
+        
+        msg_obj = {
+            "fid": fid,
+            "parentId": parent_id,
+            "childrenIds": [],
+            "role": role_mapped,
+            "content": text,
+            "user_action": "chat",
+            "files": [],
+            "timestamp": now_s + i,
+            "models": [model_name],
+            "chat_type": "t2t",
+            "feature_config": {
+                "thinking_enabled": should_enable_thinking,
+                "output_schema": "phase",
+                "research_mode": "normal",
+                "auto_thinking": should_enable_thinking,
+                "thinking_mode": payload.get("thinking_mode") or "Auto",
+                "thinking_format": "summary",
+                "auto_search": bool(payload.get("auto_search", True)),
+            },
+            "extra": {"meta": {"subChatType": "t2t"}},
+            "sub_chat_type": "t2t",
+            "parent_id": parent_id,
+        }
+        
+        if parent_id and body_messages:
+            body_messages[-1]["childrenIds"].append(fid)
+            
+        body_messages.append(msg_obj)
+        parent_id = fid
+
+    if body_messages:
+        child_id = str(uuid.uuid4())
+        body_messages[-1]["childrenIds"] = [child_id]
+
     body = {
         "stream": True,
         "version": "2.1",
         "incremental_output": True,
         "chat_id": chat_id,
         "chat_mode": "normal",
-        "model": model_id.replace("-thinking", "").replace("-fast", ""),
+        "model": model_name,
         "parent_id": None,
-        "messages": [
-            {
-                "fid": fid,
-                "parentId": None,
-                "childrenIds": [child_id],
-                "role": "user",
-                "content": prompt,
-                "user_action": "chat",
-                "files": [],
-                "timestamp": now_s,
-                "models": [model_id.replace("-thinking", "").replace("-fast", "")],
-                "chat_type": "t2t",
-                "feature_config": {
-                    "thinking_enabled": should_enable_thinking,
-                    "output_schema": "phase",
-                    "research_mode": "normal",
-                    "auto_thinking": should_enable_thinking,
-                    "thinking_mode": payload.get("thinking_mode") or "Auto",
-                    "thinking_format": "summary",
-                    "auto_search": bool(payload.get("auto_search", True)),
-                },
-                "extra": {"meta": {"subChatType": "t2t"}},
-                "sub_chat_type": "t2t",
-                "parent_id": None,
-            }
-        ],
-        "timestamp": now_s + 1,
+        "messages": body_messages,
+        "timestamp": now_s + len(body_messages) + 1,
     }
 
     response = requests.post(
@@ -257,6 +277,7 @@ def chat_completion(credentials: dict, payload: dict):
         stream=True,
     )
     response.raise_for_status()
+    prompt = body_messages[-1]["content"] if body_messages else ""
     debug_log("qwen_ai_chat_started", model=request_model, chat_id=chat_id, prompt_length=len(prompt), thinking=should_enable_thinking)
     return response, chat_id, request_model
 

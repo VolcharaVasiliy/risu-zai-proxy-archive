@@ -10,8 +10,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyd
 import requests
 
 try:
+    from py.openai_stream import OpenAIStreamBuilder
     from py.zai_proxy import debug_log
 except ImportError:
+    from openai_stream import OpenAIStreamBuilder
     from zai_proxy import debug_log
 
 GLM_API_BASE = "https://chatglm.cn/chatglm"
@@ -166,22 +168,29 @@ def acquire_access_token(refresh_token: str) -> str:
 def chat_completion(refresh_token: str, payload: dict):
     access_token = acquire_access_token(refresh_token)
     request_model = payload.get("model", "chatglm-web")
-    prompt = _prompt_from_messages(payload.get("messages") or [])
-    if not prompt:
-        prompt = "User: "
+    
+    body_messages = []
+    for msg in payload.get("messages") or []:
+        role = msg.get("role")
+        text = _text_from_content(msg.get("content", ""))
+        if not text.strip():
+            continue
+        body_messages.append({
+            "role": "user" if role in ("user", "system") else "assistant",
+            "content": [{"type": "text", "text": text}],
+        })
+    if not body_messages:
+        body_messages = [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
+
+    prompt_len = sum(len(m["content"][0]["text"]) for m in body_messages)
 
     sign = _generate_sign()
     body = {
         "assistant_id": _assistant_id_for(request_model),
-        "conversation_id": "",
+        "conversation_id": payload.get("conversation_id") or payload.get("chat_id") or "",
         "project_id": "",
         "chat_type": "user_chat",
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": prompt}],
-            }
-        ],
+        "messages": body_messages,
         "meta_data": {
             "channel": "",
             "chat_mode": _chat_mode_for(request_model, payload) or None,
@@ -211,8 +220,59 @@ def chat_completion(refresh_token: str, payload: dict):
         stream=True,
     )
     response.raise_for_status()
-    debug_log("glm_chat_started", model=request_model, prompt_length=len(prompt))
+    debug_log("glm_chat_started", model=request_model, prompt_length=prompt_len)
     return response, request_model
+
+
+def stream_chunks(refresh_token: str, payload: dict):
+    response, request_model = chat_completion(refresh_token, payload)
+    builder = OpenAIStreamBuilder("glm-web", request_model)
+    cached_parts = {}
+    conversation_id = ""
+    yielded_text = {}
+    yielded_reasoning = {}
+
+    try:
+        for data in _iter_sse_data(response):
+            if data == "[DONE]":
+                break
+            result = json.loads(data)
+            if not conversation_id and result.get("conversation_id"):
+                conversation_id = result["conversation_id"]
+                builder.set_response_id(conversation_id)
+
+            for part in result.get("parts") or []:
+                logic_id = part.get("logic_id") or str(len(cached_parts))
+                _append_part(cached_parts, part)
+                
+                text, reasoning = _extract_part_text(part)
+                
+                if reasoning:
+                    prev_reasoning = yielded_reasoning.get(logic_id, "")
+                    if reasoning.startswith(prev_reasoning):
+                        delta = reasoning[len(prev_reasoning):]
+                    else:
+                        delta = reasoning
+                    if delta:
+                        yielded_reasoning[logic_id] = reasoning
+                        yield from builder.reasoning(delta)
+                
+                if text:
+                    prev_text = yielded_text.get(logic_id, "")
+                    if text.startswith(prev_text):
+                        delta = text[len(prev_text):]
+                    else:
+                        delta = text
+                    if delta:
+                        yielded_text[logic_id] = text
+                        yield from builder.content(delta)
+
+            if result.get("status") == "finish":
+                break
+    finally:
+        response.close()
+
+    yield builder.finish()
 
 
 def _iter_sse_data(response):
