@@ -216,6 +216,37 @@ def _tool_prompt_items(tools: list) -> list:
     return items
 
 
+def _available_tool_names(request_config: dict | None) -> list[str]:
+    return [_tool_name(tool) for tool in _available_tools(request_config)]
+
+
+def _command_tool_names(request_config: dict | None) -> list[str]:
+    return [
+        _tool_name(tool)
+        for tool in _available_tools(request_config)
+        if "command" in _schema_property_names(tool)
+    ]
+
+
+def _format_name_list(names: list[str]) -> str:
+    return ", ".join(f"`{name}`" for name in names if name)
+
+
+def _tool_availability_summary(request_config: dict | None) -> str:
+    names = _available_tool_names(request_config)
+    command_names = _command_tool_names(request_config)
+    lines = []
+    if names:
+        lines.append(f"Available tool names (use exactly): {_format_name_list(names)}.")
+    if command_names:
+        aliases = ["shell", "bash", "terminal", "powershell", "pwsh", "cmd"]
+        lines.append(
+            f"Command-capable tools: {_format_name_list(command_names)}. "
+            f"Common command aliases accepted by this proxy: {_format_name_list(aliases)}."
+        )
+    return "\n".join(lines)
+
+
 def _tool_choice_instruction(tool_choice: Any, parallel_tool_calls: Any) -> str:
     lines = []
     if tool_choice is None or tool_choice == "auto":
@@ -268,6 +299,7 @@ def build_tool_protocol_prompt(request_config: dict | None) -> str:
     return (
         f"{TOOL_PROTOCOL_HEADER}\n\n"
         f"{_tool_choice_instruction(request_config.get('tool_choice', 'auto'), request_config.get('parallel_tool_calls'))}\n\n"
+        f"{_tool_availability_summary(request_config)}\n\n"
         f"Available tools:\n{schema_text}"
     ).strip()
 
@@ -572,6 +604,101 @@ def _calls_from_value(
     return []
 
 
+def _requested_tool_names_from_value(value: Any) -> list[str]:
+    names = []
+    if isinstance(value, list):
+        for item in value:
+            names.extend(_requested_tool_names_from_value(item))
+        return names
+
+    if not isinstance(value, dict):
+        return names
+
+    for key in ("tool_calls", "calls", "tool_call"):
+        nested = value.get(key)
+        if nested is not None:
+            names.extend(_requested_tool_names_from_value(nested))
+
+    function = value.get("function") if isinstance(value.get("function"), dict) else {}
+    name = str(
+        function.get("name") or value.get("name") or value.get("tool_name") or ""
+    ).strip()
+    if name:
+        names.append(name)
+    return names
+
+
+def _requested_tool_names_from_lines(text: str) -> list[str]:
+    names = []
+    for line in str(text or "").splitlines():
+        tool_match = _TOOL_CALL_LINE_RE.match(line)
+        if tool_match:
+            name = str(tool_match.group("name") or "").strip()
+            if name:
+                names.append(name)
+    return names
+
+
+def _unavailable_tool_message(
+    requested_names: list[str], request_config: dict | None
+) -> str:
+    available = _available_tool_names(request_config)
+    command_names = _command_tool_names(request_config)
+    unique_requested = []
+    for name in requested_names:
+        if name and name not in unique_requested:
+            unique_requested.append(name)
+
+    lines = [
+        "Unsupported tool request: the model asked for a tool name that is not available in this Codex runtime.",
+        f"Requested tool names: {_format_name_list(unique_requested) or '(none)'}.",
+        f"Available tool names: {_format_name_list(available) or '(none)'}.",
+    ]
+    if command_names:
+        aliases = ["shell", "bash", "terminal", "powershell", "pwsh", "cmd"]
+        lines.append(
+            f"For command execution, use {_format_name_list(command_names)} with a `command` argument. "
+            f"Recognized command aliases are {_format_name_list(aliases)}."
+        )
+    lines.append(
+        'Retry with raw JSON like {"tool_calls":[{"name":"<available_tool_name>","arguments":{...}}]}.'
+    )
+    return "\n".join(lines)
+
+
+def unavailable_tool_message_from_content(
+    content: Any, request_config: dict | None
+) -> str:
+    if not request_has_tools(request_config):
+        return ""
+
+    text = _content_text(content).strip()
+    if not text:
+        return ""
+
+    requested_names = []
+    for _original, body in _json_candidates(text):
+        try:
+            parsed = json.loads(body)
+        except Exception:
+            try:
+                repaired = _repair_json(body)
+                parsed = json.loads(repaired)
+            except Exception:
+                continue
+        requested_names.extend(_requested_tool_names_from_value(parsed))
+
+    requested_names.extend(_requested_tool_names_from_lines(text))
+    unavailable = [
+        name
+        for name in requested_names
+        if name and not _resolve_tool_name(name, request_config)
+    ]
+    if not unavailable:
+        return ""
+    return _unavailable_tool_message(unavailable, request_config)
+
+
 def _limit_parallel_calls(calls: list[dict], request_config: dict | None) -> list[dict]:
     calls = [call for call in calls if call]
     if (request_config or {}).get("parallel_tool_calls") is False and len(calls) > 1:
@@ -846,6 +973,21 @@ def normalize_tool_result(
         )
 
     if not tool_calls:
+        unavailable_message = unavailable_tool_message_from_content(
+            message.get("content"), request_config
+        )
+        if unavailable_message:
+            normalized_result = dict(result)
+            normalized_choices = list(choices)
+            normalized_choice = dict(first_choice)
+            normalized_message = dict(message)
+            normalized_message["content"] = unavailable_message
+            normalized_message.pop("tool_calls", None)
+            normalized_choice["message"] = normalized_message
+            normalized_choice["finish_reason"] = "stop"
+            normalized_choices[0] = normalized_choice
+            normalized_result["choices"] = normalized_choices
+            return normalized_result, 0
         return result, 0
 
     normalized_result = dict(result)

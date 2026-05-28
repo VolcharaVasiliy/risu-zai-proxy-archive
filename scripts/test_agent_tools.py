@@ -154,6 +154,9 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Codex exposes emulated client tools" in prompt
     assert "exact names in `Available tools`" in prompt
     assert "Windows command line" in prompt
+    assert "Available tool names (use exactly)" in prompt
+    assert "`read_file`, `terminal`" in prompt
+    assert "Command-capable tools: `terminal`" in prompt
 
 
 def test_normalize_chat_result_to_openai_tool_calls():
@@ -177,6 +180,31 @@ def test_normalize_chat_result_to_openai_tool_calls():
     assert normalized["choices"][0]["finish_reason"] == "tool_calls"
     assert message["content"] == ""
     assert message["tool_calls"][0]["function"]["name"] == "read_file"
+
+
+def test_unavailable_tool_request_returns_available_tool_list():
+    result = {
+        "id": "chatcmpl_test",
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"tool_calls": [{"name": "python", "arguments": {}}]}
+                    ),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    normalized, count = normalize_tool_result(result, _request_config())
+    message = normalized["choices"][0]["message"]
+    assert count == 0
+    assert "Unsupported tool request" in message["content"]
+    assert "Requested tool names: `python`" in message["content"]
+    assert "Available tool names: `read_file`, `terminal`" in message["content"]
 
 
 def test_proxy_api_key_is_not_reused_as_upstream_bearer():
@@ -431,6 +459,7 @@ def main():
     test_shell_aliases_resolve_to_available_command_tool()
     test_tool_protocol_prompt_describes_codex_command_tool()
     test_normalize_chat_result_to_openai_tool_calls()
+    test_unavailable_tool_request_returns_available_tool_list()
     test_proxy_api_key_is_not_reused_as_upstream_bearer()
     test_prepare_prompt_tool_payload_hides_native_tool_schema()
     test_google_ai_studio_uses_native_tools_not_prompt_shim()
