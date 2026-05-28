@@ -75,13 +75,42 @@ def _text_from_content(content) -> str:
     return ""
 
 
+def _format_tool_calls(tool_calls: list) -> str:
+    if not isinstance(tool_calls, list) or not tool_calls:
+        return ""
+    compact = []
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function") if isinstance(call.get("function"), dict) else {}
+        compact.append({
+            "id": call.get("id") or call.get("call_id"),
+            "name": function.get("name") or call.get("name"),
+            "arguments": function.get("arguments") if "arguments" in function else call.get("arguments"),
+        })
+    if not compact:
+        return ""
+    return "[assistant requested tool calls]\n" + json.dumps(compact, ensure_ascii=False)
+
+
 def _prompt_from_messages(messages) -> str:
     system_parts = []
     conversation_parts = []
 
     for message in messages or []:
         role = message.get("role")
-        text = _text_from_content(message.get("content", ""))
+        content = message.get("content") or ""
+        text = _text_from_content(content)
+
+        tool_calls = message.get("tool_calls")
+        if role == "assistant" and isinstance(tool_calls, list) and tool_calls:
+            tool_history = _format_tool_calls(tool_calls)
+            if tool_history:
+                if text:
+                    text = f"{text}\n\n{tool_history}"
+                else:
+                    text = tool_history
+
         if not text.strip():
             continue
         if role == "system":
@@ -172,7 +201,18 @@ def chat_completion(refresh_token: str, payload: dict):
     body_messages = []
     for msg in payload.get("messages") or []:
         role = msg.get("role")
-        text = _text_from_content(msg.get("content", ""))
+        content = msg.get("content") or ""
+        text = _text_from_content(content)
+
+        tool_calls = msg.get("tool_calls")
+        if role == "assistant" and isinstance(tool_calls, list) and tool_calls:
+            tool_history = _format_tool_calls(tool_calls)
+            if tool_history:
+                if text:
+                    text = f"{text}\n\n{tool_history}"
+                else:
+                    text = tool_history
+
         if not text.strip():
             continue
         body_messages.append({
