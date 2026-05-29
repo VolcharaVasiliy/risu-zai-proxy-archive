@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import os
 import sys
 
@@ -28,7 +29,17 @@ from py.multimodal import (  # noqa: E402
 )
 from py.responses_api import _content_to_chat_content  # noqa: E402
 from py.responses_api import _chat_payload_from_request  # noqa: E402
+from py.responses_api import _normalize_message_item  # noqa: E402
+from py.responses_api import _output_items_from_result  # noqa: E402
+from py.responses_api import _stream_response_api_events  # noqa: E402
 from py import gemini_web_proxy, provider_registry, qwen_ai_proxy  # noqa: E402
+
+CATALOG_SCRIPT = os.path.join(ROOT_DIR, "scripts", "generate-codex-catalog.py")
+_catalog_spec = importlib.util.spec_from_file_location(
+    "generate_codex_catalog", CATALOG_SCRIPT
+)
+generate_codex_catalog = importlib.util.module_from_spec(_catalog_spec)
+_catalog_spec.loader.exec_module(generate_codex_catalog)
 
 READ_TOOL = {
     "type": "function",
@@ -177,11 +188,20 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Read relevant files before editing" in prompt
     assert "Do not rewrite entire files" in prompt
     assert "Prefer a focused patch" in prompt
-    assert "Keep user-visible progress explicit" in prompt
+    assert "Do not use `Set-Content`/redirection to rewrite a whole source file" in prompt
+    assert "After every edit, inspect the changed section or file before running validation" in prompt
+    assert "re-read the modified file, repair any broken intermediate state" in prompt
+    assert "If the same edit method fails twice, switch methods" in prompt
+    assert "Never leave a workspace in a known broken intermediate state" in prompt
+    assert "avoid fragile nested-quote one-liners" in prompt
+    assert "Do not install missing test dependencies such as `pytest`" in prompt
+    assert "do not send standalone progress/status prose while file or command work remains" in prompt
     assert "do not claim that tools are unavailable" in prompt
     assert "Treat the written requirements as a checklist" in prompt
-    assert "does not prove IDs are never reused after deletion" in prompt
-    assert "talk to the user only after the work is complete and verified" in prompt
+    assert "persisted/pre-existing state" in prompt
+    assert "does not prove IDs are never reused after deletion or across persisted state" in prompt
+    assert "send a user-facing answer only after the work is complete and verified" in prompt
+    assert "never end with an empty assistant message" in prompt
     assert "payload must be the raw patch text only" in prompt
     assert "do not repeat the same `apply_patch` call" in prompt
 
@@ -291,6 +311,32 @@ def test_prepare_prompt_tool_payload_hides_native_tool_schema():
     assert prepared["_agent_tool_shim"]["mode"] == "prompt"
     assert prepared["messages"][0]["role"] == "user"
     assert "OpenAI-compatible agent runtime" in prepared["messages"][0]["content"]
+
+
+def test_prompt_tool_payload_adds_tool_error_recovery_guidance():
+    payload = {
+        "model": "Qwen3.7-Max",
+        "messages": [
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "terminal",
+                "content": (
+                    "Fatal error: tool apply_patch invoked with incompatible payload\n"
+                    "SyntaxError: unterminated string literal\n"
+                    "F:\\DevTools\\Python311\\python.exe: No module named pytest"
+                ),
+            }
+        ],
+        "tools": [READ_TOOL, SHELL_TOOL],
+        "tool_choice": "auto",
+    }
+    prepared = prepare_prompt_tool_payload(payload, "qwen-ai")
+    tool_message = prepared["messages"][1]["content"]
+    assert "Do not repeat the same malformed call" in tool_message
+    assert "do not repeat the same command" in tool_message
+    assert "pytest is not available" in tool_message
+    assert "direct Python checks" in tool_message
 
 
 def test_google_ai_studio_uses_native_tools_not_prompt_shim():
@@ -480,6 +526,102 @@ def test_responses_request_maps_codex_fields_to_chat_payload():
     assert chat_payload["reasoning_effort"] == "high"
 
 
+def test_responses_apply_patch_is_custom_tool_call():
+    patch = "*** Begin Patch\n*** Add File: x.txt\n+ok\n*** End Patch"
+    result = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_patch",
+                            "type": "function",
+                            "function": {
+                                "name": "apply_patch",
+                                "arguments": json.dumps({"input": patch}),
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+    output = _output_items_from_result(result)
+    assert output[0]["type"] == "custom_tool_call"
+    assert output[0]["call_id"] == "call_patch"
+    assert output[0]["name"] == "apply_patch"
+    assert output[0]["input"] == patch
+
+
+def test_responses_streams_custom_tool_input_delta():
+    response = {
+        "id": "resp_test",
+        "object": "response",
+        "status": "completed",
+        "output": [
+            {
+                "id": "ctc_test",
+                "type": "custom_tool_call",
+                "status": "completed",
+                "call_id": "call_patch",
+                "name": "apply_patch",
+                "input": "*** Begin Patch\n*** End Patch",
+            }
+        ],
+        "output_text": "",
+    }
+    events = list(_stream_response_api_events(response))
+    event_types = [event["type"] for event in events]
+    assert "response.custom_tool_call_input.delta" in event_types
+    done_item = next(
+        event["item"]
+        for event in events
+        if event["type"] == "response.output_item.done"
+    )
+    assert done_item["type"] == "custom_tool_call"
+    assert done_item["input"] == "*** Begin Patch\n*** End Patch"
+
+
+def test_responses_custom_tool_output_maps_to_tool_message():
+    message = _normalize_message_item(
+        {
+            "type": "custom_tool_call_output",
+            "call_id": "call_patch",
+            "output": "Exit code: 0",
+        }
+    )
+    assert message == {
+        "role": "tool",
+        "content": "Exit code: 0",
+        "tool_call_id": "call_patch",
+    }
+
+
+def test_catalog_disables_freeform_apply_patch_for_prompt_shim_models():
+    prompt_shim_model = generate_codex_catalog._codex_model(
+        {
+            "id": "Qwen3.7-Max",
+            "provider": "qwen-ai",
+            "capabilities": {"tools": True, "prompt_tool_shim": True},
+        },
+        0,
+        128_000,
+    )
+    native_tool_model = generate_codex_catalog._codex_model(
+        {
+            "id": "google-ai-studio",
+            "provider": "google-ai-studio",
+            "capabilities": {"tools": True, "native_tools": True},
+        },
+        0,
+        128_000,
+    )
+    assert "apply_patch_tool_type" not in prompt_shim_model
+    assert native_tool_model["apply_patch_tool_type"] == "freeform"
+
+
 def test_public_model_catalog_hides_alias_duplicates():
     model_ids = [
         item["id"]
@@ -515,6 +657,7 @@ def main():
     test_tool_does_not_exist_text_returns_retry_guidance()
     test_proxy_api_key_is_not_reused_as_upstream_bearer()
     test_prepare_prompt_tool_payload_hides_native_tool_schema()
+    test_prompt_tool_payload_adds_tool_error_recovery_guidance()
     test_google_ai_studio_uses_native_tools_not_prompt_shim()
     test_multimodal_preprocess_converts_images_for_text_providers()
     test_multimodal_preprocess_keeps_native_image_payloads()
@@ -523,6 +666,10 @@ def main():
     test_google_ai_studio_tool_history_includes_function_response_id()
     test_responses_input_file_image_is_preserved_as_image_url()
     test_responses_request_maps_codex_fields_to_chat_payload()
+    test_responses_apply_patch_is_custom_tool_call()
+    test_responses_streams_custom_tool_input_delta()
+    test_responses_custom_tool_output_maps_to_tool_message()
+    test_catalog_disables_freeform_apply_patch_for_prompt_shim_models()
     test_public_model_catalog_hides_alias_duplicates()
     test_qwen_37_models_are_supported()
     print("agent_tools_test: ok")

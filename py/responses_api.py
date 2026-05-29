@@ -28,6 +28,7 @@ _TOOL_WAIT_RE = re.compile(
 )
 _SHELL_TOOL_NAMES = {"bash", "shell", "powershell", "pwsh", "cmd", "terminal"}
 _PATH_TOOL_NAMES = {"ls", "list", "read_file", "read", "cat", "open", "image"}
+_CUSTOM_FREEFORM_TOOL_NAMES = {"apply_patch"}
 _STATEFUL_REQUEST_FIELDS = (
     "tools",
     "tool_choice",
@@ -308,7 +309,7 @@ def _normalize_message_item(item: dict):
             return None
         return {"role": "user", "content": content}
 
-    if item_type == "function_call_output":
+    if item_type in {"function_call_output", "custom_tool_call_output"}:
         call_id = str(
             item.get("call_id") or item.get("tool_call_id") or item.get("id") or ""
         ).strip()
@@ -582,6 +583,49 @@ def _tool_calls_from_result(result: dict) -> list:
     return pseudo_tool_calls
 
 
+def _tool_call_name(tool_call: dict) -> str:
+    function = (
+        tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    )
+    return str(function.get("name") or tool_call.get("name") or "").strip()
+
+
+def _tool_call_arguments(tool_call: dict):
+    function = (
+        tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    )
+    return function.get("arguments") if function else tool_call.get("arguments")
+
+
+def _freeform_tool_input(arguments) -> str:
+    if isinstance(arguments, (dict, list)):
+        parsed = arguments
+    else:
+        text = str(arguments or "").strip()
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            try:
+                parsed = json.loads(_repair_json(text))
+            except Exception:
+                return text
+
+    if isinstance(parsed, str):
+        return parsed
+    if isinstance(parsed, dict):
+        for key in ("input", "patch", "text", "content", "payload"):
+            value = parsed.get(key)
+            if isinstance(value, str):
+                return value
+        if len(parsed) == 1:
+            value = next(iter(parsed.values()))
+            if isinstance(value, str):
+                return value
+    return json.dumps(parsed, ensure_ascii=False)
+
+
 def _output_items_from_result(result: dict) -> list:
     choices = result.get("choices") or [{}]
     message = (choices[0] or {}).get("message") or {}
@@ -603,28 +647,34 @@ def _output_items_from_result(result: dict) -> list:
         )
 
     for tool_call in tool_calls:
-        function = (
-            tool_call.get("function")
-            if isinstance(tool_call.get("function"), dict)
-            else {}
-        )
+        name = _tool_call_name(tool_call)
         call_id = (
             str(tool_call.get("id") or tool_call.get("call_id") or "").strip()
             or f"call_{uuid.uuid4().hex}"
         )
-        item_id = f"fc_{uuid.uuid4().hex}"
-        arguments = (
-            function.get("arguments") if function else tool_call.get("arguments")
-        )
+        arguments = _tool_call_arguments(tool_call)
+        if name in _CUSTOM_FREEFORM_TOOL_NAMES:
+            output.append(
+                {
+                    "id": f"ctc_{uuid.uuid4().hex}",
+                    "type": "custom_tool_call",
+                    "status": "completed",
+                    "call_id": call_id,
+                    "name": name,
+                    "input": _freeform_tool_input(arguments),
+                }
+            )
+            continue
+
         if isinstance(arguments, (dict, list)):
             arguments = json.dumps(arguments, ensure_ascii=False)
         output.append(
             {
-                "id": item_id,
+                "id": f"fc_{uuid.uuid4().hex}",
                 "type": "function_call",
                 "status": "completed",
                 "call_id": call_id,
-                "name": str(function.get("name") or tool_call.get("name") or ""),
+                "name": name,
                 "arguments": str(arguments or ""),
             }
         )
@@ -936,6 +986,8 @@ def _stream_response_api_events(response: dict):
             in_progress_item["content"] = []
         elif in_progress_item.get("type") == "function_call":
             in_progress_item["arguments"] = ""
+        elif in_progress_item.get("type") == "custom_tool_call":
+            in_progress_item["input"] = ""
         yield _event(
             "response.output_item.added",
             response_id=response_id,
@@ -991,6 +1043,17 @@ def _stream_response_api_events(response: dict):
                 output_index=output_index,
                 arguments=arguments,
             )
+
+        if item.get("type") == "custom_tool_call":
+            tool_input = str(item.get("input") or "")
+            if tool_input:
+                yield _event(
+                    "response.custom_tool_call_input.delta",
+                    response_id=response_id,
+                    item_id=item_id,
+                    output_index=output_index,
+                    delta=tool_input,
+                )
 
         yield _event(
             "response.output_item.done",

@@ -68,15 +68,20 @@ Codex-style operating loop:
 - Prefer fast file/search commands such as `rg`, `Get-ChildItem`, `Get-Content`, `git status --short`, `git diff`, and project test commands when a command tool is available.
 - Read relevant files before editing. Use `rg` to locate the code, then inspect the exact function, class, or surrounding lines with `Get-Content`/file-read tools before deciding on a change.
 - Do not rewrite entire files unless the user explicitly asks for it or the file is tiny and a full rewrite is clearly simpler. Prefer a focused patch to the smallest section that solves the task.
+- If you must edit with a command tool, replace only a specific function, class, or clearly delimited block. Do not use `Set-Content`/redirection to rewrite a whole source file for a tiny change unless no safer focused method is available.
 - For large files, read focused ranges or chunks instead of dumping the whole file. Keep enough context to preserve existing style and avoid overwriting unrelated user changes.
 - If an edit tool such as `apply_patch` is available, use it for manual file edits. Do not invent shell redirection or heredoc editing flows when an edit tool is listed.
-- If a planning tool such as `update_plan` is available and the task has multiple steps, use it to keep progress explicit.
-- Keep user-visible progress explicit: after meaningful phases, provide a concise status or updated plan that names what you inspected, changed, or validated. Do not expose hidden chain-of-thought; summarize concrete actions and decisions.
-- Treat the written requirements as a checklist. Before claiming success, verify edge cases that are easy to miss, especially persistence, deletion, missing IDs/files, repeated operations, and boundary cases named by the user.
-- Do not mark a requirement satisfied from a weak inference. For example, `max(existing_id)+1` does not prove IDs are never reused after deletion; add or run an explicit test for the relevant edge case.
+- If a planning tool such as `update_plan` is available and the task has multiple steps, use that tool for progress. Otherwise, do not send standalone progress/status prose while file or command work remains; continue the tool loop until the task is complete, verified, or concretely blocked.
+- Treat the written requirements as a checklist. Before claiming success, verify edge cases that are easy to miss, especially persisted/pre-existing state, sparse or deleted IDs, deletion, missing IDs/files, repeated operations, and boundary cases named by the user.
+- Do not mark a requirement satisfied from a weak inference. For example, a fresh empty-list test or `max(existing_id)+1` does not prove IDs are never reused after deletion or across persisted state; add or run an explicit test for the relevant edge case.
+- After every edit, inspect the changed section or file before running validation so you can confirm it is not truncated, empty, syntactically incomplete, or missing unrelated code. For source files, then run the fastest useful syntax/import check or targeted tests before continuing.
+- If an edit fails, partially applies, produces suspicious output, or a validation command fails, stop making new edits, re-read the modified file, repair any broken intermediate state, then re-run validation.
+- If the same edit method fails twice, switch methods instead of looping. If progress stalls, inspect current file state and validate before deciding whether a concrete blocker remains.
+- On Windows, avoid fragile nested-quote one-liners for source edits. Prefer `apply_patch`; if you must use Python through PowerShell, prefer a here-string piped to `python -` or another clear structured command.
+- Do not install missing test dependencies such as `pytest` unless the project requires installation and you have confirmed the dependency source is available. If a test runner is missing, use the project's existing commands, `unittest`, import checks, or direct Python checks for small self-contained tests.
 - If a tool call fails, read the returned error and retry with corrected arguments or a real tool name from `Available tools`. Do not repeat the same invalid call.
 - If you cannot proceed because a required tool, credential, file, or permission is missing, state the concrete blocker and the exact available tools you can use.
-- Only ask the user for help when you are truly blocked after trying available tools and alternatives. For implementation tasks, talk to the user only after the work is complete and verified, or to report a real blocker with concrete evidence.
+- Only ask the user for help when you are truly blocked after trying available tools and alternatives. For implementation tasks, send a user-facing answer only after the work is complete and verified, or to report a real blocker with concrete evidence. Once the task is complete and verified, always send a concise final answer with the changed files and validation commands; never end with an empty assistant message.
 
 Important tool rules (CRITICAL):
 - The client runtime executes the tools. You request them, and the client will return the outcome in the next turn.
@@ -92,6 +97,7 @@ Here is the command: ```json {"tool_calls": [...]} ```
 - If you receive a tool-name error such as "Tool X does not exist", do not claim that tools are unavailable or ask the user to run commands. Retry with an exact tool name from `Available tool names`.
 - If `apply_patch` is available as a freeform edit tool, its payload must be the raw patch text only, beginning with `*** Begin Patch` and ending with `*** End Patch`; do not wrap it in JSON. If a freeform patch fails with an incompatible payload error, do not repeat the same `apply_patch` call; immediately retry once with raw patch text or use another listed edit method.
 - If an edit tool is not available or repeatedly fails, use a command-capable tool with a safe structured Windows editing command; still inspect the target file first and keep the edit focused.
+- Never leave a workspace in a known broken intermediate state. Before any final answer or blocker report, inspect files touched in the last failed edit attempt and run the smallest validation command that can reveal syntax/import/test failures.
 - If no listed tool is needed, answer normally without JSON.
 - Never write shell commands as plain text when a matching tool is available; call the tool instead.
 """.strip()
@@ -392,6 +398,38 @@ def _format_tool_calls_for_history(tool_calls: Any) -> str:
     )
 
 
+def _tool_result_recovery_guidance(content: str) -> str:
+    text = str(content or "")
+    lowered = text.lower()
+    lines = []
+
+    if "tool apply_patch invoked with incompatible payload" in lowered:
+        lines.append(
+            "Recovery guidance: the previous apply_patch payload shape was wrong. "
+            "Do not repeat the same malformed call; retry once with raw patch text only, "
+            "or switch to another focused edit method."
+        )
+
+    if "syntaxerror" in lowered:
+        lines.append(
+            "Recovery guidance: a syntax error occurred. If this was an inline edit or "
+            "quoted command, do not repeat the same command; inspect the target file, "
+            "then use a simpler focused edit method and run syntax/import validation."
+        )
+
+    if "no module named pytest" in lowered or (
+        "could not find a version that satisfies the requirement pytest" in lowered
+    ):
+        lines.append(
+            "Recovery guidance: pytest is not available. Do not install dependencies "
+            "just to continue unless the project explicitly requires it; use the "
+            "project's available test command, unittest, or direct Python checks for "
+            "small self-contained tests."
+        )
+
+    return "\n".join(lines)
+
+
 def _normalize_messages_for_prompt_tools(messages: list) -> list:
     normalized = []
     for message in messages or []:
@@ -420,6 +458,9 @@ def _normalize_messages_for_prompt_tools(messages: list) -> list:
                 label_parts.append(f"name={name}")
             if call_id:
                 label_parts.append(f"call_id={call_id}")
+            guidance = _tool_result_recovery_guidance(content)
+            if guidance:
+                content = f"{content}\n\n{guidance}" if content else guidance
             normalized.append(
                 {"role": "user", "content": f"[{'; '.join(label_parts)}]\n{content}"}
             )
