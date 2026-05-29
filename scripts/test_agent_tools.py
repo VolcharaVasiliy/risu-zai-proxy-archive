@@ -227,6 +227,11 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Get-CimInstance Win32_Process" in prompt
     assert "do not rely on `Get-Process ... .CommandLine`" in prompt
     assert "Invoke-Item -LiteralPath" in prompt
+    assert "For background local servers" in prompt
+    assert "Start-Process -PassThru" in prompt
+    assert "Stop only that PID" in prompt
+    assert "prefer the current PowerShell 7 shell" in prompt
+    assert "UTF-8 or non-ASCII text" in prompt
     assert "PowerShell is not bash" in prompt
     assert "`<<EOF`" in prompt
     assert "`bash -lc`" in prompt
@@ -240,19 +245,33 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert '"name":"shell_command","arguments":{"command":"dir' not in prompt
     assert "Read relevant files before editing" in prompt
     assert "your first substantive response should normally be a tool call" in prompt
+    assert "run `git status --short` before editing" in prompt
+    assert "inspect the relevant `git diff -- <path>`" in prompt
+    assert "distinguish your changed files from pre-existing dirty files" in prompt
     assert "Do not rewrite entire files" in prompt
     assert "Prefer a focused patch" in prompt
     assert "Do not use `Set-Content`/redirection to rewrite a whole source file" in prompt
+    assert "prefer a small exact replacement script" in prompt
+    assert "Do not use a full-file `Set-Content` here-string" in prompt
     assert "After every edit, inspect the changed section or file before running validation" in prompt
     assert "re-read the modified file, repair any broken intermediate state" in prompt
     assert "If the same edit method fails twice, switch methods" in prompt
+    assert "A successful intermediate tool command is not task completion" in prompt
+    assert "A successful file write must normally be followed by reading the file back" in prompt
+    assert "Never stop with an empty response after tool results" in prompt
     assert "Never leave a workspace in a known broken intermediate state" in prompt
     assert "avoid fragile nested-quote one-liners" in prompt
     assert "large source text inside a quoted `-Command` argument" in prompt
     assert "after two quoting failures, switch methods" in prompt
+    assert "For complex new Windows files containing many quotes" in prompt
+    assert "base64 UTF-8 payload decoded by PowerShell" in prompt
+    assert "decode it in the same PowerShell process" in prompt
+    assert "do not pass `$b64` through a nested `pwsh -Command`" in prompt
     assert "Do not install missing test dependencies such as `pytest`" in prompt
     assert "For new executable projects, especially Rust/C/C++ CLI tasks" in prompt
     assert "do not initialize a git repository or make commits unless the user asks" in prompt
+    assert "set `CARGO_TARGET_DIR` to a concrete writable directory" in prompt
+    assert "do not delete random target directories to recover" in prompt
     assert "Prefer zero external dependencies for small utilities" in prompt
     assert "keep unit tests focused on pure parser/storage/formatting functions" in prompt
     assert "target" in prompt and "release" in prompt and "name.exe" in prompt
@@ -264,8 +283,16 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Treat the written requirements as a checklist" in prompt
     assert "persisted/pre-existing state" in prompt
     assert "does not prove IDs are never reused after deletion or across persisted state" in prompt
+    assert "Before guessing a test runner" in prompt
+    assert "Prefer the documented test/build command" in prompt
+    assert "do not install pytest or keep guessing module names" in prompt
     assert "Keep validation commands small and composable" in prompt
     assert "over one dense PowerShell line with nested `try/catch`" in prompt
+    assert "Treat empty validation output as suspicious" in prompt
+    assert "use a fresh output directory such as `out2`" in prompt
+    assert "Never retry the same blocked `Remove-Item` command" in prompt
+    assert "Treat read-back corruption as failed validation" in prompt
+    assert "visibly corrupted non-ASCII text" in prompt
     assert "send a user-facing answer only after the work is complete and verified" in prompt
     assert "never end with an empty assistant message" in prompt
     assert "payload must be the raw patch text only" in prompt
