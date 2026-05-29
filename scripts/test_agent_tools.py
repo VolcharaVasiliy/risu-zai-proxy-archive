@@ -227,6 +227,12 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Get-CimInstance Win32_Process" in prompt
     assert "do not rely on `Get-Process ... .CommandLine`" in prompt
     assert "Invoke-Item -LiteralPath" in prompt
+    assert "PowerShell is not bash" in prompt
+    assert "`<<EOF`" in prompt
+    assert "`bash -lc`" in prompt
+    assert "passes the payload as a command argument instead of stdin/heredoc syntax" in prompt
+    assert "Tool arguments are JSON" in prompt
+    assert "prefer single-quoted PowerShell string literals" in prompt
     assert "Available tool names (use exactly)" in prompt
     assert "`read_file`, `terminal`" in prompt
     assert "Command-capable tools: `terminal`" in prompt
@@ -258,6 +264,8 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Treat the written requirements as a checklist" in prompt
     assert "persisted/pre-existing state" in prompt
     assert "does not prove IDs are never reused after deletion or across persisted state" in prompt
+    assert "Keep validation commands small and composable" in prompt
+    assert "over one dense PowerShell line with nested `try/catch`" in prompt
     assert "send a user-facing answer only after the work is complete and verified" in prompt
     assert "never end with an empty assistant message" in prompt
     assert "payload must be the raw patch text only" in prompt
@@ -403,8 +411,18 @@ def test_prompt_tool_payload_adds_tool_error_recovery_guidance():
     )
     prepared = prepare_prompt_tool_payload(payload, "qwen-ai")
     tool_message = prepared["messages"][1]["content"]
-    assert "PowerShell command failed because of quoting or here-string syntax" in tool_message
-    assert "Do not retry another large quoted source-writing command" in tool_message
+    assert "PowerShell command failed because of quoting, here-string" in tool_message
+    assert "Do not retry those patterns" in tool_message
+
+    payload["messages"][0]["content"] = (
+        "Missing file specification after redirection operator. "
+        "PowerShell does not support bash heredoc syntax like <<EOF or <<'EOF'."
+    )
+    prepared = prepare_prompt_tool_payload(payload, "qwen-ai")
+    tool_message = prepared["messages"][1]["content"]
+    assert "invalid Unix heredoc syntax" in tool_message
+    assert "PowerShell does not support `<<EOF`" in tool_message
+    assert "base64 payload passed as a command argument" in tool_message
 
 
 def test_provider_auth_error_classification():

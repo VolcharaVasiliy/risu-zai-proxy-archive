@@ -57,8 +57,10 @@ Local Environment & OS (Windows):
 - You are not calling a real built-in Linux `shell` tool. Codex exposes emulated client tools through the exact names in `Available tools`.
 - For local commands, use the exact available command tool name shown below. It may be `shell_command`, `terminal`, `powershell`, or another listed tool; do not copy examples with a different name.
 - Put the Windows command line in the tool argument named `command`. Examples: `Get-ChildItem`, `Get-Content README.md`, `rg "pattern" .`, `git status --short`, `python script.py`.
+- Tool arguments are JSON. Inside `command`, prefer single-quoted PowerShell string literals and avoid unescaped double quotes; malformed quoting can truncate or corrupt the JSON `arguments` string.
 - To inspect process command lines on Windows, use `Get-CimInstance Win32_Process` or `Get-WmiObject Win32_Process`; do not rely on `Get-Process ... .CommandLine`, which is commonly unavailable or incomplete.
 - To open a local HTML/file on Windows, first verify it exists with `Test-Path -LiteralPath "F:\\path\\file.html"`, then use `Invoke-Item -LiteralPath "F:\\path\\file.html"` or `Start-Process -FilePath "F:\\path\\file.html"`.
+- PowerShell is not bash. Never use bash heredocs or Unix shell snippets such as `<<EOF`, `<<'EOF'`, `cat <<EOF`, `bash -lc`, or `/bin/sh`. For brand-new generated files, use a valid PowerShell here-string with `@'` and `'@` on their own lines, smaller `Set-Content`/`Add-Content` chunks, or a Windows-native base64 decode that passes the payload as a command argument instead of stdin/heredoc syntax.
 - Do not request tool names that are not listed, such as `shell` or `bash`, unless those exact names appear in `Available tools`.
 - If you need to know how to use Codex features, you can search the web for Codex documentation.
 - If the user asks you to perform local actions (writing/editing files, running commands), request the appropriate tool calls to execute them. Do not state that you cannot access the system.
@@ -77,6 +79,7 @@ Codex-style operating loop:
 - If a planning tool such as `update_plan` is available and the task has multiple steps, use that tool for progress. Otherwise, do not send standalone progress/status prose while file or command work remains; continue the tool loop until the task is complete, verified, or concretely blocked.
 - Treat the written requirements as a checklist. Before claiming success, verify edge cases that are easy to miss, especially persisted/pre-existing state, sparse or deleted IDs, deletion, missing IDs/files, repeated operations, and boundary cases named by the user.
 - Do not mark a requirement satisfied from a weak inference. For example, a fresh empty-list test or `max(existing_id)+1` does not prove IDs are never reused after deletion or across persisted state; add or run an explicit test for the relevant edge case.
+- Keep validation commands small and composable. Prefer separate simple tool calls such as `Test-Path`, `ConvertFrom-Json`, `Select-String`, and direct executable smoke runs over one dense PowerShell line with nested `try/catch`, many braces, and embedded quotes.
 - After every edit, inspect the changed section or file before running validation so you can confirm it is not truncated, empty, syntactically incomplete, or missing unrelated code. For source files, then run the fastest useful syntax/import check or targeted tests before continuing.
 - If an edit fails, partially applies, produces suspicious output, or a validation command fails, stop making new edits, re-read the modified file, repair any broken intermediate state, then re-run validation.
 - If the same edit method fails twice, switch methods instead of looping. If progress stalls, inspect current file state and validate before deciding whether a concrete blocker remains.
@@ -426,12 +429,19 @@ def _tool_result_recovery_guidance(content: str) -> str:
         or "scriptblock should only be specified as a value of the command parameter"
         in lowered
         or "parsererror" in lowered
+        or "missing file specification after redirection operator" in lowered
+        or "<<eof" in lowered
+        or "<<'eof'" in lowered
+        or '<<"eof"' in lowered
     ):
         lines.append(
             "Recovery guidance: the previous PowerShell command failed because of "
-            "quoting or here-string syntax. Do not retry another large quoted "
-            "source-writing command; switch to a safer file-write/edit method, then "
-            "inspect the file before validation."
+            "quoting, here-string, or invalid Unix heredoc syntax. PowerShell does "
+            "not support `<<EOF`, `<<'EOF'`, `cat <<EOF`, or bash-style stdin "
+            "redirection. Do not retry those patterns; switch to valid Windows "
+            "PowerShell such as a here-string with `@'` and `'@` on their own lines, "
+            "smaller `Set-Content`/`Add-Content` chunks, or a base64 payload passed "
+            "as a command argument. Then inspect the file before validation."
         )
 
     if "no module named pytest" in lowered or (
