@@ -31,6 +31,10 @@ _TOOL_NAME_FRAGMENT_RE = re.compile(
 _COMMAND_FRAGMENT_RE = re.compile(
     r'(?is)(?:"command"|command)\s*:\s*"(?P<command>.*?)(?:"\s*(?:[,}\]]|$)|$)'
 )
+_TOOL_DOES_NOT_EXIST_RE = re.compile(
+    r"\bTool\s+(?P<name>[A-Za-z0-9_.:-]+)\s+does\s+not\s+exists?\b",
+    re.IGNORECASE,
+)
 _SHELL_TOOL_NAMES = {
     "bash",
     "shell",
@@ -50,7 +54,7 @@ Local Environment & OS (Windows):
 - Python 3.11 is installed and available if you need to execute Python scripts.
 - You have optional access to the user's local machine (filesystem, terminal) via client-side tool calls.
 - You are not calling a real built-in Linux `shell` tool. Codex exposes emulated client tools through the exact names in `Available tools`.
-- For local commands, prefer the available command tool named `shell_command` when it is listed. If the available tool is named `terminal` or `powershell`, use that exact listed name instead.
+- For local commands, use the exact available command tool name shown below. It may be `shell_command`, `terminal`, `powershell`, or another listed tool; do not copy examples with a different name.
 - Put the Windows command line in the tool argument named `command`. Examples: `Get-ChildItem`, `Get-Content README.md`, `rg "pattern" .`, `git status --short`, `python script.py`.
 - To open a local HTML/file on Windows, first verify it exists with `Test-Path -LiteralPath "F:\\path\\file.html"`, then use `Invoke-Item -LiteralPath "F:\\path\\file.html"` or `Start-Process -FilePath "F:\\path\\file.html"`.
 - Do not request tool names that are not listed, such as `shell` or `bash`, unless those exact names appear in `Available tools`.
@@ -77,11 +81,12 @@ Important tool rules (CRITICAL):
 - When you request a tool, your ENTIRE assistant response must be a SINGLE, valid JSON block.
 - Do NOT wrap the JSON in markdown blocks (e.g. no ```json). Do NOT add conversational text before or after the JSON block.
 - Example of a CORRECT tool call response (just raw JSON):
-{"tool_calls":[{"name":"shell_command","arguments":{"command":"dir C:\\"}}]}
+Use the dynamic examples below; they use the exact tool names available in this request.
 - Example of an INCORRECT tool call response:
 Here is the command: ```json {"tool_calls": [...]} ```
 - If the client disabled parallel calls, request only one tool call at a time.
 - After a tool result is returned, use that result to continue. If more steps are needed, request another tool. Otherwise, provide the final answer.
+- If you receive a tool-name error such as "Tool X does not exist", do not claim that tools are unavailable or ask the user to run commands. Retry with an exact tool name from `Available tool names`.
 - If no listed tool is needed, answer normally without JSON.
 - Never write shell commands as plain text when a matching tool is available; call the tool instead.
 """.strip()
@@ -269,6 +274,35 @@ def _tool_availability_summary(request_config: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _tool_call_examples(request_config: dict | None) -> str:
+    examples = []
+    command_names = _command_tool_names(request_config)
+    if command_names:
+        examples.append(
+            {
+                "tool_calls": [
+                    {
+                        "name": command_names[0],
+                        "arguments": {"command": "Get-ChildItem"},
+                    }
+                ]
+            }
+        )
+    for name in _available_tool_names(request_config):
+        if name in command_names:
+            continue
+        examples.append({"tool_calls": [{"name": name, "arguments": {}}]})
+        break
+    if not examples:
+        return ""
+    lines = ["Correct raw JSON examples using currently available tool names:"]
+    lines.extend(
+        json.dumps(example, ensure_ascii=False, separators=(",", ":"))
+        for example in examples
+    )
+    return "\n".join(lines)
+
+
 def _tool_choice_instruction(tool_choice: Any, parallel_tool_calls: Any) -> str:
     lines = []
     if tool_choice is None or tool_choice == "auto":
@@ -322,6 +356,7 @@ def build_tool_protocol_prompt(request_config: dict | None) -> str:
         f"{TOOL_PROTOCOL_HEADER}\n\n"
         f"{_tool_choice_instruction(request_config.get('tool_choice', 'auto'), request_config.get('parallel_tool_calls'))}\n\n"
         f"{_tool_availability_summary(request_config)}\n\n"
+        f"{_tool_call_examples(request_config)}\n\n"
         f"Available tools:\n{schema_text}"
     ).strip()
 
@@ -671,6 +706,14 @@ def _requested_tool_names_from_malformed_fragments(text: str) -> list[str]:
     return names
 
 
+def _requested_tool_names_from_tool_errors(text: str) -> list[str]:
+    return [
+        match.group("name")
+        for match in _TOOL_DOES_NOT_EXIST_RE.finditer(str(text or ""))
+        if match.group("name")
+    ]
+
+
 def _unavailable_tool_message(
     requested_names: list[str], request_config: dict | None
 ) -> str:
@@ -694,6 +737,9 @@ def _unavailable_tool_message(
         )
     lines.append(
         'Retry with raw JSON like {"tool_calls":[{"name":"<available_tool_name>","arguments":{...}}]}.'
+    )
+    lines.append(
+        "Do not tell the user to run commands manually, do not claim tool limits are exhausted, and do not stop after a single wrong tool name."
     )
     return "\n".join(lines)
 
@@ -722,10 +768,17 @@ def unavailable_tool_message_from_content(
 
     requested_names.extend(_requested_tool_names_from_lines(text))
     requested_names.extend(_requested_tool_names_from_malformed_fragments(text))
+    tool_error_names = _requested_tool_names_from_tool_errors(text)
+    requested_names.extend(tool_error_names)
+    exact_available = set(_available_tool_names(request_config))
     unavailable = [
         name
         for name in requested_names
-        if name and not _resolve_tool_name(name, request_config)
+        if name
+        and (
+            not _resolve_tool_name(name, request_config)
+            or (name in tool_error_names and name not in exact_available)
+        )
     ]
     if not unavailable:
         return ""

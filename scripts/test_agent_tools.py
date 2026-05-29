@@ -172,10 +172,13 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Available tool names (use exactly)" in prompt
     assert "`read_file`, `terminal`" in prompt
     assert "Command-capable tools: `terminal`" in prompt
+    assert 'name":"terminal","arguments":{"command":"Get-ChildItem"}' in prompt
+    assert '"name":"shell_command","arguments":{"command":"dir' not in prompt
     assert "Read relevant files before editing" in prompt
     assert "Do not rewrite entire files" in prompt
     assert "Prefer a focused patch" in prompt
     assert "Keep user-visible progress explicit" in prompt
+    assert "do not claim that tools are unavailable" in prompt
 
 
 def test_normalize_chat_result_to_openai_tool_calls():
@@ -224,6 +227,30 @@ def test_unavailable_tool_request_returns_available_tool_list():
     assert "Unsupported tool request" in message["content"]
     assert "Requested tool names: `python`" in message["content"]
     assert "Available tool names: `read_file`, `terminal`" in message["content"]
+
+
+def test_tool_does_not_exist_text_returns_retry_guidance():
+    result = {
+        "id": "chatcmpl_test",
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Tool shell_command does not exists. Please run Get-Content README.md yourself.",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    normalized, count = normalize_tool_result(result, _request_config())
+    message = normalized["choices"][0]["message"]
+    assert count == 0
+    assert "Unsupported tool request" in message["content"]
+    assert "Requested tool names: `shell_command`" in message["content"]
+    assert "Available tool names: `read_file`, `terminal`" in message["content"]
+    assert "Do not tell the user to run commands manually" in message["content"]
 
 
 def test_proxy_api_key_is_not_reused_as_upstream_bearer():
@@ -480,6 +507,7 @@ def main():
     test_tool_protocol_prompt_describes_codex_command_tool()
     test_normalize_chat_result_to_openai_tool_calls()
     test_unavailable_tool_request_returns_available_tool_list()
+    test_tool_does_not_exist_text_returns_retry_guidance()
     test_proxy_api_key_is_not_reused_as_upstream_bearer()
     test_prepare_prompt_tool_payload_hides_native_tool_schema()
     test_google_ai_studio_uses_native_tools_not_prompt_shim()
