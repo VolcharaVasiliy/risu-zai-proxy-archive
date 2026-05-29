@@ -77,8 +77,9 @@ Codex-style operating loop:
 - After every edit, inspect the changed section or file before running validation so you can confirm it is not truncated, empty, syntactically incomplete, or missing unrelated code. For source files, then run the fastest useful syntax/import check or targeted tests before continuing.
 - If an edit fails, partially applies, produces suspicious output, or a validation command fails, stop making new edits, re-read the modified file, repair any broken intermediate state, then re-run validation.
 - If the same edit method fails twice, switch methods instead of looping. If progress stalls, inspect current file state and validate before deciding whether a concrete blocker remains.
-- On Windows, avoid fragile nested-quote one-liners for source edits. Prefer `apply_patch`; if you must use Python through PowerShell, prefer a here-string piped to `python -` or another clear structured command.
+- On Windows, avoid fragile nested-quote one-liners for source edits. Prefer `apply_patch`; if an edit tool is unavailable and you need to create or replace a whole generated source file, use a file-safe method such as a short script read from stdin, a base64/temporary-file decode, or another approach that avoids embedding large source text inside a quoted `-Command` argument. If a PowerShell here-string, `python -c`, or quoted source-writing command fails with a parser/quoting error, do not retry the same pattern; after two quoting failures, switch methods or report a concrete blocker instead of ending silently.
 - Do not install missing test dependencies such as `pytest` unless the project requires installation and you have confirmed the dependency source is available. If a test runner is missing, use the project's existing commands, `unittest`, import checks, or direct Python checks for small self-contained tests.
+- For new executable projects, especially Rust/C/C++ CLI tasks, do not initialize a git repository or make commits unless the user asks. Prefer zero external dependencies for small utilities; use standard-library argument parsing, storage, and formatting unless the task clearly needs a library. If using Cargo scaffolding, use `cargo init --bin --vcs none` or equivalent. For Rust, keep unit tests focused on pure parser/storage/formatting functions; validate the final executable separately with explicit `cargo build --release` and direct `target\\release\\name.exe ...` smoke commands instead of making fragile unit tests depend on a debug exe path. Validation is not complete until the final executable exists, has been run with `--help` or representative sample commands, and the final answer includes the executable path and exact build/test/run commands. Once the executable smoke test passes, stop the tool loop and send the final answer instead of continuing to polish or re-run unrelated checks.
 - If a tool call fails, read the returned error and retry with corrected arguments or a real tool name from `Available tools`. Do not repeat the same invalid call.
 - If you cannot proceed because a required tool, credential, file, or permission is missing, state the concrete blocker and the exact available tools you can use.
 - Only ask the user for help when you are truly blocked after trying available tools and alternatives. For implementation tasks, send a user-facing answer only after the work is complete and verified, or to report a real blocker with concrete evidence. Once the task is complete and verified, always send a concise final answer with the changed files and validation commands; never end with an empty assistant message.
@@ -415,6 +416,19 @@ def _tool_result_recovery_guidance(content: str) -> str:
             "Recovery guidance: a syntax error occurred. If this was an inline edit or "
             "quoted command, do not repeat the same command; inspect the target file, "
             "then use a simpler focused edit method and run syntax/import validation."
+        )
+
+    if (
+        "no characters are allowed after a here-string header" in lowered
+        or "scriptblock should only be specified as a value of the command parameter"
+        in lowered
+        or "parsererror" in lowered
+    ):
+        lines.append(
+            "Recovery guidance: the previous PowerShell command failed because of "
+            "quoting or here-string syntax. Do not retry another large quoted "
+            "source-writing command; switch to a safer file-write/edit method, then "
+            "inspect the file before validation."
         )
 
     if "no module named pytest" in lowered or (

@@ -194,7 +194,17 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "If the same edit method fails twice, switch methods" in prompt
     assert "Never leave a workspace in a known broken intermediate state" in prompt
     assert "avoid fragile nested-quote one-liners" in prompt
+    assert "large source text inside a quoted `-Command` argument" in prompt
+    assert "after two quoting failures, switch methods" in prompt
     assert "Do not install missing test dependencies such as `pytest`" in prompt
+    assert "For new executable projects, especially Rust/C/C++ CLI tasks" in prompt
+    assert "do not initialize a git repository or make commits unless the user asks" in prompt
+    assert "Prefer zero external dependencies for small utilities" in prompt
+    assert "keep unit tests focused on pure parser/storage/formatting functions" in prompt
+    assert "target" in prompt and "release" in prompt and "name.exe" in prompt
+    assert "smoke commands instead of making fragile unit tests depend on a debug exe path" in prompt
+    assert "Validation is not complete until the final executable exists" in prompt
+    assert "Once the executable smoke test passes, stop the tool loop" in prompt
     assert "do not send standalone progress/status prose while file or command work remains" in prompt
     assert "do not claim that tools are unavailable" in prompt
     assert "Treat the written requirements as a checklist" in prompt
@@ -337,6 +347,16 @@ def test_prompt_tool_payload_adds_tool_error_recovery_guidance():
     assert "do not repeat the same command" in tool_message
     assert "pytest is not available" in tool_message
     assert "direct Python checks" in tool_message
+
+    payload["messages"][0]["content"] = (
+        "ParserError: No characters are allowed after a here-string header "
+        "but before the end of the line. ScriptBlock should only be specified "
+        "as a value of the Command parameter."
+    )
+    prepared = prepare_prompt_tool_payload(payload, "qwen-ai")
+    tool_message = prepared["messages"][1]["content"]
+    assert "PowerShell command failed because of quoting or here-string syntax" in tool_message
+    assert "Do not retry another large quoted source-writing command" in tool_message
 
 
 def test_google_ai_studio_uses_native_tools_not_prompt_shim():
