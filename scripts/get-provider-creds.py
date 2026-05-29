@@ -177,6 +177,9 @@ def main():
         "gemini_web_cookie": "",
         "gemini_web_secure_1psid": "",
         "gemini_web_secure_1psidts": "",
+        "glm_refresh_token": "",
+        "glm_access_token": "",
+        "glm_cookie": "",
         "mimo_cookie": "",
         "mimo_service_token": "",
         "mimo_user_id": "",
@@ -214,6 +217,27 @@ def main():
         result["gemini_web_cookie"] = gemini_cookie
         result["gemini_web_secure_1psid"] = _cookie_value(result["gemini_web_cookie"], "__Secure-1PSID")
         result["gemini_web_secure_1psidts"] = _cookie_value(result["gemini_web_cookie"], "__Secure-1PSIDTS")
+
+    glm_partition, glm_cookie = _find_partition_with_cookie("chatglm.cn", "chatglm_refresh_token")
+    if not glm_partition:
+        glm_partition, glm_cookie = _find_partition_with_cookie("chatglm.cn", "glm_refresh_token")
+    if not glm_partition:
+        glm_partition, _glm_text = _find_partition_by_domain("chatglm.cn")
+        if glm_partition:
+            glm_cookie = _extract_cookie_header(glm_partition, "chatglm.cn")
+    if glm_partition:
+        result["partitions"]["glm_web"] = str(glm_partition)
+        result["glm_cookie"] = glm_cookie
+        result["glm_refresh_token"] = (
+            _cookie_value(result["glm_cookie"], "chatglm_refresh_token")
+            or _cookie_value(result["glm_cookie"], "glm_refresh_token")
+            or _cookie_value(result["glm_cookie"], "refresh_token")
+        )
+        result["glm_access_token"] = (
+            _cookie_value(result["glm_cookie"], "chatglm_token")
+            or _cookie_value(result["glm_cookie"], "glm_token")
+            or _cookie_value(result["glm_cookie"], "access_token")
+        )
 
     mimo_partition, _mimo_text = _find_partition_by_domain("aistudio.xiaomimimo.com")
     if mimo_partition:

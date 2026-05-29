@@ -12,7 +12,9 @@ from http_helpers import proxy_auth_error, proxy_authorized, read_json_body, sen
 from provider_registry import (
     complete_non_stream,
     models_payload,
+    ProviderAuthError,
     provider_error_hint,
+    raise_provider_auth_if_needed,
     resolve_credentials,
     resolve_provider_id,
     stream_chunks,
@@ -163,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "error": {
                         "message": provider_error_hint(provider_id),
-                        "type": "invalid_request_error",
+                        "type": "authentication_error",
                     }
                 },
             )
@@ -249,9 +251,30 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
         except BrokenPipeError:
             return
+        except ProviderAuthError as exc:
+            if stream_started:
+                return
+            return send_json(
+                self,
+                401,
+                {"error": {"message": str(exc), "type": "authentication_error"}},
+            )
         except Exception as exc:
             if stream_started:
                 return
+            try:
+                raise_provider_auth_if_needed(provider_id, exc)
+            except ProviderAuthError as auth_exc:
+                return send_json(
+                    self,
+                    401,
+                    {
+                        "error": {
+                            "message": str(auth_exc),
+                            "type": "authentication_error",
+                        }
+                    },
+                )
             return send_json(
                 self,
                 502,

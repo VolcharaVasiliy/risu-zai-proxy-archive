@@ -79,6 +79,11 @@ except ImportError:
 import json
 import os
 
+
+class ProviderAuthError(RuntimeError):
+    pass
+
+
 try:
     with open("credentials.json", "r") as f:
         credentials = json.load(f)
@@ -307,7 +312,7 @@ def resolve_provider_id(model: str) -> str:
 
 def provider_error_hint(provider_id: str) -> str:
     if provider_id == "zai":
-        return "Configure ZAI_TOKEN in server env or pass the Z.ai JWT as Bearer token / x-zai-token header"
+        return "Configure ZAI_TOKEN from a live chat.z.ai session, or pass the Z.ai JWT as Bearer token / x-zai-token header. Some Z.ai models are account-plan gated."
     if provider_id == "deepseek":
         return "Configure DEEPSEEK_TOKEN in server env or pass the DeepSeek userToken as Bearer token"
     if provider_id == "arcee":
@@ -347,6 +352,54 @@ def provider_error_hint(provider_id: str) -> str:
     if provider_id == "uncloseai":
         return "UncloseAI public endpoints do not require credentials"
     return "Provider credentials are not configured"
+
+
+def provider_auth_error_message(provider_id: str, error: Exception) -> str:
+    detail = str(error or "").strip()
+    hint = provider_error_hint(provider_id)
+    if detail:
+        return f"Provider authentication/configuration failed for {provider_id}: {detail}. {hint}"
+    return f"Provider authentication/configuration failed for {provider_id}. {hint}"
+
+
+def is_provider_auth_error(error: Exception) -> bool:
+    text = str(error or "").lower()
+    auth_markers = [
+        "401 client error",
+        "401 unauthorized",
+        "http 401",
+        "unauthorized",
+        "forbidden",
+        "403",
+        "http 403",
+        "403 client error",
+        "api_key_invalid",
+        "api key not valid",
+        "invalid api key",
+        "invalid_argument",
+        "permission_denied",
+        "access token",
+        "token expired",
+        "expired token",
+        "invalid token",
+        "invalid cookie",
+        "session expired",
+        "model not available for current user level",
+        "current user level",
+        "当前用户无法使用此模型",
+        "无法使用此模型",
+        "frontend_captcha_required",
+        "captcha_verification_failed",
+        "captcha required",
+    ]
+    return any(marker in text for marker in auth_markers)
+
+
+def raise_provider_auth_if_needed(provider_id: str, error: Exception):
+    if isinstance(error, ProviderAuthError):
+        raise error
+    if is_provider_auth_error(error):
+        raise ProviderAuthError(provider_auth_error_message(provider_id, error)) from error
 
 
 def resolve_credentials(handler, provider_id: str):

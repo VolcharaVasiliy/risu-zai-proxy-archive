@@ -151,6 +151,7 @@ Named tunnel notes:
 | Provider | Where to get it manually |
 | --- | --- |
 | Z.ai | Logged-in `chat.z.ai` session, then export the JWT or copy it from local auth storage. |
+| GLM Web | Logged-in `chatglm.cn` session, then export `chatglm_refresh_token` from local Chat2API storage. |
 | DeepSeek | Logged-in `chat.deepseek.com` session and the stored `userToken`. |
 | Gemini Web | Google login cookies from `gemini.google.com`, usually `__Secure-1PSID` and optional `__Secure-1PSIDTS`. |
 | Google AI Studio Web | Logged-in `aistudio.google.com` Google cookies (`SAPISID`, `__Secure-*PAPISID`, `__Secure-*PSID`) and, for generation, a browser-captured `GenerateContent` body/template. |

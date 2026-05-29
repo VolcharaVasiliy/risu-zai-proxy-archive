@@ -33,6 +33,7 @@ from py.responses_api import _normalize_message_item  # noqa: E402
 from py.responses_api import _output_items_from_result  # noqa: E402
 from py.responses_api import _stream_response_api_events  # noqa: E402
 from py import gemini_web_proxy, provider_registry, qwen_ai_proxy  # noqa: E402
+from py import zai_proxy  # noqa: E402
 
 CATALOG_SCRIPT = os.path.join(ROOT_DIR, "scripts", "generate-codex-catalog.py")
 _catalog_spec = importlib.util.spec_from_file_location(
@@ -359,6 +360,99 @@ def test_prompt_tool_payload_adds_tool_error_recovery_guidance():
     assert "Do not retry another large quoted source-writing command" in tool_message
 
 
+def test_provider_auth_error_classification():
+    gemini_error = RuntimeError(
+        'Google AI Studio generation failed: HTTP 400 {"error":{"reason":"API_KEY_INVALID","message":"API key not valid"}}'
+    )
+    assert provider_registry.is_provider_auth_error(gemini_error) is True
+    try:
+        provider_registry.raise_provider_auth_if_needed("google-ai-studio", gemini_error)
+    except provider_registry.ProviderAuthError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected ProviderAuthError")
+    assert "Provider authentication/configuration failed for google-ai-studio" in message
+    assert "Configure GOOGLE_AI_STUDIO_API_KEY" in message
+
+    zai_error = RuntimeError(
+        "401 Client Error: Unauthorized for url: https://chat.z.ai/api/v1/chats/new"
+    )
+    assert provider_registry.is_provider_auth_error(zai_error) is True
+    try:
+        provider_registry.raise_provider_auth_if_needed("zai", zai_error)
+    except provider_registry.ProviderAuthError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected ProviderAuthError")
+    assert "Provider authentication/configuration failed for zai" in message
+    assert "Configure ZAI_TOKEN" in message
+
+    gated_error = RuntimeError(
+        "Z.ai upstream error: Model not available for current user level (403)"
+    )
+    assert provider_registry.is_provider_auth_error(gated_error) is True
+    localized_gated_error = RuntimeError(
+        "Z.ai upstream error: 当前用户无法使用此模型 (403)"
+    )
+    assert provider_registry.is_provider_auth_error(localized_gated_error) is True
+    try:
+        provider_registry.raise_provider_auth_if_needed("zai", gated_error)
+    except provider_registry.ProviderAuthError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected ProviderAuthError")
+    assert "account-plan gated" in message
+
+
+def test_missing_provider_credentials_are_auth_errors():
+    assert provider_registry.provider_error_hint("google-ai-studio").startswith(
+        "Configure GOOGLE_AI_STUDIO_API_KEY"
+    )
+
+
+def test_zai_upstream_sse_errors_are_reported():
+    item = {
+        "data": {
+            "error": {
+                "detail": "Model not available for current user level",
+                "code": 403,
+            },
+            "done": True,
+        },
+        "error": {
+            "detail": "Model not available for current user level",
+            "code": 403,
+        },
+        "done": True,
+    }
+    try:
+        zai_proxy._raise_upstream_error_if_any(item)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected Z.ai upstream error")
+    assert "Model not available for current user level" in message
+    assert "403" in message
+
+    item = {
+        "data": {
+            "done": True,
+            "error": {
+                "detail": "Please refresh the page to update the app, then try again.",
+                "error_code": "FRONTEND_CAPTCHA_REQUIRED",
+            },
+        },
+        "done": True,
+    }
+    try:
+        zai_proxy._raise_upstream_error_if_any(item)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected Z.ai upstream captcha error")
+    assert "FRONTEND_CAPTCHA_REQUIRED" in message
+
+
 def test_google_ai_studio_uses_native_tools_not_prompt_shim():
     config = {"tools": [READ_TOOL], "tool_choice": "auto"}
     assert provider_has_native_tools("google-ai-studio") is True
@@ -678,6 +772,9 @@ def main():
     test_proxy_api_key_is_not_reused_as_upstream_bearer()
     test_prepare_prompt_tool_payload_hides_native_tool_schema()
     test_prompt_tool_payload_adds_tool_error_recovery_guidance()
+    test_provider_auth_error_classification()
+    test_missing_provider_credentials_are_auth_errors()
+    test_zai_upstream_sse_errors_are_reported()
     test_google_ai_studio_uses_native_tools_not_prompt_shim()
     test_multimodal_preprocess_converts_images_for_text_providers()
     test_multimodal_preprocess_keeps_native_image_payloads()

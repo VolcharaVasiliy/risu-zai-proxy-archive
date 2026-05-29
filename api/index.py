@@ -23,7 +23,9 @@ from py.http_helpers import (
 from py.provider_registry import (
     complete_non_stream,
     models_payload,
+    ProviderAuthError,
     provider_error_hint,
+    raise_provider_auth_if_needed,
     resolve_credentials,
     resolve_provider_id,
     stream_chunks,
@@ -270,7 +272,7 @@ class handler(BaseHTTPRequestHandler):
                 {
                     "error": {
                         "message": provider_error_hint(provider_id),
-                        "type": "invalid_request_error",
+                        "type": "authentication_error",
                     }
                 },
             )
@@ -397,6 +399,21 @@ class handler(BaseHTTPRequestHandler):
                 provider=provider_id,
                 error_type=type(exc).__name__,
             )
+        except ProviderAuthError as exc:
+            debug_log(
+                "api_chat_auth_error",
+                route=route,
+                provider=provider_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            if stream_started:
+                return
+            send_json(
+                self,
+                401,
+                {"error": {"message": str(exc), "type": "authentication_error"}},
+            )
         except Exception as exc:
             debug_log(
                 "api_chat_error",
@@ -405,6 +422,20 @@ class handler(BaseHTTPRequestHandler):
                 error=str(exc),
             )
             if stream_started:
+                return
+            try:
+                raise_provider_auth_if_needed(provider_id, exc)
+            except ProviderAuthError as auth_exc:
+                send_json(
+                    self,
+                    401,
+                    {
+                        "error": {
+                            "message": str(auth_exc),
+                            "type": "authentication_error",
+                        }
+                    },
+                )
                 return
             send_json(
                 self,

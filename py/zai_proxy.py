@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyd
 import requests
 
 BASE = "https://chat.z.ai"
-X_FE_VERSION = "prod-fe-1.0.241"
+X_FE_VERSION = "prod-fe-1.1.37"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 SECRET = b"key-@@@@)))()((9))-xxxx&&&%%%%%"
 OWNED_BY = "z.ai"
@@ -458,6 +458,49 @@ def build_features(request_model: str, web_search=False, reasoning_effort=None):
     }
 
 
+def _upstream_error_message(item) -> str:
+    if not isinstance(item, dict):
+        return ""
+
+    candidates = []
+    error = item.get("error")
+    if isinstance(error, dict):
+        candidates.append(error)
+
+    data = item.get("data")
+    if isinstance(data, dict):
+        data_error = data.get("error")
+        if isinstance(data_error, dict):
+            candidates.append(data_error)
+
+    for candidate in candidates:
+        detail = str(
+            candidate.get("detail")
+            or candidate.get("message")
+            or candidate.get("error")
+            or ""
+        ).strip()
+        code = str(
+            candidate.get("code")
+            or candidate.get("error_code")
+            or candidate.get("captcha_error_type")
+            or ""
+        ).strip()
+        if detail and code:
+            return f"{detail} ({code})"
+        if detail:
+            return detail
+        if code:
+            return code
+    return ""
+
+
+def _raise_upstream_error_if_any(item):
+    message = _upstream_error_message(item)
+    if message:
+        raise RuntimeError(f"Z.ai upstream error: {message}")
+
+
 def openai_stream_chunks(response, model: str, chat_id: str, session_key: str = ""):
     created = int(time.time())
     sent_role = False
@@ -481,6 +524,7 @@ def openai_stream_chunks(response, model: str, chat_id: str, session_key: str = 
         if obj.get("type") != "chat:completion":
             continue
         item = obj.get("data") or {}
+        _raise_upstream_error_if_any(item)
         if item.get("phase") == "thinking" and item.get("delta_content"):
             thinking_chunks += 1
             reasoning_parts.append(item["delta_content"])
@@ -710,13 +754,20 @@ def chat_completion(token: str, payload: dict):
         }
     )
 
-    response = requests.post(
-        f"{BASE}/api/v2/chat/completions?{build_query(token, chat_id, request_id, timestamp_ms, user_id)}",
-        headers=headers,
-        json=body,
-        timeout=120,
-        stream=True,
-    )
+    query = build_query(token, chat_id, request_id, timestamp_ms, user_id)
+    response = None
+    completion_paths = ("/api/agent/v2/chat/completions", "/api/v2/chat/completions")
+    for index, path in enumerate(completion_paths):
+        response = requests.post(
+            f"{BASE}{path}?{query}",
+            headers=headers,
+            json=body,
+            timeout=120,
+            stream=True,
+        )
+        if response.status_code != 405 or index == len(completion_paths) - 1:
+            break
+        response.close()
     response.raise_for_status()
     if stateful_sessions:
         payload["_zai_continuation_state"] = {
@@ -759,6 +810,7 @@ def collect_non_stream(response, model: str, chat_id: str):
         if obj.get("type") != "chat:completion":
             continue
         item = obj.get("data") or {}
+        _raise_upstream_error_if_any(item)
         if item.get("phase") == "thinking" and item.get("delta_content"):
             thinking_chunks += 1
             reasoning_parts.append(item["delta_content"])
