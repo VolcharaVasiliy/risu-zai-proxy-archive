@@ -179,6 +179,11 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert "Prefer a focused patch" in prompt
     assert "Keep user-visible progress explicit" in prompt
     assert "do not claim that tools are unavailable" in prompt
+    assert "Treat the written requirements as a checklist" in prompt
+    assert "does not prove IDs are never reused after deletion" in prompt
+    assert "talk to the user only after the work is complete and verified" in prompt
+    assert "payload must be the raw patch text only" in prompt
+    assert "do not repeat the same `apply_patch` call" in prompt
 
 
 def test_normalize_chat_result_to_openai_tool_calls():
