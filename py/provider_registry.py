@@ -84,6 +84,10 @@ class ProviderAuthError(RuntimeError):
     pass
 
 
+class ProviderRateLimitError(RuntimeError):
+    pass
+
+
 try:
     with open("credentials.json", "r") as f:
         credentials = json.load(f)
@@ -393,6 +397,34 @@ def is_provider_auth_error(error: Exception) -> bool:
         "captcha required",
     ]
     return any(marker in text for marker in auth_markers)
+
+
+def is_provider_rate_limit_error(error: Exception) -> bool:
+    text = str(error or "").lower()
+    rate_limit_markers = [
+        "429",
+        "http 429",
+        "too many requests",
+        "rate limit",
+        "quota exceeded",
+        "resource_exhausted",
+        "exceeded your current quota",
+    ]
+    return any(marker in text for marker in rate_limit_markers)
+
+
+def raise_provider_rate_limit_if_needed(provider_id: str, error: Exception):
+    if isinstance(error, ProviderRateLimitError):
+        raise error
+    if is_provider_rate_limit_error(error):
+        detail = str(error or "").strip()
+        if detail:
+            raise ProviderRateLimitError(
+                f"Provider rate limit/quota exceeded for {provider_id}: {detail}"
+            ) from error
+        raise ProviderRateLimitError(
+            f"Provider rate limit/quota exceeded for {provider_id}"
+        ) from error
 
 
 def raise_provider_auth_if_needed(provider_id: str, error: Exception):

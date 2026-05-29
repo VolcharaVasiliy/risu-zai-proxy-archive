@@ -387,6 +387,20 @@ def test_provider_auth_error_classification():
     assert "Provider authentication/configuration failed for zai" in message
     assert "Configure ZAI_TOKEN" in message
 
+    quota_error = RuntimeError(
+        "Google AI Studio generation failed: HTTP 429 quota exceeded for model gemini-3.1-pro"
+    )
+    assert provider_registry.is_provider_rate_limit_error(quota_error) is True
+    try:
+        provider_registry.raise_provider_rate_limit_if_needed(
+            "google-ai-studio", quota_error
+        )
+    except provider_registry.ProviderRateLimitError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected ProviderRateLimitError")
+    assert "Provider rate limit/quota exceeded for google-ai-studio" in message
+
     gated_error = RuntimeError(
         "Z.ai upstream error: Model not available for current user level (403)"
     )

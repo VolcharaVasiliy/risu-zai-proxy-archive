@@ -24,8 +24,10 @@ from py.provider_registry import (
     complete_non_stream,
     models_payload,
     ProviderAuthError,
+    ProviderRateLimitError,
     provider_error_hint,
     raise_provider_auth_if_needed,
+    raise_provider_rate_limit_if_needed,
     resolve_credentials,
     resolve_provider_id,
     stream_chunks,
@@ -414,6 +416,21 @@ class handler(BaseHTTPRequestHandler):
                 401,
                 {"error": {"message": str(exc), "type": "authentication_error"}},
             )
+        except ProviderRateLimitError as exc:
+            debug_log(
+                "api_chat_rate_limit_error",
+                route=route,
+                provider=provider_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            if stream_started:
+                return
+            send_json(
+                self,
+                429,
+                {"error": {"message": str(exc), "type": "rate_limit_error"}},
+            )
         except Exception as exc:
             debug_log(
                 "api_chat_error",
@@ -422,6 +439,20 @@ class handler(BaseHTTPRequestHandler):
                 error=str(exc),
             )
             if stream_started:
+                return
+            try:
+                raise_provider_rate_limit_if_needed(provider_id, exc)
+            except ProviderRateLimitError as rate_exc:
+                send_json(
+                    self,
+                    429,
+                    {
+                        "error": {
+                            "message": str(rate_exc),
+                            "type": "rate_limit_error",
+                        }
+                    },
+                )
                 return
             try:
                 raise_provider_auth_if_needed(provider_id, exc)

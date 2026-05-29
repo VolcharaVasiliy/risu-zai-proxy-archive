@@ -13,8 +13,10 @@ from provider_registry import (
     complete_non_stream,
     models_payload,
     ProviderAuthError,
+    ProviderRateLimitError,
     provider_error_hint,
     raise_provider_auth_if_needed,
+    raise_provider_rate_limit_if_needed,
     resolve_credentials,
     resolve_provider_id,
     stream_chunks,
@@ -259,9 +261,30 @@ class Handler(BaseHTTPRequestHandler):
                 401,
                 {"error": {"message": str(exc), "type": "authentication_error"}},
             )
+        except ProviderRateLimitError as exc:
+            if stream_started:
+                return
+            return send_json(
+                self,
+                429,
+                {"error": {"message": str(exc), "type": "rate_limit_error"}},
+            )
         except Exception as exc:
             if stream_started:
                 return
+            try:
+                raise_provider_rate_limit_if_needed(provider_id, exc)
+            except ProviderRateLimitError as rate_exc:
+                return send_json(
+                    self,
+                    429,
+                    {
+                        "error": {
+                            "message": str(rate_exc),
+                            "type": "rate_limit_error",
+                        }
+                    },
+                )
             try:
                 raise_provider_auth_if_needed(provider_id, exc)
             except ProviderAuthError as auth_exc:
