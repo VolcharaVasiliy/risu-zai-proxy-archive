@@ -175,11 +175,57 @@ def test_malformed_tool_fragment_recovers_shell_command():
     }
 
 
+def test_command_tool_arguments_strip_broken_json_tail():
+    content = json.dumps(
+        {
+            "tool_calls": [
+                {
+                    "name": "terminal",
+                    "arguments": {
+                        "command": (
+                            "Get-CimInstance Win32_Process | Select-Object "
+                            'ProcessId, CommandLine | Format-List\\" garbage}]}'
+                        )
+                    },
+                }
+            ]
+        }
+    )
+    text, calls = extract_tool_calls_from_content(content, _request_config())
+    assert text == ""
+    assert len(calls) == 1
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "command": (
+            "Get-CimInstance Win32_Process | Select-Object "
+            "ProcessId, CommandLine | Format-List"
+        )
+    }
+
+    text, calls = extract_tool_calls_from_content(
+        json.dumps(
+            {
+                "tool_calls": [
+                    {"name": "terminal", "arguments": {"command": "Set-Location C:\\"}}
+                ]
+            }
+        ),
+        _request_config(),
+    )
+    assert text == ""
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "command": "Set-Location C:\\"
+    }
+
+
 def test_tool_protocol_prompt_describes_codex_command_tool():
     prompt = build_tool_protocol_prompt(_request_config())
     assert "Codex exposes emulated client tools" in prompt
     assert "exact names in `Available tools`" in prompt
     assert "Windows command line" in prompt
+    assert "current working directory" in prompt
+    assert "do not search broad drives such as `C:\\`" in prompt
+    assert "Get-CimInstance Win32_Process" in prompt
+    assert "do not rely on `Get-Process ... .CommandLine`" in prompt
     assert "Invoke-Item -LiteralPath" in prompt
     assert "Available tool names (use exactly)" in prompt
     assert "`read_file`, `terminal`" in prompt
@@ -187,6 +233,7 @@ def test_tool_protocol_prompt_describes_codex_command_tool():
     assert 'name":"terminal","arguments":{"command":"Get-ChildItem"}' in prompt
     assert '"name":"shell_command","arguments":{"command":"dir' not in prompt
     assert "Read relevant files before editing" in prompt
+    assert "your first substantive response should normally be a tool call" in prompt
     assert "Do not rewrite entire files" in prompt
     assert "Prefer a focused patch" in prompt
     assert "Do not use `Set-Content`/redirection to rewrite a whole source file" in prompt
@@ -779,6 +826,7 @@ def main():
     test_empty_arguments_are_valid_json_objects()
     test_shell_aliases_resolve_to_available_command_tool()
     test_malformed_tool_fragment_recovers_shell_command()
+    test_command_tool_arguments_strip_broken_json_tail()
     test_tool_protocol_prompt_describes_codex_command_tool()
     test_normalize_chat_result_to_openai_tool_calls()
     test_unavailable_tool_request_returns_available_tool_list()

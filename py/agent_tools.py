@@ -53,9 +53,11 @@ Local Environment & OS (Windows):
 - You are running on a Windows OS. When running shell commands, you must use PowerShell or CMD syntax. Use standard Windows paths (e.g. `C:\\path\\`). Do NOT assume a Linux environment.
 - Python 3.11 is installed and available if you need to execute Python scripts.
 - You have optional access to the user's local machine (filesystem, terminal) via client-side tool calls.
+- Command tools execute in the client's current working directory unless the tool schema provides a `workdir` argument. For repository tasks, first inspect the current directory with `Get-Location`, `Get-ChildItem`, or `git status --short`; do not search broad drives such as `C:\\` just to locate the repo.
 - You are not calling a real built-in Linux `shell` tool. Codex exposes emulated client tools through the exact names in `Available tools`.
 - For local commands, use the exact available command tool name shown below. It may be `shell_command`, `terminal`, `powershell`, or another listed tool; do not copy examples with a different name.
 - Put the Windows command line in the tool argument named `command`. Examples: `Get-ChildItem`, `Get-Content README.md`, `rg "pattern" .`, `git status --short`, `python script.py`.
+- To inspect process command lines on Windows, use `Get-CimInstance Win32_Process` or `Get-WmiObject Win32_Process`; do not rely on `Get-Process ... .CommandLine`, which is commonly unavailable or incomplete.
 - To open a local HTML/file on Windows, first verify it exists with `Test-Path -LiteralPath "F:\\path\\file.html"`, then use `Invoke-Item -LiteralPath "F:\\path\\file.html"` or `Start-Process -FilePath "F:\\path\\file.html"`.
 - Do not request tool names that are not listed, such as `shell` or `bash`, unless those exact names appear in `Available tools`.
 - If you need to know how to use Codex features, you can search the web for Codex documentation.
@@ -66,6 +68,7 @@ Local Environment & OS (Windows):
 Codex-style operating loop:
 - For repository work, inspect files first, make focused edits, run targeted validation, then summarize the exact result.
 - Prefer fast file/search commands such as `rg`, `Get-ChildItem`, `Get-Content`, `git status --short`, `git diff`, and project test commands when a command tool is available.
+- If the user asks you to create, edit, run, open, install, test, commit, push, inspect a local file/repo, or otherwise perform a local action, your first substantive response should normally be a tool call, not a prose plan. Use prose first only for a direct question, a real blocker, or a necessary clarification.
 - Read relevant files before editing. Use `rg` to locate the code, then inspect the exact function, class, or surrounding lines with `Get-Content`/file-read tools before deciding on a change.
 - Do not rewrite entire files unless the user explicitly asks for it or the file is tiny and a full rewrite is clearly simpler. Prefer a focused patch to the smallest section that solves the task.
 - If you must edit with a command tool, replace only a specific function, class, or clearly delimited block. Do not use `Set-Content`/redirection to rewrite a whole source file for a tiny change unless no safer focused method is available.
@@ -622,7 +625,9 @@ def _tool_call(
         "type": "function",
         "function": {
             "name": resolved,
-            "arguments": _arguments_json(arguments),
+            "arguments": _arguments_json(
+                _normalize_tool_arguments(resolved, arguments, request_config)
+            ),
         },
     }
 
@@ -635,6 +640,51 @@ def _schema_property_names(tool: dict) -> set[str]:
     if not isinstance(properties, dict):
         return set()
     return {str(key) for key in properties.keys()}
+
+
+def _tool_by_name(name: str, request_config: dict | None) -> dict | None:
+    target = str(name or "").strip()
+    for tool in _available_tools(request_config):
+        if _tool_name(tool) == target:
+            return tool
+    return None
+
+
+def _clean_command_text(command: str) -> str:
+    text = str(command or "").strip()
+    if not text:
+        return text
+
+    # Some chat models occasionally append a broken JSON tail after a valid
+    # PowerShell command, e.g. `... | Format-List\" garbage}]}`.
+    tail_match = re.search(r'\\?"\s+[^`"\r\n]*[\]\}]+$', text)
+    if tail_match:
+        text = text[: tail_match.start()].rstrip()
+    return text.rstrip(" \t")
+
+
+def _normalize_tool_arguments(
+    resolved_name: str, arguments: Any, request_config: dict | None
+) -> Any:
+    tool = _tool_by_name(resolved_name, request_config)
+    if not tool or "command" not in _schema_property_names(tool):
+        return arguments
+
+    if isinstance(arguments, dict) and isinstance(arguments.get("command"), str):
+        normalized = dict(arguments)
+        normalized["command"] = _clean_command_text(normalized["command"])
+        return normalized
+
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments.strip())
+        except Exception:
+            return arguments
+        if isinstance(parsed, dict) and isinstance(parsed.get("command"), str):
+            parsed["command"] = _clean_command_text(parsed["command"])
+            return parsed
+
+    return arguments
 
 
 def _bare_json_matches_single_tool(value: Any, request_config: dict | None) -> bool:
