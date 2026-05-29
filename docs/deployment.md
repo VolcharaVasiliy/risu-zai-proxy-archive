@@ -31,16 +31,16 @@ Codex can talk to this proxy directly when the configured provider uses `wire_ap
 Generate the Codex model catalog from the current provider registry:
 
 ```powershell
-F:\DevTools\Python311\python.exe .\scripts\generate-codex-catalog.py --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
+npm run codex:catalog -- --output "$env:USERPROFILE\.codex\risu-zai-model-catalog.json"
 ```
 
 On a fresh Windows machine, the shortest setup path is the `rzai` installer:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-rzai.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-It installs `rzai` and `risu-zai` into `%USERPROFILE%\.codex\bin`, adds that directory to the user PATH, writes `%USERPROFILE%\.codex\risu-zai.config.toml`, and generates `%USERPROFILE%\.codex\risu-zai-model-catalog.json`. Open a new terminal and check it with:
+It installs Node/Python dependencies, installs `rzai` and `risu-zai` into `%USERPROFILE%\.codex\bin`, adds that directory to the user PATH, writes `%USERPROFILE%\.codex\risu-zai.config.toml`, and generates `%USERPROFILE%\.codex\risu-zai-model-catalog.json`. Open a new terminal and check it with:
 
 ```powershell
 rzai -Print
@@ -246,13 +246,13 @@ Vercel installs from `requirements.txt`; `pydeps` is only for local portable run
 Deploy and sync env from local credentials:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\downloads\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\redeploy-vercel.ps1 -SyncEnv
 ```
 
 Optional agent/client-auth envs can be pushed during deploy:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\downloads\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv -ProxyApiKey "your-client-key" -AgentToolMode auto
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\redeploy-vercel.ps1 -SyncEnv -ProxyApiKey "your-client-key" -AgentToolMode auto
 ```
 
 The script:

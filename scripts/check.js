@@ -29,6 +29,8 @@ const requiredFiles = [
   "README.md",
   "REDEPLOY.md",
   "requirements.txt",
+  "scripts/run-python.mjs",
+  "scripts/setup-windows.ps1",
   "scripts/test_agent_tools.py",
   "scripts/generate-codex-catalog.py",
   "scripts/install-rzai.ps1",
@@ -96,6 +98,30 @@ if (nodeSyntax.status !== 0) {
   throw new Error(
     `Node syntax check failed:\n${nodeSyntax.stdout || ""}${nodeSyntax.stderr || ""}`,
   );
+}
+
+for (const script of ["scripts/run-python.mjs", "scripts/check.js"]) {
+  const check = spawnSync(process.execPath, ["--check", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  if (check.status !== 0) {
+    throw new Error(
+      `Node syntax check failed for ${script}:\n${check.stdout || ""}${check.stderr || ""}`,
+    );
+  }
+}
+
+const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf8");
+for (const snippet of [
+  "## Quick Start On Windows",
+  "scripts\\setup-windows.ps1",
+  "rzai -Print",
+  "npm run dev",
+]) {
+  if (!readme.includes(snippet)) {
+    throw new Error(`README is missing onboarding snippet: ${snippet}`);
+  }
 }
 
 const agentToolsTest = spawnSync(python, ["scripts/test_agent_tools.py"], {
