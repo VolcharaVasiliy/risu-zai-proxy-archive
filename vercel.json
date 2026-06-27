@@ -22,6 +22,14 @@
       "destination": "/api?route=java-chat"
     },
     {
+      "source": "/java/v1",
+      "destination": "/api?route=java-chat"
+    },
+    {
+      "source": "/java/v1/chat/completions",
+      "destination": "/api?route=java-chat"
+    },
+    {
       "source": "/v1/responses/chat/completions",
       "destination": "/api?route=responses-chat"
     },
