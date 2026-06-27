@@ -355,14 +355,37 @@ class handler(BaseHTTPRequestHandler):
                 if route == "java-chat":
                     choices = result.get("choices") or [{}]
                     message = (choices[0] or {}).get("message") or {}
-                    text_response = message.get("content") or ""
-                    # 1. Wrap text response in a serialized JSON object inside choices[0].message.content
-                    message["content"] = json.dumps({"response": text_response}, ensure_ascii=False)
-                    # 2. Inject root-level fallbacks to guarantee parsing success in all modes
-                    result["response"] = text_response
-                    result["text"] = text_response
-                    result["message"] = text_response
-                    result["content"] = text_response
+                    text_response = (message.get("content") or "").strip()
+                    
+                    try:
+                        content_json = json.loads(text_response)
+                        if not isinstance(content_json, dict):
+                            raise ValueError()
+                    except Exception:
+                        content_json = {}
+
+                    keys_to_populate = ["chat_text", "tts_text", "response", "text", "message", "content"]
+                    
+                    fallback_val = None
+                    for key in keys_to_populate:
+                        if key in content_json and content_json[key]:
+                            fallback_val = content_json[key]
+                            break
+                    if not fallback_val:
+                        fallback_val = text_response
+
+                    for key in keys_to_populate:
+                        if key not in content_json or not content_json[key]:
+                            content_json[key] = fallback_val
+
+                    message["content"] = json.dumps(content_json, ensure_ascii=False)
+
+                    result["chat_text"] = fallback_val
+                    result["tts_text"] = fallback_val
+                    result["response"] = fallback_val
+                    result["text"] = fallback_val
+                    result["message"] = fallback_val
+                    result["content"] = fallback_val
                     send_json(self, 200, result)
                     return
                 send_json(self, 200, result)
