@@ -235,7 +235,14 @@ class Handler(BaseHTTPRequestHandler):
                     choices = result.get("choices") or [{}]
                     message = (choices[0] or {}).get("message") or {}
                     text_response = message.get("content") or ""
-                    return send_json(self, 200, {"response": text_response})
+                    # 1. Wrap text response in a serialized JSON object inside choices[0].message.content
+                    message["content"] = json.dumps({"response": text_response}, ensure_ascii=False)
+                    # 2. Inject root-level fallbacks to guarantee parsing success in all modes
+                    result["response"] = text_response
+                    result["text"] = text_response
+                    result["message"] = text_response
+                    result["content"] = text_response
+                    return send_json(self, 200, result)
                 return send_json(self, 200, result)
 
             iterator = iter(stream_chunks(provider_id, credentials, payload))
