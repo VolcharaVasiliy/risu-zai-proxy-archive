@@ -158,7 +158,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route not in {"chat", "responses", "responses-chat"}:
+        if route not in {"chat", "responses", "responses-chat", "java-chat"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
@@ -220,7 +220,7 @@ class handler(BaseHTTPRequestHandler):
             )
             return
 
-        if route in {"chat", "responses-chat"} and (
+        if route in {"chat", "responses-chat", "java-chat"} and (
             not isinstance(payload.get("messages"), list) or not payload["messages"]
         ):
             send_json(
@@ -279,6 +279,9 @@ class handler(BaseHTTPRequestHandler):
                 },
             )
             return
+
+        if route == "java-chat":
+            payload["stream"] = False
 
         stream_started = False
         try:
@@ -349,6 +352,12 @@ class handler(BaseHTTPRequestHandler):
                 else:
                     result["chat_id"] = meta.get("chat_id")
                 debug_log("api_chat_response", route=route, **meta)
+                if route == "java-chat":
+                    choices = result.get("choices") or [{}]
+                    message = (choices[0] or {}).get("message") or {}
+                    text_response = message.get("content") or ""
+                    send_json(self, 200, {"response": text_response})
+                    return
                 send_json(self, 200, result)
                 return
 

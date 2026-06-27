@@ -82,6 +82,8 @@ class Handler(BaseHTTPRequestHandler):
             "/v1/chat/completions",
             "/v1/responses",
             "/v1/responses/chat/completions",
+            "/java/api/v1",
+            "/java/api/v1/chat/completions",
         }:
             return send_json(self, 404, {"error": {"message": "Not found"}})
 
@@ -117,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
         if request_path in {
             "/v1/chat/completions",
             "/v1/responses/chat/completions",
+            "/java/api/v1",
+            "/java/api/v1/chat/completions",
         } and (
             not isinstance(payload.get("messages"), list) or not payload["messages"]
         ):
@@ -172,6 +176,9 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
 
+        if request_path in {"/java/api/v1", "/java/api/v1/chat/completions"}:
+            payload["stream"] = False
+
         stream_started = False
         try:
             debug_log(
@@ -224,6 +231,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if payload.get("stream") is False:
                 result, _meta = complete_non_stream(provider_id, credentials, payload)
+                if request_path in {"/java/api/v1", "/java/api/v1/chat/completions"}:
+                    choices = result.get("choices") or [{}]
+                    message = (choices[0] or {}).get("message") or {}
+                    text_response = message.get("content") or ""
+                    return send_json(self, 200, {"response": text_response})
                 return send_json(self, 200, result)
 
             iterator = iter(stream_chunks(provider_id, credentials, payload))
