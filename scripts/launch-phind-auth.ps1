@@ -4,7 +4,9 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$ProfilePath = Join-Path $ProjectRoot "auth\phind-edge-profile"
+. "$PSScriptRoot\path-config.ps1"
+
+$ProfilePath = Get-RzaiAuthProfile -Name 'phind' -DefaultFolder 'phind-edge-profile'
 
 # Create profile directory if it doesn't exist
 if (-not (Test-Path $ProfilePath)) {
@@ -12,25 +14,7 @@ if (-not (Test-Path $ProfilePath)) {
     Write-Host "Created profile directory: $ProfilePath"
 }
 
-# Find Edge executable
-$EdgePaths = @(
-    "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
-    "${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe",
-    "${env:LOCALAPPDATA}\Microsoft\Edge\Application\msedge.exe"
-)
-
-$EdgeExe = $null
-foreach ($path in $EdgePaths) {
-    if (Test-Path $path) {
-        $EdgeExe = $path
-        break
-    }
-}
-
-if (-not $EdgeExe) {
-    Write-Error "Microsoft Edge not found. Please install Edge or update the script with your browser path."
-    exit 1
-}
+$EdgeExe = Resolve-RzaiBrowser
 
 Write-Host "Launching Edge with Phind profile..."
 Write-Host "Profile: $ProfilePath"

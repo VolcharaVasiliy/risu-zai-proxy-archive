@@ -12,6 +12,8 @@ $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptRoot
+. "$scriptRoot\path-config.ps1"
+
 $codexHomePath = [System.IO.Path]::GetFullPath($CodexHome)
 $binDir = Join-Path $codexHomePath "bin"
 $catalogPath = Join-Path $codexHomePath "risu-zai-model-catalog.json"
@@ -39,28 +41,12 @@ function ConvertTo-TomlPath {
 }
 
 function Resolve-Python {
-  $candidates = @(
-    $env:PYTHON,
-    "F:\DevTools\Python311\python.exe",
-    "python.exe",
-    "python3",
-    "python"
-  ) | Where-Object { $_ -and [string]::IsNullOrWhiteSpace($_) -eq $false }
-
-  foreach ($candidate in $candidates) {
-    if ([System.IO.Path]::IsPathRooted($candidate) -and -not (Test-Path -LiteralPath $candidate)) {
-      continue
-    }
-    try {
-      & $candidate --version *> $null
-      if ($LASTEXITCODE -eq 0) {
-        return $candidate
-      }
-    } catch {
-      continue
-    }
+  try {
+    return Resolve-RzaiPython
   }
-  return ""
+  catch {
+    return ""
+  }
 }
 
 if (-not (Test-Path -LiteralPath $launcherSource)) {

@@ -1,6 +1,16 @@
 param()
 
-$root = 'C:\Users\gamer\AppData\Roaming\chat2api\Partitions'
+. "$PSScriptRoot\path-config.ps1"
+
+$chat2ApiRoot = [string](Get-RzaiConfigValue -Path @('chat2api', 'root'))
+if ([string]::IsNullOrWhiteSpace($chat2ApiRoot)) {
+  $appData = [Environment]::GetFolderPath('ApplicationData')
+  $chat2ApiRoot = Join-Path $appData 'chat2api'
+}
+elseif (-not [System.IO.Path]::IsPathRooted($chat2ApiRoot)) {
+  $chat2ApiRoot = Resolve-RzaiProjectPath -Value $chat2ApiRoot -Default $chat2ApiRoot
+}
+$root = Join-Path $chat2ApiRoot 'Partitions'
 
 if (-not (Test-Path -LiteralPath $root)) {
   throw "Chat2API partitions folder not found: $root"

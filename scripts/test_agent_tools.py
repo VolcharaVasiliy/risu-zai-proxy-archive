@@ -417,7 +417,7 @@ def test_prompt_tool_payload_adds_tool_error_recovery_guidance():
                 "content": (
                     "Fatal error: tool apply_patch invoked with incompatible payload\n"
                     "SyntaxError: unterminated string literal\n"
-                    "F:\\DevTools\\Python311\\python.exe: No module named pytest"
+                    "python.exe: No module named pytest"
                 ),
             }
         ],

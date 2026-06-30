@@ -2,11 +2,12 @@ import json
 import sys
 
 import requests
+from path_config import runtime_path
 
 
 BASE_URL = "http://127.0.0.1:3001"
 MODEL = "uncloseai-gpt-oss"
-REPORT_PATH = r"F:\REPORT.md"
+REPORT_PATH = str(runtime_path("reports", "responsesLoop", "run/responses-loop-report.md"))
 
 
 def _print(label: str, value):

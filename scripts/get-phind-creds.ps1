@@ -1,10 +1,12 @@
 # Phind Credentials Extractor
 # Launches Edge with CDP and extracts cookies + nonce from phindai.org
 
-$EdgePath = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-$ProfilePath = ".\auth\phind-edge-profile"
+. "$PSScriptRoot\path-config.ps1"
+
+$EdgePath = Resolve-RzaiBrowser
+$ProfilePath = Get-RzaiAuthProfile -Name 'phind' -DefaultFolder 'phind-edge-profile'
 $CdpPort = 9223
-$OutputFile = ".\auth\phind-creds.json"
+$OutputFile = Get-RzaiAuthOutput -Name 'phind' -DefaultFile 'phind-creds.json'
 
 Write-Host "Launching Edge with CDP..." -ForegroundColor Cyan
 Write-Host ""
@@ -33,7 +35,7 @@ Write-Host ""
 Write-Host "Extracting credentials..." -ForegroundColor Cyan
 
 # Run Node.js script to extract credentials
-node scripts\get-phind-session.mjs
+& (Resolve-RzaiNode) scripts\get-phind-session.mjs
 
 Write-Host ""
 Write-Host "You can now close the browser and use Phind provider" -ForegroundColor Green

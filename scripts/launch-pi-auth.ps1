@@ -1,8 +1,13 @@
 param(
-[string]$ProfileRoot = 'F:\Projects\risu-zai-proxy-archive\auth\pi-edge-profile',
+  [string]$ProfileRoot = '',
   [string]$Url = 'https://pi.ai/'
 )
 
+. "$PSScriptRoot\path-config.ps1"
+
+if (-not $ProfileRoot) {
+  $ProfileRoot = Get-RzaiAuthProfile -Name 'pi' -DefaultFolder 'pi-edge-profile'
+}
 $profileRootResolved = [System.IO.Path]::GetFullPath($ProfileRoot)
 $profileParent = Split-Path -Parent $profileRootResolved
 
@@ -14,17 +19,7 @@ if (-not (Test-Path -LiteralPath $profileRootResolved)) {
   New-Item -ItemType Directory -Path $profileRootResolved -Force | Out-Null
 }
 
-$browserCandidates = @(
-  'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-  'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-  'C:\Program Files\Google\Chrome\Application\chrome.exe',
-  'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
-)
-
-$browserPath = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $browserPath) {
-  throw 'No supported Chromium browser found. Install Edge or Chrome, or edit scripts\launch-pi-auth.ps1.'
-}
+$browserPath = Resolve-RzaiBrowser
 
 Start-Process -FilePath $browserPath -ArgumentList @(
   '--new-window',

@@ -1,0 +1,69 @@
+{
+  "_description": "Copy this file to path-config.json when local paths need to be customized. Relative paths are resolved from the project root. Leave values empty to use environment variables, PATH, or the portable project defaults.",
+  "python": {
+    "_description": "Optional Python executable path. Used by Node/PowerShell helpers. Empty means PYTHON, PYTHON_EXE, then PATH lookup.",
+    "executable": ""
+  },
+  "node": {
+    "_description": "Optional Node.js executable path. Empty means NODE, NODE_EXE, then PATH lookup.",
+    "executable": ""
+  },
+  "cloudflared": {
+    "_description": "Optional cloudflared executable path for Inception tunnel scripts. Empty means CLOUDFLARED, CLOUDFLARED_EXE, then PATH lookup.",
+    "executable": ""
+  },
+  "powershell": {
+    "_description": "Optional PowerShell executable path used by Python helpers. Empty means POWERSHELL_EXE, then powershell/pwsh from PATH.",
+    "executable": ""
+  },
+  "browser": {
+    "_description": "Optional Chromium browser paths for login helpers. Empty means BROWSER_PATH/EDGE_PATH/CHROME_PATH or common Edge/Chrome/Yandex locations from Windows environment folders.",
+    "executable": "",
+    "yandexExecutable": "",
+    "yandexUserDataDir": ""
+  },
+  "chat2api": {
+    "_description": "Chat2API desktop storage root. Empty means CHAT2API_ROOT or %APPDATA%/chat2api.",
+    "root": ""
+  },
+  "profiles": {
+    "_description": "Dedicated Chromium user-data-dir roots used by auth launchers and credential extractors.",
+    "arceeUserDataDir": "",
+    "geminiWeb": "auth/gemini-web-edge-profile",
+    "grok": "auth/grok-edge-profile",
+    "inception": "auth/inception-edge-profile",
+    "longcat": "auth/longcat-edge-profile",
+    "mistral": "auth/mistral-edge-profile",
+    "openaiWeb": "auth/openai-web-edge-profile",
+    "phind": "auth/phind-edge-profile",
+    "pi": "auth/pi-edge-profile"
+  },
+  "authOutputs": {
+    "_description": "Credential JSON output files produced by extraction scripts.",
+    "arcee": "auth/arcee-creds.json",
+    "geminiWeb": "auth/gemini-web-creds.json",
+    "googleAiStudioWeb": "auth/google-ai-studio-web-creds.json",
+    "grok": "auth/grok-creds.json",
+    "inception": "auth/inception-creds.json",
+    "longcat": "auth/longcat-creds.json",
+    "mistral": "auth/mistral-creds.json",
+    "openaiWeb": "auth/openai-web-creds.json",
+    "phind": "auth/phind-creds.json",
+    "qwen": "auth/qwen-creds.json"
+  },
+  "qwen": {
+    "_description": "Source files used by scripts/get-qwen-creds.py.",
+    "cookiesDb": "run/qwen-browser-cookies.db",
+    "localState": "run/qwen-browser-local-state.json",
+    "netlog": ""
+  },
+  "googleAiStudioWeb": {
+    "_description": "Source files used by scripts/get-google-ai-studio-web-creds.py. Empty source paths default to the current user's Desktop export files.",
+    "fetchDump": "",
+    "cookieExport": ""
+  },
+  "reports": {
+    "_description": "Local report output paths used by ad-hoc test scripts.",
+    "responsesLoop": "run/responses-loop-report.md"
+  }
+}

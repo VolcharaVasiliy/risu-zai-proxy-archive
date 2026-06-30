@@ -11,25 +11,25 @@ For provider-by-provider details, read [docs/providers.md](docs/providers.md).
 Auto-extract credentials from local storage and Chat2API partitions:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-provider-creds.py
+python .\scripts\get-provider-creds.py
 ```
 
 Extract the Mistral browser session into `auth\mistral-creds.json`:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-mistral-creds.py --profile-root F:\Projects\risu-zai-proxy-archive\auth\mistral-edge-profile --output F:\Projects\risu-zai-proxy-archive\auth\mistral-creds.json
+python .\scripts\get-mistral-creds.py --profile-root .\auth\mistral-edge-profile --output .\auth\mistral-creds.json
 ```
 
 Extract the LongCat browser session into `auth\longcat-creds.json`:
 
 ```powershell
-F:\DevTools\Python311\python.exe F:\Projects\risu-zai-proxy-archive\scripts\get-longcat-creds.py --profile-root F:\Projects\risu-zai-proxy-archive\auth\longcat-edge-profile --output F:\Projects\risu-zai-proxy-archive\auth\longcat-creds.json
+python .\scripts\get-longcat-creds.py --profile-root .\auth\longcat-edge-profile --output .\auth\longcat-creds.json
 ```
 
 Deploy to Vercel with env sync:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Projects\risu-zai-proxy-archive\scripts\redeploy-vercel.ps1 -SyncEnv
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\redeploy-vercel.ps1 -SyncEnv
 ```
 
 ## Agent Route Notes

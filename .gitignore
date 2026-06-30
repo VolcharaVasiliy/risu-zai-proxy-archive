@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 *.pyo
 credentials.json
+path-config.json
 *.pyd
 *.log
 run/

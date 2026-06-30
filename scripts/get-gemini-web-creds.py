@@ -15,10 +15,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from py import gemini_web_proxy
+from path_config import auth_output, auth_profile, chat2api_root, yandex_user_data_root
 
 
-CHAT2API_ROOT = Path(r"C:\Users\gamer\AppData\Roaming\chat2api")
-YANDEX_USER_DATA_ROOT = Path(r"C:\Users\gamer\AppData\Local\Yandex\YandexBrowser\User Data")
+CHAT2API_ROOT = chat2api_root()
+YANDEX_USER_DATA_ROOT = yandex_user_data_root()
 
 
 class DATA_BLOB(ctypes.Structure):
@@ -194,8 +195,8 @@ def _discover_models(cookie_header: str, secure_1psid: str, secure_1psidts: str)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\gemini-web-edge-profile")
-    parser.add_argument("--output", default="")
+    parser.add_argument("--profile-root", default=str(auth_profile("geminiWeb", "gemini-web-edge-profile")))
+    parser.add_argument("--output", default=str(auth_output("geminiWeb", "gemini-web-creds.json")))
     args = parser.parse_args()
 
     profile_root = Path(args.profile_root)

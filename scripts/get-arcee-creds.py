@@ -9,6 +9,7 @@ from ctypes import Structure, byref, c_void_p, windll, wintypes
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from path_config import auth_output, config_value, yandex_user_data_root
 
 
 class DATA_BLOB(Structure):
@@ -90,7 +91,7 @@ def main():
     parser = argparse.ArgumentParser(description="Extract the Arcee bearer token from a Chromium/Yandex profile.")
     parser.add_argument(
         "--user-data-dir",
-        default=r"C:\Users\gamer\AppData\Local\Yandex\YandexBrowser\User Data",
+        default=str(config_value("profiles", "arceeUserDataDir", default="") or yandex_user_data_root()),
         help="Chromium-style user data dir",
     )
     parser.add_argument(
@@ -100,7 +101,7 @@ def main():
     )
     parser.add_argument(
         "--out",
-        default=r"F:\Projects\risu-zai-proxy-archive\auth\arcee-creds.json",
+        default=str(auth_output("arcee", "arcee-creds.json")),
         help="Output JSON path",
     )
     parser.add_argument(

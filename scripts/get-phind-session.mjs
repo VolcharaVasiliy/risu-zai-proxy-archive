@@ -6,25 +6,15 @@
 import CDP from 'chrome-remote-interface'
 import { spawn } from 'child_process'
 import { writeFileSync, mkdirSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const projectRoot = join(__dirname, '..')
-
-const EDGE_PATHS = [
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-  process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe'
-]
+import { dirname } from 'path'
+import { authOutput, authProfile, browserCandidates } from './path-config.mjs'
 
 const CDP_PORT = 9222
-const PROFILE_PATH = join(projectRoot, 'auth', 'phind-edge-profile')
+const PROFILE_PATH = authProfile('phind', 'phind-edge-profile')
 
 async function findEdge() {
   const fs = await import('fs')
-  for (const path of EDGE_PATHS) {
+  for (const path of browserCandidates()) {
     if (fs.existsSync(path)) {
       return path
     }
@@ -131,7 +121,7 @@ async function main() {
     }
     
     // Save to file
-    const outputPath = join(projectRoot, 'auth', 'phind-creds.json')
+    const outputPath = authOutput('phind', 'phind-creds.json')
     mkdirSync(dirname(outputPath), { recursive: true })
     writeFileSync(outputPath, JSON.stringify(credentials, null, 2))
     

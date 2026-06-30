@@ -21,9 +21,10 @@ param(
 )
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$nodeRoot = 'F:\DevTools\Portable\NodeJS'
-$nodeExe = Join-Path $nodeRoot 'node.exe'
-$pythonExe = 'F:\DevTools\Python311\python.exe'
+. "$PSScriptRoot\path-config.ps1"
+
+$nodeExe = Resolve-RzaiNode
+$pythonExe = Resolve-RzaiPython
 $vercelBin = Join-Path $projectRoot 'node_modules\.bin\vercel.cmd'
 $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $credsScript = Join-Path $projectRoot 'scripts\get-provider-creds.py'
@@ -43,19 +44,11 @@ if (-not (Test-Path -LiteralPath $vercelBin)) {
   throw "Vercel CLI not found at $vercelBin. Run npm install in $projectRoot first."
 }
 
-if (-not (Test-Path -LiteralPath $nodeExe)) {
-  throw "Node not found at $nodeExe."
-}
-
 if (-not (Test-Path -LiteralPath $vercelCliScript)) {
   throw "Vercel CLI entrypoint not found at $vercelCliScript."
 }
 
-if (-not (Test-Path -LiteralPath $pythonExe)) {
-  throw "Python not found at $pythonExe."
-}
-
-$env:PATH = "$nodeRoot;$projectRoot\node_modules\.bin;$env:PATH"
+$env:PATH = "$projectRoot\node_modules\.bin;$env:PATH"
 
 function Invoke-Vercel {
   param(

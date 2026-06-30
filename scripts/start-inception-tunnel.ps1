@@ -9,9 +9,11 @@ param(
 )
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pythonExe = 'F:\DevTools\Python311\python.exe'
-$nodeExe = 'F:\DevTools\Portable\NodeJS\node.exe'
-$cloudflaredExe = 'F:\DevTools\Portable\bin\cloudflared.exe'
+. "$PSScriptRoot\path-config.ps1"
+
+$pythonExe = Resolve-RzaiPython
+$nodeExe = Resolve-RzaiNode
+$cloudflaredExe = Resolve-RzaiCloudflared
 $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $serverScript = Join-Path $projectRoot 'py\inception_tunnel_server.py'
 $projectPydeps = Join-Path $projectRoot 'pydeps'
@@ -26,15 +28,6 @@ if (-not $CredsFile) {
   $CredsFile = Join-Path $projectRoot 'auth\inception-creds.json'
 }
 
-if (-not (Test-Path -LiteralPath $pythonExe)) {
-  throw "Python not found at $pythonExe"
-}
-if (-not (Test-Path -LiteralPath $nodeExe)) {
-  throw "Node not found at $nodeExe"
-}
-if (-not (Test-Path -LiteralPath $cloudflaredExe)) {
-  throw "cloudflared not found at $cloudflaredExe"
-}
 if (-not (Test-Path -LiteralPath $vercelCliScript)) {
   throw "Vercel CLI entrypoint not found at $vercelCliScript"
 }

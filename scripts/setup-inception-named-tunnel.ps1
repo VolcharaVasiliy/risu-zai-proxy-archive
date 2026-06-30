@@ -12,8 +12,10 @@ param(
 )
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$cloudflaredExe = 'F:\DevTools\Portable\bin\cloudflared.exe'
-$nodeExe = 'F:\DevTools\Portable\NodeJS\node.exe'
+. "$PSScriptRoot\path-config.ps1"
+
+$cloudflaredExe = Resolve-RzaiCloudflared
+$nodeExe = Resolve-RzaiNode
 $vercelCliScript = Join-Path $projectRoot 'node_modules\vercel\dist\index.js'
 $startQuickTunnelScript = Join-Path $projectRoot 'scripts\start-inception-tunnel.ps1'
 $runRoot = Join-Path $projectRoot 'run'
@@ -32,9 +34,6 @@ if (-not $originCert) {
   }
 }
 
-if (-not (Test-Path -LiteralPath $cloudflaredExe)) {
-  throw "cloudflared not found at $cloudflaredExe"
-}
 if (-not (Test-Path -LiteralPath $CredsFile)) {
   throw "Inception credentials file not found: $CredsFile"
 }

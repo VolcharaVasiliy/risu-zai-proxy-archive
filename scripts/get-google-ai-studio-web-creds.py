@@ -3,10 +3,20 @@ import json
 import re
 from pathlib import Path
 
+from path_config import auth_output, config_value, desktop_path, runtime_path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FETCH_DUMP = Path(r"C:\Users\gamer\Desktop\СЕТКА.txt")
-DEFAULT_COOKIE_EXPORT = Path(r"C:\Users\gamer\Desktop\КУКИ.txt")
-DEFAULT_OUTPUT = PROJECT_ROOT / "auth" / "google-ai-studio-web-creds.json"
+DEFAULT_FETCH_DUMP = runtime_path(
+    "googleAiStudioWeb",
+    "fetchDump",
+    desktop_path("СЕТКА.txt"),
+)
+DEFAULT_COOKIE_EXPORT = runtime_path(
+    "googleAiStudioWeb",
+    "cookieExport",
+    desktop_path("КУКИ.txt"),
+)
+DEFAULT_OUTPUT = auth_output("googleAiStudioWeb", "google-ai-studio-web-creds.json")
 
 SENSITIVE_HEADERS = {"authorization", "cookie", "content-length", "host"}
 

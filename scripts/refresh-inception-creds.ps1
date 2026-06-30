@@ -8,7 +8,9 @@ param(
 )
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pythonExe = 'F:\DevTools\Python311\python.exe'
+. "$PSScriptRoot\path-config.ps1"
+
+$pythonExe = Resolve-RzaiPython
 $extractorScript = Join-Path $projectRoot 'scripts\get-inception-creds.py'
 $startScript = Join-Path $projectRoot 'scripts\start-inception-tunnel.ps1'
 

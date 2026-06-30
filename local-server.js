@@ -1,33 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { pickPython, projectRoot } from "./scripts/path-config.mjs";
 
-const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const host = process.env.HOST || "127.0.0.1";
 const port = process.env.PORT || "3001";
 
-const pythonCandidates = [
-  process.env.PYTHON,
-  "F:\\DevTools\\Python311\\python.exe",
-  process.platform === "win32" ? "python.exe" : "python3",
-  "python",
-].filter(Boolean);
-
-function pickPython() {
-  for (const candidate of pythonCandidates) {
-    if (path.isAbsolute(candidate) && !existsSync(candidate)) {
-      continue;
-    }
-    return candidate;
-  }
-  return "python";
-}
-
 const python = pickPython();
 const child = spawn(python, ["py/server.py"], {
-  cwd: rootDir,
+  cwd: projectRoot,
   stdio: "inherit",
   env: {
     ...process.env,

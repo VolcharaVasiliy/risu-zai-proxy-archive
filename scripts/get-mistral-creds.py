@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from path_config import auth_output, auth_profile
 
 
 class DATA_BLOB(ctypes.Structure):
@@ -144,8 +145,8 @@ def _extract_cookies(profile_root: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\mistral-edge-profile")
-    parser.add_argument("--output", default="")
+    parser.add_argument("--profile-root", default=str(auth_profile("mistral", "mistral-edge-profile")))
+    parser.add_argument("--output", default=str(auth_output("mistral", "mistral-creds.json")))
     args = parser.parse_args()
 
     profile_root = Path(args.profile_root)

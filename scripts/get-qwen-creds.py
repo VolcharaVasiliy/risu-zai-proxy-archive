@@ -10,6 +10,8 @@ import tempfile
 from ctypes import Structure, byref, c_void_p, windll, wintypes
 from pathlib import Path
 
+from path_config import auth_output, config_value, desktop_path, runtime_path
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PYDEPS_DIR = ROOT_DIR / "pydeps"
 if PYDEPS_DIR.is_dir() and str(PYDEPS_DIR) not in sys.path:
@@ -146,7 +148,10 @@ def parse_netlog(netlog_path: Path) -> dict:
 
 
 def resolve_default_netlog() -> Path:
-    desktop = Path(r"C:\Users\gamer\Desktop")
+    configured = config_value("qwen", "netlog", default="")
+    if configured:
+        return runtime_path("qwen", "netlog", configured)
+    desktop = desktop_path()
     matches = sorted(desktop.glob("*квен*сетка*.txt"))
     if matches:
         return matches[-1]
@@ -157,12 +162,12 @@ def main():
     parser = argparse.ArgumentParser(description="Extract Qwen cookies and bx headers into auth\\qwen-creds.json")
     parser.add_argument(
         "--cookies-db",
-        default=r"F:\Projects\risu-zai-proxy-archive\run\qwen-browser-cookies.db",
+        default=str(runtime_path("qwen", "cookiesDb", "run/qwen-browser-cookies.db")),
         help="Path to a copied Chromium cookies DB",
     )
     parser.add_argument(
         "--local-state",
-        default=r"F:\Projects\risu-zai-proxy-archive\run\qwen-browser-local-state.json",
+        default=str(runtime_path("qwen", "localState", "run/qwen-browser-local-state.json")),
         help="Path to the copied Chromium Local State file",
     )
     parser.add_argument(
@@ -172,7 +177,7 @@ def main():
     )
     parser.add_argument(
         "--out",
-        default=r"F:\Projects\risu-zai-proxy-archive\auth\qwen-creds.json",
+        default=str(auth_output("qwen", "qwen-creds.json")),
         help="Output JSON path",
     )
     args = parser.parse_args()

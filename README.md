@@ -79,6 +79,12 @@ Run checks:
 npm run check
 ```
 
+## Local Path Configuration
+
+The project does not require a specific drive letter. Scripts resolve project files relative to the repo root and external tools from environment variables or PATH.
+
+If your Python, Node, cloudflared, browser, Chat2API storage, or auth profiles live in custom locations, copy `path-config.example.json` to `path-config.json` and fill only the paths you need. `path-config.json` is ignored by git.
+
 Run Codex through the installed launcher:
 
 ```powershell

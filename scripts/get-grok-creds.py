@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from path_config import auth_output, auth_profile
 
 
 class DATA_BLOB(ctypes.Structure):
@@ -142,12 +143,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--profile-root",
-        default=r"F:\Projects\risu-zai-proxy-archive\auth\grok-edge-profile",
+        default=str(auth_profile("grok", "grok-edge-profile")),
         help="Chromium user-data-dir root used for the Grok login browser session.",
     )
     parser.add_argument(
         "--output",
-        default="",
+        default=str(auth_output("grok", "grok-creds.json")),
         help="Optional JSON output path.",
     )
     args = parser.parse_args()

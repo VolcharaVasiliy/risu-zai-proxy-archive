@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pickPython } from "./path-config.mjs";
 
 const requiredFiles = [
   "package.json",
@@ -28,7 +29,11 @@ const requiredFiles = [
   "py/zai_proxy.py",
   "README.md",
   "REDEPLOY.md",
+  "path-config.example.json",
   "requirements.txt",
+  "scripts/path_config.py",
+  "scripts/path-config.mjs",
+  "scripts/path-config.ps1",
   "scripts/run-python.mjs",
   "scripts/setup-windows.ps1",
   "scripts/test_agent_tools.py",
@@ -57,28 +62,7 @@ for (const file of requiredFiles) {
   }
 }
 
-const pythonCandidates = [
-  process.env.PYTHON,
-  "F:\\DevTools\\Python311\\python.exe",
-  process.platform === "win32" ? "python.exe" : "python3",
-  "python",
-].filter(Boolean);
-
-let python = "";
-for (const candidate of pythonCandidates) {
-  if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) {
-    continue;
-  }
-  const probe = spawnSync(candidate, ["--version"], { encoding: "utf8" });
-  if (probe.status === 0) {
-    python = candidate;
-    break;
-  }
-}
-
-if (!python) {
-  throw new Error("Python is required for this proxy but was not found");
-}
+const python = pickPython();
 
 const compile = spawnSync(python, ["-m", "compileall", "-q", "py", "api"], {
   cwd: process.cwd(),

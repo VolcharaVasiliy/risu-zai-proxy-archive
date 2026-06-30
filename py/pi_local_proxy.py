@@ -8,27 +8,24 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
     from py.zai_proxy import debug_log
+    from scripts.path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
 except ImportError:
     from zai_proxy import debug_log
+    from path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
 
 
 OWNED_BY = "pi.ai (local browser bridge)"
 SUPPORTED_MODELS = ["pi-web-local"]
 
-POWERSHELL_EXE = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
-NODE_CANDIDATES = [
-    Path(r"F:\DevTools\Portable\NodeJS\node.exe"),
-    Path(r"F:\DevTools\NodeJS\node.exe"),
-]
-BROWSER_CANDIDATES = [
-    Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
-    Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
-    Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
-    Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
-]
+POWERSHELL_EXE = powershell_executable()
+NODE_CANDIDATES = node_candidates()
+BROWSER_CANDIDATES = browser_candidates()
 
 
 def supports_model(model: str) -> bool:
@@ -36,20 +33,11 @@ def supports_model(model: str) -> bool:
 
 
 def _resolve_existing_path(candidates, explicit: str = "") -> Path:
-    if explicit:
-        path = Path(explicit)
-        if not path.exists():
-            raise FileNotFoundError(f"Required path does not exist: {path}")
-        return path
-    for candidate in candidates:
-        if candidate and candidate.exists():
-            return candidate
-    raise FileNotFoundError("Required executable was not found in the expected locations")
+    return resolve_executable(candidates, explicit)
 
 
 def _powershell_command(command: str):
-    shell = str(POWERSHELL_EXE if POWERSHELL_EXE.exists() else "powershell")
-    return [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+    return [POWERSHELL_EXE, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
 
 
 def _stop_profile_browsers(profile_root: Path):
@@ -146,7 +134,7 @@ def complete_non_stream(_credentials: dict, payload: dict):
     if not prompt:
         raise RuntimeError("Pi local prompt is empty")
 
-    profile_root = Path(os.environ.get("PI_LOCAL_PROFILE_ROOT") or r"F:\Projects\risu-zai-proxy-archive\auth\pi-edge-profile")
+    profile_root = Path(os.environ.get("PI_LOCAL_PROFILE_ROOT") or auth_profile("pi", "pi-edge-profile"))
     cdp_port = int(os.environ.get("PI_LOCAL_CDP_PORT") or "9232")
     timeout_ms = int(os.environ.get("PI_LOCAL_TIMEOUT_MS") or "90000")
     browser_path = _resolve_existing_path(BROWSER_CANDIDATES, os.environ.get("PI_LOCAL_BROWSER_PATH", ""))

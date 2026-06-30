@@ -11,8 +11,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from path_config import chat2api_root
 
-ROOT = Path(r"C:\Users\gamer\AppData\Roaming\chat2api")
+ROOT = chat2api_root()
 PARTITIONS_ROOT = ROOT / "Partitions"
 
 

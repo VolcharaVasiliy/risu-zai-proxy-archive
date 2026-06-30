@@ -6,9 +6,10 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import CDP from 'chrome-remote-interface';
+import { authProfile, browserCandidates, pickExecutable } from './path-config.mjs';
 
-const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const USER_DATA_DIR = './auth/phind-edge-profile';
+const EDGE_PATH = pickExecutable(browserCandidates());
+const USER_DATA_DIR = authProfile('phind', 'phind-edge-profile');
 const CDP_PORT = 9223;
 
 console.log('Launching Edge with CDP and network monitoring...\n');

@@ -13,22 +13,15 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from path_config import auth_output, auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-POWERSHELL_EXE = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
-NODE_CANDIDATES = [
-    Path(r"F:\DevTools\Portable\NodeJS\node.exe"),
-    Path(r"F:\DevTools\NodeJS\node.exe"),
-]
-BROWSER_CANDIDATES = [
-    Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
-    Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
-    Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
-    Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
-]
+POWERSHELL_EXE = powershell_executable()
+NODE_CANDIDATES = node_candidates()
+BROWSER_CANDIDATES = browser_candidates()
 
 
 class DATA_BLOB(ctypes.Structure):
@@ -138,20 +131,11 @@ def _extract_cookies(profile_root: Path):
 
 
 def _resolve_existing_path(candidates, explicit: str = "") -> Path:
-    if explicit:
-        path = Path(explicit)
-        if not path.exists():
-            raise FileNotFoundError(f"Required path does not exist: {path}")
-        return path
-    for candidate in candidates:
-        if candidate and candidate.exists():
-            return candidate
-    raise FileNotFoundError("Required executable was not found in the expected locations")
+    return resolve_executable(candidates, explicit)
 
 
 def _powershell_command(command: str):
-    shell = str(POWERSHELL_EXE if POWERSHELL_EXE.exists() else "powershell")
-    return [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+    return [POWERSHELL_EXE, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
 
 
 def _stop_profile_browsers(profile_root: Path):
@@ -233,8 +217,8 @@ def _fetch_session_via_cdp(profile_root: Path, browser_path: Path, node_path: Pa
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile-root", default=r"F:\Projects\risu-zai-proxy-archive\auth\openai-web-edge-profile")
-    parser.add_argument("--output", default="")
+    parser.add_argument("--profile-root", default=str(auth_profile("openaiWeb", "openai-web-edge-profile")))
+    parser.add_argument("--output", default=str(auth_output("openaiWeb", "openai-web-creds.json")))
     parser.add_argument("--browser-path", default="")
     parser.add_argument("--node-path", default="")
     parser.add_argument("--cdp-port", type=int, default=9222)
