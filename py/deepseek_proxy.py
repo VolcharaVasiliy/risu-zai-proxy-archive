@@ -12,10 +12,16 @@ try:
     from py.deepseek_hash import build_pow_response
     from py.openai_stream import OpenAIStreamBuilder
     from py.zai_proxy import debug_log
+    from py.client_fingerprint import CLIENT_BUNDLE_ID, CLIENT_VERSION
 except ImportError:
     from deepseek_hash import build_pow_response
     from openai_stream import OpenAIStreamBuilder
     from zai_proxy import debug_log
+    try:
+        from client_fingerprint import CLIENT_BUNDLE_ID, CLIENT_VERSION
+    except Exception:
+        CLIENT_BUNDLE_ID = "com.deepseek.chat"
+        CLIENT_VERSION = "2.3.0"
 
 
 DEEPSEEK_API_BASE = "https://chat.deepseek.com/api"
@@ -47,10 +53,10 @@ FAKE_HEADERS = {
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-    "X-App-Version": "20241129.1",
     "X-Client-Locale": "zh-CN",
     "X-Client-Platform": "web",
-    "X-Client-Version": "1.6.1",
+    "X-Client-Bundle-Id": CLIENT_BUNDLE_ID,
+    "X-Client-Version": CLIENT_VERSION,
 }
 
 _ACCESS_CACHE = {}
@@ -135,7 +141,8 @@ def create_session(access_token: str) -> str:
     )
     data = _check_response(response, "create session")
     biz_data = (data.get("data") or {}).get("biz_data") or data.get("biz_data") or {}
-    session_id = str(biz_data.get("id") or "").strip()
+    # biz_data may contain either an 'id' directly or a nested 'chat_session' object
+    session_id = str(biz_data.get("id") or (biz_data.get("chat_session") or {}).get("id") or "").strip()
     if not session_id:
         raise RuntimeError(f"DeepSeek create session returned no session id: {data}")
     _cache_set(_SESSION_CACHE, access_token, session_id, 300)
@@ -239,8 +246,13 @@ def _iter_sse_data(response):
         if not raw or not raw.startswith("data:"):
             continue
         data = raw[5:].strip()
-        if data:
-            yield data
+        if not data:
+            continue
+        # Classify provider-side version gate hints explicitly so callers can avoid retries
+        if "Update to the latest version" in data or "Update to latest version" in data:
+            # Raise a special, identifiable error so upstream can treat it as PROVIDER_VERSION_GATE
+            raise RuntimeError(f"PROVIDER_VERSION_GATE: {data}")
+        yield data
 
 
 def _append_fragments(fragments, answer_parts: list, reasoning_parts: list):

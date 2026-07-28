@@ -46,7 +46,6 @@ FAKE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
     "X-App-Fr": "browser_extension",
     "X-App-Platform": "pc",
-    "X-App-Version": "0.0.1",
     "X-Device-Brand": "",
     "X-Device-Model": "",
     "X-Lang": "zh",
