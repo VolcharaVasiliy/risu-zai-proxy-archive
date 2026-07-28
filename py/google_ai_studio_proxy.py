@@ -902,9 +902,9 @@ def describe_image_item(
     model = (
         os.environ.get(
             "MULTIMODAL_CAPTION_MODEL",
-            os.environ.get("GOOGLE_AI_STUDIO_CAPTION_MODEL", "gemini-2.5-flash-lite"),
+            os.environ.get("GOOGLE_AI_STUDIO_CAPTION_MODEL", "gemini-3.5-flash"),
         ).strip()
-        or "gemini-2.5-flash-lite"
+        or "gemini-3.5-flash"
     )
     prompt_template = os.environ.get(
         "MULTIMODAL_CAPTION_PROMPT",
