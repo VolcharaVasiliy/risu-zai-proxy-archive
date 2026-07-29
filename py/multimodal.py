@@ -39,7 +39,7 @@ def _mode() -> str:
 
 
 def _caption_api_key() -> str:
-    for name in ("GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+    for name in ("DEEPSEEK_TOKEN", "GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         value = os.environ.get(name, "").strip()
         if value:
             return value
@@ -195,11 +195,19 @@ def _describe_images(images: list[dict], context: str) -> list[str]:
     if not api_key:
         return [""] * len(images)
 
+    is_deepseek = os.environ.get("DEEPSEEK_TOKEN", "").strip() == api_key
+
     try:
-        try:
-            from py import google_ai_studio_proxy
-        except ImportError:
-            import google_ai_studio_proxy
+        if is_deepseek:
+            try:
+                from py.deepseek_proxy import describe_image_item
+            except ImportError:
+                from deepseek_proxy import describe_image_item
+        else:
+            try:
+                from py import google_ai_studio_proxy
+            except ImportError:
+                import google_ai_studio_proxy
     except Exception as exc:
         debug_log("multimodal_caption_import_failed", error=str(exc))
         return [""] * len(images)
@@ -207,9 +215,14 @@ def _describe_images(images: list[dict], context: str) -> list[str]:
     descriptions = []
     for index, image in enumerate(images, start=1):
         try:
-            description = google_ai_studio_proxy.describe_image_item(
-                {"api_key": api_key}, image, context_text=context, index=index
-            )
+            if is_deepseek:
+                description = describe_image_item(
+                    {"token": api_key}, image, context_text=context, index=index
+                )
+            else:
+                description = google_ai_studio_proxy.describe_image_item(
+                    {"api_key": api_key}, image, context_text=context, index=index
+                )
             descriptions.append(str(description or "").strip())
         except Exception as exc:
             debug_log("multimodal_caption_failed", image_index=index, error=str(exc))

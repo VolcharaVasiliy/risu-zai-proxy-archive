@@ -1,6 +1,8 @@
+import base64
 import json
 import os
 import random
+import re
 import sys
 import time
 import uuid
@@ -27,17 +29,21 @@ except ImportError:
 DEEPSEEK_API_BASE = "https://chat.deepseek.com/api"
 OWNED_BY = "chat.deepseek.com"
 
+_DATA_URL_RE = re.compile(r"^data:image/(?P<ext>\w+);base64,(?P<data>.+)$", re.DOTALL)
+
 SUPPORTED_MODELS = [
     "deepseek-chat",
     "deepseek-reasoner",
     "deepseek-search",
+    "deepseek-vision",
 ]
 
 MODEL_OPTIONS = {
-    "deepseek": {"model": "deepseek-chat", "thinking": False, "search": False},
-    "deepseek-chat": {"model": "deepseek-chat", "thinking": False, "search": False},
-    "deepseek-reasoner": {"model": "deepseek-reasoner", "thinking": True, "search": False},
-    "deepseek-search": {"model": "deepseek-search", "thinking": False, "search": True},
+    "deepseek": {"model": "deepseek-chat", "model_type": "default", "thinking": False, "search": False},
+    "deepseek-chat": {"model": "deepseek-chat", "model_type": "default", "thinking": False, "search": False},
+    "deepseek-reasoner": {"model": "deepseek-reasoner", "model_type": "default", "thinking": True, "search": False},
+    "deepseek-search": {"model": "deepseek-search", "model_type": "default", "thinking": False, "search": True},
+    "deepseek-vision": {"model": "deepseek-vision", "model_type": "vision", "thinking": False, "search": False},
 }
 
 FAKE_HEADERS = {
@@ -149,11 +155,11 @@ def create_session(access_token: str) -> str:
     return session_id
 
 
-def get_challenge(access_token: str) -> dict:
+def get_challenge(access_token: str, target_path: str = "/api/v0/chat/completion") -> dict:
     response = requests.post(
         f"{DEEPSEEK_API_BASE}/v0/chat/create_pow_challenge",
         headers={**FAKE_HEADERS, "Authorization": f"Bearer {access_token}"},
-        json={"target_path": "/api/v0/chat/completion"},
+        json={"target_path": target_path},
         timeout=30,
     )
     data = _check_response(response, "get challenge")
@@ -192,17 +198,273 @@ def _flags_for(request_model: str, payload: dict):
     defaults = MODEL_OPTIONS.get(model_key) or MODEL_OPTIONS["deepseek-chat"]
     search_enabled = defaults["search"] or bool(payload.get("web_search"))
     thinking_enabled = defaults["thinking"] or bool(payload.get("reasoning_effort"))
-    return defaults["model"], search_enabled, thinking_enabled
+    return defaults["model"], defaults["model_type"], search_enabled, thinking_enabled
+
+
+def _fetch_file_sync(access_token: str, file_id: str, max_polls: int = 60) -> dict:
+    for _ in range(max_polls):
+        time.sleep(2)
+        resp = requests.get(
+            f"{DEEPSEEK_API_BASE}/v0/file/fetch_files",
+            headers={**FAKE_HEADERS, "Authorization": f"Bearer {access_token}", "Cookie": _cookie()},
+            params={"file_ids": file_id},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            continue
+        body = resp.json()
+        files = body.get("data", {})
+        if isinstance(files, dict):
+            files = files.get("biz_data", {}).get("files", [])
+        if isinstance(files, list):
+            for f in files:
+                if isinstance(f, dict) and f.get("id") == file_id:
+                    status = str(f.get("status") or "").upper()
+                    if status == "FAILED":
+                        return f
+                    if status == "SUCCESS":
+                        return f
+    raise RuntimeError(f"DeepSeek file {file_id} did not become ready within {max_polls * 2}s")
+
+
+def _upload_and_wait(access_token: str, raw: bytes, filename: str, mime: str) -> str:
+    target = "/api/v0/file/upload_file"
+    challenge = get_challenge(access_token, target_path=target)
+    pow_response = build_pow_response(challenge, target_path=target)
+
+    uh = {k: v for k, v in FAKE_HEADERS.items() if k.lower() != "accept-encoding"}
+    uh["Authorization"] = f"Bearer {access_token}"
+    uh["Cookie"] = _cookie()
+    uh["X-Ds-Pow-Response"] = pow_response
+    uh["X-File-Size"] = str(len(raw))
+
+    resp = requests.post(
+        f"{DEEPSEEK_API_BASE}/v0/file/upload_file",
+        headers=uh,
+        files={"file": (filename, raw, mime)},
+        timeout=120,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepSeek upload failed: HTTP {resp.status_code} {resp.text[:200]}")
+
+    body = resp.json()
+    d = body.get("data", {})
+    if isinstance(d, dict):
+        biz = d.get("biz_data", {})
+        file_id = str(biz.get("id") or "").strip()
+    else:
+        file_id = ""
+    if not file_id:
+        raise RuntimeError(f"DeepSeek upload returned no file_id: {body}")
+
+    info = _fetch_file_sync(access_token, file_id)
+    status = str(info.get("status") or "").upper()
+    if status == "FAILED":
+        raise RuntimeError(f"DeepSeek file {file_id} processing failed: {info.get('error_code')}")
+    if status != "SUCCESS":
+        raise RuntimeError(f"DeepSeek file {file_id} unexpected status: {status}")
+
+    if info.get("is_image"):
+        fork_resp = requests.post(
+            f"{DEEPSEEK_API_BASE}/v0/file/fork_file_task",
+            headers={
+                **FAKE_HEADERS,
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"file_id": file_id, "to_model_type": "vision"},
+            timeout=30,
+        )
+        if fork_resp.status_code != 200:
+            raise RuntimeError(f"DeepSeek fork failed: HTTP {fork_resp.status_code} {fork_resp.text[:200]}")
+        fork_body = fork_resp.json()
+        fd = fork_body.get("data", {})
+        if isinstance(fd, dict):
+            fbiz = fd.get("biz_data", {})
+            vision_id = str(fbiz.get("id") or "").strip()
+        else:
+            vision_id = ""
+        if not vision_id:
+            raise RuntimeError(f"DeepSeek fork returned no vision file_id: {fork_body}")
+
+        vinfo = _fetch_file_sync(access_token, vision_id)
+        vstatus = str(vinfo.get("status") or "").upper()
+        if vstatus == "FAILED":
+            raise RuntimeError(f"DeepSeek vision file {vision_id} processing failed: {vinfo.get('error_code')}")
+        if vstatus != "SUCCESS":
+            raise RuntimeError(f"DeepSeek vision file {vision_id} unexpected status: {vstatus}")
+        return vision_id
+
+    return file_id
+
+
+def describe_image_item(credentials: dict, item: dict, context_text: str = "", index: int = 1) -> str:
+    token = str((credentials or {}).get("token") or os.environ.get("DEEPSEEK_TOKEN") or "").strip()
+    if not token:
+        return ""
+    iv = item.get("image_url")
+    url = ""
+    if isinstance(iv, dict):
+        url = str(iv.get("url") or "")
+    elif isinstance(iv, str):
+        url = iv
+    if not url:
+        file_data = str(item.get("file_data") or item.get("data") or "").strip()
+        if file_data:
+            if file_data.startswith("data:"):
+                url = file_data
+            else:
+                url = f"data:image/jpeg;base64,{file_data}"
+    if not url:
+        return ""
+
+    try:
+        access_token = acquire_access_token(token)
+        m = _DATA_URL_RE.match(url)
+        if m:
+            raw = base64.b64decode(re.sub(r"\s+", "", m.group("data")))
+            ext = m.group("ext") or "png"
+        elif url.startswith(("http://", "https://")):
+            resp = requests.get(url, headers={"User-Agent": FAKE_HEADERS["User-Agent"]}, timeout=30)
+            resp.raise_for_status()
+            raw = resp.content
+            ext = "jpg"
+        else:
+            return ""
+
+        fid = _upload_and_wait(access_token, raw, f"image.{ext}", f"image/{ext}")
+        if not fid:
+            return ""
+
+        messages = [{"role": "user", "content": [
+            {"type": "text", "text": f"Describe image {index} for another language model. Include visible objects, people, text, UI elements, layout, colors, and any details needed to answer the user's request. Be factual and concise."},
+        ]}]
+        if context_text:
+            messages[0]["content"].insert(0, {"type": "text", "text": f"Conversation context:\n{context_text}\n"})
+        file_ids = [fid]
+        model_type = "vision"
+        session_id = create_session(access_token)
+        challenge = get_challenge(access_token)
+        pow_response = build_pow_response(challenge)
+        prompt_text = "User: " + " ".join(
+            p["text"] for p in messages[0]["content"] if isinstance(p, dict) and p.get("type") == "text"
+        )
+        resp = requests.post(
+            f"{DEEPSEEK_API_BASE}/v0/chat/completion",
+            headers={
+                **FAKE_HEADERS,
+                "Authorization": f"Bearer {access_token}",
+                "Cookie": _cookie(),
+                "X-Ds-Pow-Response": pow_response,
+            },
+            json={
+                "chat_session_id": session_id,
+                "parent_message_id": None,
+                "model_type": model_type,
+                "prompt": prompt_text,
+                "ref_file_ids": file_ids,
+                "search_enabled": False,
+                "thinking_enabled": False,
+            },
+            timeout=120,
+            stream=True,
+        )
+        if resp.status_code != 200:
+            return ""
+
+        answer_parts = []
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line or not raw_line.startswith("data:"):
+                continue
+            data = raw_line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                event = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            value = event.get("v")
+            if isinstance(value, dict) and isinstance(value.get("response", {}).get("fragments"), list):
+                for fragment in value["response"]["fragments"]:
+                    ftype = str(fragment.get("type") or "").upper()
+                    if ftype in ("ANSWER", "RESPONSE"):
+                        answer_parts.append(str(fragment.get("content") or ""))
+                continue
+            if isinstance(value, list) and event.get("p") == "response/fragments":
+                for fragment in value:
+                    ftype = str(fragment.get("type") or "").upper()
+                    if ftype in ("ANSWER", "RESPONSE"):
+                        answer_parts.append(str(fragment.get("content") or ""))
+                continue
+            if isinstance(value, str) and value not in ("FINISHED", ""):
+                answer_parts.append(value)
+        resp.close()
+        return "".join(answer_parts).strip()
+    except Exception:
+        return ""
+
+
+def _resolve_image_ids(access_token: str, messages: list) -> list:
+    file_ids = []
+    seen = set()
+    for msg in messages or []:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") not in ("image_url", "image"):
+                continue
+            if item["type"] == "image_url":
+                iv = item.get("image_url")
+                url = ""
+                if isinstance(iv, dict):
+                    url = str(iv.get("url") or "")
+                elif isinstance(iv, str):
+                    url = iv
+            elif item["type"] == "image":
+                url = str(item.get("file_data") or item.get("image_url", {}).get("url") or "")
+            else:
+                continue
+            if url and url not in seen:
+                seen.add(url)
+    if not seen:
+        return file_ids
+    for url in seen:
+        m = _DATA_URL_RE.match(url)
+        if m:
+            raw = base64.b64decode(re.sub(r"\s+", "", m.group("data")))
+            ext = m.group("ext") or "png"
+            filename = f"image.{ext}"
+        elif url.startswith(("http://", "https://")):
+            resp = requests.get(
+                url,
+                headers={"User-Agent": FAKE_HEADERS["User-Agent"]},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            raw = resp.content
+            raw_ext = url.rsplit(".", 1)[-1].split("?")[0].lower() if "." in url else ""
+            ext = raw_ext if raw_ext in {"png", "jpg", "jpeg", "gif", "webp", "bmp"} else "png"
+            filename = f"image.{ext}"
+        else:
+            raise ValueError(f"Unsupported image URL: {url[:80]}")
+        mime = f"image/{ext}"
+        fid = _upload_and_wait(access_token, raw, filename, mime)
+        if fid:
+            file_ids.append(fid)
+    return file_ids
 
 
 def chat_completion(token: str, payload: dict):
     access_token = acquire_access_token(token)
+    messages = payload.get("messages") or []
+    file_ids = _resolve_image_ids(access_token, messages)
     session_id = create_session(access_token)
     challenge = get_challenge(access_token)
     pow_response = build_pow_response(challenge)
     request_model = str(payload.get("model") or "deepseek-chat")
-    _, search_enabled, thinking_enabled = _flags_for(request_model, payload)
-    prompt = _prompt_from_messages(payload.get("messages") or [])
+    _, model_type, search_enabled, thinking_enabled = _flags_for(request_model, payload)
+    prompt = _prompt_from_messages(messages)
 
     response = requests.post(
         f"{DEEPSEEK_API_BASE}/v0/chat/completion",
@@ -215,8 +477,9 @@ def chat_completion(token: str, payload: dict):
         json={
             "chat_session_id": session_id,
             "parent_message_id": None,
+            "model_type": model_type,
             "prompt": prompt,
-            "ref_file_ids": [],
+            "ref_file_ids": file_ids,
             "search_enabled": search_enabled,
             "thinking_enabled": thinking_enabled,
         },
