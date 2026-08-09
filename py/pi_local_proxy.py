@@ -14,18 +14,40 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 try:
     from py.zai_proxy import debug_log
-    from scripts.path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
 except ImportError:
     from zai_proxy import debug_log
-    from path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
+
+
+def _no_local_config(*_args, **_kwargs):
+    raise RuntimeError(
+        "pi-local provider requires a local checkout with scripts/path_config.py and is not available on the deployed proxy"
+    )
+
+
+try:
+    from scripts.path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
+except ImportError:
+    try:
+        from path_config import auth_profile, browser_candidates, node_candidates, powershell_executable, resolve_executable
+    except ImportError:
+        auth_profile = _no_local_config
+        browser_candidates = _no_local_config
+        node_candidates = _no_local_config
+        powershell_executable = _no_local_config
+        resolve_executable = _no_local_config
 
 
 OWNED_BY = "pi.ai (local browser bridge)"
 SUPPORTED_MODELS = ["pi-web-local"]
 
-POWERSHELL_EXE = powershell_executable()
-NODE_CANDIDATES = node_candidates()
-BROWSER_CANDIDATES = browser_candidates()
+try:
+    POWERSHELL_EXE = powershell_executable()
+    NODE_CANDIDATES = node_candidates()
+    BROWSER_CANDIDATES = browser_candidates()
+except Exception:
+    POWERSHELL_EXE = "powershell"
+    NODE_CANDIDATES = []
+    BROWSER_CANDIDATES = []
 
 
 def supports_model(model: str) -> bool:
