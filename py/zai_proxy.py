@@ -14,12 +14,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pyd
 import requests
 
 BASE = "https://chat.z.ai"
-X_FE_VERSION = "prod-fe-1.1.37"
+X_FE_VERSION = "prod-fe-1.1.82"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 SECRET = b"key-@@@@)))()((9))-xxxx&&&%%%%%"
 OWNED_BY = "z.ai"
 
 SUPPORTED_MODELS = [
+    "glm-5.2",
     "glm-5-agent",
     "glm-5-search",
     "glm-5",
@@ -35,6 +36,7 @@ SUPPORTED_MODELS = [
 ]
 
 MODEL_MAPPING = {
+    "glm-5.2": "GLM-5.2",
     "glm-5": "glm-5",
     "glm-5-agent": "glm-5",
     "glm-5-search": "glm-5",
@@ -50,6 +52,7 @@ MODEL_MAPPING = {
     "GLM-5": "glm-5",
     "GLM-5-Agent": "glm-5",
     "GLM-5-Search": "glm-5",
+    "GLM-5.2": "glm-5.2",
     "GLM-5.1": "GLM-5.1",
     "GLM-5.1-Agent": "GLM-5.1",
     "GLM-5.1-Search": "GLM-5.1",
