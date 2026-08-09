@@ -29,6 +29,7 @@ DEFAULT_USER_AGENT = os.environ.get(
 ).strip()
 
 DEFAULT_MODELS = [
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
     "gemini-3.1-pro-preview-customtools",
@@ -42,11 +43,12 @@ DEFAULT_MODELS = [
     "gemini-2.0-flash",
 ]
 MODEL_ALIASES = {
-    "google-ai-studio": "gemini-2.5-flash",
-    "ai-studio": "gemini-2.5-flash",
-    "ai-studio-pro": "gemini-2.5-pro",
-    "ai-studio-flash": "gemini-2.5-flash",
+    "google-ai-studio": "gemini-3.6-flash",
+    "ai-studio": "gemini-3.6-flash",
+    "ai-studio-pro": "gemini-3.1-pro-preview",
+    "ai-studio-flash": "gemini-3.6-flash",
     "ai-studio-lite": "gemini-2.5-flash-lite",
+    "ai-studio-3.6-flash": "gemini-3.6-flash",
     "ai-studio-3.5-flash": "gemini-3.5-flash",
     "ai-studio-3.1-pro": "gemini-3.1-pro-preview",
     "ai-studio-3.1-pro-customtools": "gemini-3.1-pro-preview-customtools",

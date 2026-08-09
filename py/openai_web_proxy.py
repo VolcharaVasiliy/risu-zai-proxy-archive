@@ -32,7 +32,23 @@ DEFAULT_USER_AGENT = os.environ.get(
     "OPENAI_WEB_USER_AGENT",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
 ).strip()
-MODEL_ALIASES = {"chatgpt": "auto", "chatgpt-auto": "auto", "openai-web": "auto"}
+MODEL_ALIASES = {
+    "chatgpt": "auto",
+    "chatgpt-auto": "auto",
+    "openai-web": "auto",
+    "gpt-5": "auto",
+    "gpt-5.1": "gpt-5-2",
+    "gpt-5.2": "gpt-5-2",
+    "gpt-5.3": "gpt-5-3",
+    "gpt-5.5-instant": "gpt-5-5-instant",
+    "gpt-5-mini": "gpt-5-mini",
+    "gpt-5-t-mini": "gpt-5-t-mini",
+    "gpt-5-thinking": "gpt-5-thinking",
+    "gpt-4.1": "gpt-4-1",
+    "gpt-4.1-mini": "gpt-4-1-mini",
+    "gpt-4.5": "gpt-4-5",
+    "gpt-4o": "gpt-4o",
+}
 TOKEN_CACHE = {}
 CACHED_SCRIPTS = []
 CACHED_DPL = ""
@@ -81,7 +97,19 @@ def configured_models():
                     if value:
                         found.append(value)
     if not found:
-        found = ["chatgpt-auto"]
+        found = [
+            "chatgpt-auto",
+            "gpt-5-3",
+            "gpt-5-2",
+            "gpt-5-5-instant",
+            "gpt-5-mini",
+            "gpt-5-t-mini",
+            "gpt-5-thinking",
+            "gpt-4-1",
+            "gpt-4-1-mini",
+            "gpt-4-5",
+            "gpt-4o",
+        ]
     ordered = []
     seen = set()
     for item in ["chatgpt", "chatgpt-auto", *found]:

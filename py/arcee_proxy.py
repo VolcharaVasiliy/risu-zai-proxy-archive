@@ -21,14 +21,16 @@ BASE_URL = (os.environ.get("ARCEE_BASE_URL", "").strip() or "https://api.arcee.a
 ORIGIN_URL = (os.environ.get("ARCEE_ORIGIN_URL", "").strip() or "https://chat.arcee.ai").rstrip("/")
 CREATE_CHAT_ENDPOINT = f"{BASE_URL}/app/v1/completions/create-chat"
 
-DEFAULT_MODEL = "trinity-mini"
+DEFAULT_MODEL = "trinity-nano-6b"
 SUPPORTED_MODELS = [
+    "trinity-nano-6b",
     "trinity-mini",
     "trinity-large-preview",
     "trinity-large-thinking",
 ]
 MODEL_ALIASES = {
-    "arcee": "trinity-mini",
+    "arcee": "trinity-nano-6b",
+    "arcee-nano": "trinity-nano-6b",
     "arcee-mini": "trinity-mini",
     "arcee-preview": "trinity-large-preview",
     "arcee-thinking": "trinity-large-thinking",
@@ -36,6 +38,7 @@ MODEL_ALIASES = {
 THINKING_MODELS = {"trinity-large-thinking"}
 
 DEFAULT_TEMPERATURES = {
+    "trinity-nano-6b": 0.15,
     "trinity-mini": 0.15,
     "trinity-large-preview": 0.8,
     "trinity-large-thinking": 0.3,

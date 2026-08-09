@@ -33,6 +33,8 @@ MODEL_FLAGS = {
     "kimi-thinking-search": {"thinking": True, "search": True},
     "k2": {"thinking": False, "search": False},
     "kimi-k2": {"thinking": False, "search": False},
+    "k2.5": {"thinking": False, "search": False},
+    "kimi-k2.5": {"thinking": False, "search": False},
 }
 
 FAKE_HEADERS = {

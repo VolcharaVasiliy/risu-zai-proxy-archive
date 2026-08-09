@@ -856,12 +856,16 @@ def test_public_model_catalog_hides_alias_duplicates():
 
 
 def test_qwen_37_models_are_supported():
+    assert "Qwen3.8-Max" in qwen_ai_proxy.SUPPORTED_MODELS
     assert "Qwen3.7-Max" in qwen_ai_proxy.SUPPORTED_MODELS
-    assert "Qwen3.7-Plus" not in qwen_ai_proxy.SUPPORTED_MODELS
+    assert "Qwen3.7-Plus" in qwen_ai_proxy.SUPPORTED_MODELS
     assert qwen_ai_proxy.supports_model("qwen") is True
-    assert qwen_ai_proxy.map_model("qwen") == "qwen3.7-max"
+    assert qwen_ai_proxy.map_model("qwen") == "qwen3.8-max"
+    assert qwen_ai_proxy.map_model("Qwen3.8-Max") == "qwen3.8-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Max") == "qwen3.7-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Max-Preview") == "qwen3.7-max"
+    assert qwen_ai_proxy.map_model("Qwen3.7-Plus") == "qwen3.7-plus"
+    assert qwen_ai_proxy.map_model("Qwen3.6-Flash") == "qwen3.6-flash"
 
 
 def main():
