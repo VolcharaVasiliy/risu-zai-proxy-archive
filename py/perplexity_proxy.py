@@ -31,26 +31,31 @@ SUPPORTED_MODELS = [
     "Turbo",
     "PPLX-Pro",
     "GPT-5",
+    "GPT-5.1",
     "Gemini-2.5-Pro",
     "Claude-Sonnet-4",
     "Claude-Opus-4",
-    "Nemotron",
+    "O3",
 ]
 
 MODEL_MAP = {
-    "auto": "auto",
-    "turbo": "auto",
+    "auto": "pplx_pro",
+    "turbo": "pplx_pro",
     "pplx-pro": "pplx_pro",
     "pplx_pro": "pplx_pro",
     "gpt-5": "gpt5",
     "gpt5": "gpt5",
+    "gpt-5.1": "gpt51",
+    "gpt51": "gpt51",
     "gemini-2.5-pro": "gemini25pro",
     "gemini25pro": "gemini25pro",
-    "claude-sonnet-4": "claude4sonnet",
-    "claude4sonnet": "claude4sonnet",
-    "claude-opus-4": "claude4opus",
-    "claude4opus": "claude4opus",
-    "nemotron": "nemotron",
+    "claude-sonnet-4": "claude45sonnet",
+    "claude-sonnet-4.5": "claude45sonnet",
+    "claude45sonnet": "claude45sonnet",
+    "claude-opus-4": "claude45opus",
+    "claude-opus-4.5": "claude45opus",
+    "claude45opus": "claude45opus",
+    "o3": "o3",
 }
 
 FAKE_HEADERS = {
@@ -280,6 +285,8 @@ def stream_chunks(cookie_header: str, payload: dict):
                 break
 
             event = json.loads(data)
+            if event.get("status") == "failed":
+                raise RuntimeError(f"Perplexity upstream failed: {event.get('error_code')}: {event.get('text')}")
             if event.get("backend_uuid"):
                 builder.set_response_id(str(event["backend_uuid"]))
 
@@ -338,6 +345,8 @@ def complete_non_stream(cookie_header: str, payload: dict):
             if data == "[DONE]":
                 break
             event = json.loads(data)
+            if event.get("status") == "failed":
+                raise RuntimeError(f"Perplexity upstream failed: {event.get('error_code')}: {event.get('text')}")
             if event.get("backend_uuid"):
                 response_id = str(event["backend_uuid"])
             for block in event.get("blocks") or []:

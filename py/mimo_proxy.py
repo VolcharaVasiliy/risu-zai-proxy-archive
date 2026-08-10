@@ -318,18 +318,31 @@ def _collect_stream(response):
     content_parts = []
     usage = {}
     dialog_id = ""
+    error_text = ""
 
     for event_name, data in _iter_sse_events(response):
-        if event_name in {"message", "text"} and data.get("content"):
-            content_parts.append(str(data.get("content", "")))
-            continue
+        if event_name in {"message", "text", "delta", "final", "answer"}:
+            content = data.get("content")
+            if not content and isinstance(data.get("delta"), dict):
+                content = data["delta"].get("content")
+            if content:
+                content_parts.append(str(content))
+                continue
         if event_name == "usage" and isinstance(data, dict):
             usage = data
             continue
         if event_name == "dialogId" and data.get("content"):
             dialog_id = str(data.get("content", ""))
+            continue
+        if event_name == "error" and data.get("content"):
+            error_text = str(data.get("content", ""))
 
-    return "".join(content_parts), usage, dialog_id
+    raw_joined = "".join(content_parts)
+    if error_text:
+        raise RuntimeError(f"Mimo upstream error: {error_text}")
+    if not raw_joined:
+        raise RuntimeError("Mimo upstream returned no content events")
+    return raw_joined, usage, dialog_id
 
 
 def complete_non_stream(credentials: dict, payload: dict):
