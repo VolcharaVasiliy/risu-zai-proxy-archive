@@ -3,7 +3,7 @@
   "name": "RisuAI Proxy — Credentials Exporter",
   "version": "1.0.0",
   "description": "Собирает куки и токены провайдеров и выгружает credentials.json для risu-zai-proxy",
-  "permissions": ["cookies", "scripting", "activeTab", "clipboardWrite", "storage"],
+  "permissions": ["cookies", "scripting", "activeTab", "clipboardWrite", "storage", "debugger"],
   "host_permissions": [
     "https://chat.z.ai/*",
     "https://chat.deepseek.com/*",

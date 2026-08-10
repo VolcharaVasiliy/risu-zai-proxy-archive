@@ -122,6 +122,59 @@ function unquote(v) {
   return s;
 }
 
+/* ---------- CDP-фолбэк ----------
+   cookies API видит только непартиционированные куки текущего cookie store.
+   Через CDP (chrome.debugger) читаем куки активной вкладки напрямую —
+   видны httpOnly и партиционированные. */
+function cdpSend(tabId, method, params) {
+  return new Promise((resolve) => {
+    try {
+      chrome.debugger.sendCommand({ tabId }, method, params || {}, (res) => {
+        if (chrome.runtime.lastError) return resolve(null);
+        resolve(res || {});
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+async function readCookiesViaCdp(hostMatch) {
+  let tab = null;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    tab = tabs && tabs[0];
+  } catch (e) {
+    return null;
+  }
+  if (!tab || !tab.url || !tab.url.includes(hostMatch)) return null;
+  const tabId = tab.id;
+  try {
+    const ok = await new Promise((resolve) => {
+      chrome.debugger.attach({ tabId }, "1.3", () => resolve(!chrome.runtime.lastError));
+    });
+    if (!ok) return null;
+    const res = await cdpSend(tabId, "Network.getAllCookies");
+    try {
+      chrome.debugger.detach({ tabId });
+    } catch (e) {
+      /* уже отцеплен */
+    }
+    if (!res || !Array.isArray(res.cookies)) return null;
+    const out = res.cookies.map((c) => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      httpOnly: !!c.httpOnly,
+      partitioned: !!c.partitionKey,
+    }));
+    out.tabUrl = tab.url;
+    return out;
+  } catch (e) {
+    return null;
+  }
+}
+
 /* ---------- провайдеры ---------- */
 
 const PROVIDERS = [
@@ -268,6 +321,15 @@ const PROVIDERS = [
       const list = all.filter(
         (c) => c.domain === "xiaomimimo.com" || c.domain.endsWith(".xiaomimimo.com")
       );
+      /* cookies API не видит (партиционирование/инкогнито) — пробуем CDP */
+      let cdpUsed = false;
+      if (!list.length) {
+        const cdp = await readCookiesViaCdp("xiaomimimo");
+        if (cdp && cdp.length) {
+          list = cdp.filter((c) => c.domain.endsWith("xiaomimimo.com"));
+          cdpUsed = true;
+        }
+      }
       for (const c of list) {
         if (c.name === "xiaomichatbot_serviceToken" || c.name === "serviceToken") {
           if (!found.st) found.st = unquote(c.value);
@@ -286,12 +348,15 @@ const PROVIDERS = [
       if (!st) missing.push("serviceToken");
       if (!uid) missing.push("userId");
       if (!ph) missing.push("ph");
-      return {
-        ok: !!(st && uid && ph),
-        detail: st && uid && ph
-          ? "все три токена есть"
-          : `нет: ${missing.join(", ")} (${list.length} кук на xiaomimimo)`,
-      };
+      let detail;
+      if (st && uid && ph) {
+        detail = "все три токена есть";
+      } else if (!list.length && !cdpUsed) {
+        detail = "0 кук на xiaomimimo — откройте сайт во вкладке этого браузера или включите расширению доступ в инкогнито";
+      } else {
+        detail = `нет: ${missing.join(", ")} (${list.length} кук на xiaomimimo${cdpUsed ? ", CDP" : ""})`;
+      }
+      return { ok: !!(st && uid && ph), detail };
     },
   },
   {
@@ -339,6 +404,22 @@ const PROVIDERS = [
          nonce вытаскиваем из HTML страницы /phind-chat/ */
       let cookie = await cookieHeader("https://phindai.org/");
       if (!cookie) cookie = await cookieHeader("https://www.phind.com/");
+      let cdpUsed = false;
+      if (!cookie) {
+        const cdp = await readCookiesViaCdp("phind");
+        if (cdp && cdp.length) {
+          const hostCookies = cdp.filter(
+            (c) => c.domain.includes("phindai.org") || c.domain.includes("phind.com")
+          );
+          if (hostCookies.length) {
+            cookie = hostCookies
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => `${c.name}=${c.value}`)
+              .join("; ");
+            cdpUsed = true;
+          }
+        }
+      }
       let nonce = "";
       try {
         const r = await fetch("https://phindai.org/phind-chat/", { credentials: "include" });
@@ -367,12 +448,16 @@ const PROVIDERS = [
       }
       setCred("PHIND_COOKIE", cookie);
       setCred("PHIND_NONCE", nonce);
-      return {
-        ok: !!cookie,
-        detail: cookie
-          ? `${cookie.split("; ").length} кук` + (nonce ? " + nonce" : ", nonce не найден")
-          : "нет кук — зайдите на phindai.org",
-      };
+      let detail;
+      if (cookie) {
+        detail = `${cookie.split("; ").length} кук` + (nonce ? " + nonce" : ", nonce не найден");
+        if (cdpUsed) detail += " (CDP)";
+      } else {
+        detail = cdpUsed
+          ? "0 кук на phind даже через CDP — зайдите на phindai.org в этом браузере"
+          : "нет кук — откройте phindai.org во вкладке этого браузера";
+      }
+      return { ok: !!cookie, detail };
     },
   },
   {
@@ -570,6 +655,22 @@ $("debugBtn").addEventListener("click", async () => {
       .map((d) => `${d} (${byDomain[d]})`),
     tokenLike: tokens.slice(0, 40),
   };
+  const cdp = await readCookiesViaCdp("");
+  if (cdp) {
+    const cdpDomains = {};
+    const mimoViaCdp = cdp.filter((c) => c.domain.endsWith("xiaomimimo.com"));
+    for (const c of cdp) {
+      cdpDomains[c.domain] = (cdpDomains[c.domain] || 0) + 1;
+    }
+    out.cdp = {
+      tabUrl: cdp.tabUrl || undefined,
+      total: cdp.length,
+      domains: Object.keys(cdpDomains)
+        .sort((a, b) => a.localeCompare(b))
+        .map((d) => `${d} (${cdpDomains[d]})`),
+      xiaomimimoViaCdp: mimoViaCdp.map((c) => c.name),
+    };
+  }
   $("jsonToggle").classList.add("open");
   $("jsonBody").classList.remove("hidden");
   $("jsonOut").value = JSON.stringify(out, null, 2);
