@@ -594,7 +594,8 @@ def resolve_credentials(handler, provider_id: str):
 
     if provider_id == "kimi":
         token = env_or_header_token(handler, ["KIMI_TOKEN"], ["x-kimi-token"])
-        return {"token": token} if token else None
+        refresh_token = env_or_kv_token("KIMI_REFRESH_TOKEN")
+        return {"token": token, "refresh_token": refresh_token} if token else None
 
     if provider_id == "inception":
         cookie = env_or_kv_token("INCEPTION_COOKIE") or header_token(
@@ -861,7 +862,9 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
         result, meta = grok_proxy.complete_non_stream(credentials["cookie"], payload)
         return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "kimi":
-        result, meta = kimi_proxy.complete_non_stream(credentials["token"], payload)
+        result, meta = kimi_proxy.complete_non_stream(
+            credentials["token"], payload, credentials.get("refresh_token", "")
+        )
         return normalize_tool_result(result, request_config)[0], meta
     if provider_id == "inception":
         result, meta = inception_proxy.complete_non_stream(credentials, payload)
@@ -965,7 +968,9 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
         return
 
     if provider_id == "kimi":
-        for chunk in kimi_proxy.stream_chunks(credentials["token"], payload):
+        for chunk in kimi_proxy.stream_chunks(
+            credentials["token"], payload, credentials.get("refresh_token", "")
+        ):
             yield chunk
         return
 

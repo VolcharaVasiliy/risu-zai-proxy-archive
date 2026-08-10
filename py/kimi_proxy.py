@@ -3,6 +3,7 @@ import json
 import os
 import struct
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
@@ -17,7 +18,13 @@ except ImportError:
 
 
 KIMI_API_BASE = "https://www.kimi.com"
+KIMI_AUTH_BASE = "https://auth.kimi.com/api"
 OWNED_BY = "www.kimi.com"
+
+REFRESH_ENDPOINT = f"{KIMI_AUTH_BASE}/account.gateway.v1.AuthService/RefreshToken"
+
+_token_lock = threading.Lock()
+_token_cache = {}  # key: refresh_token hash -> {"access": str, "refresh": str, "exp": int}
 
 SUPPORTED_MODELS = [
     "kimi",
@@ -81,6 +88,96 @@ def _access_token(token: str) -> str:
     return token
 
 
+def _jwt_exp(token: str):
+    payload = _decode_jwt_payload(token)
+    try:
+        return int(payload.get("exp") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _persist_tokens(access_token: str, refresh_token: str) -> None:
+    """Writes refreshed tokens back to credentials.json so a server restart
+    keeps working without rescanning."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "credentials.json")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["KIMI_TOKEN"] = access_token
+        data["KIMI_REFRESH_TOKEN"] = refresh_token
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _refresh_access_token(refresh_token: str):
+    """Calls the auth service RefreshToken endpoint. Returns
+    (access_token, refresh_token) or raises RuntimeError."""
+    if not refresh_token:
+        raise RuntimeError("Kimi refresh token is empty")
+    headers = {
+        **FAKE_HEADERS,
+        "Content-Type": "application/json",
+        "connect-protocol-version": "1",
+        "x-msh-platform": "web",
+        "x-msh-version": "2.0.0",
+    }
+    claims = _decode_jwt_payload(refresh_token)
+    device_id = str(claims.get("device_id") or "").strip()
+    session_id = str(claims.get("ssid") or "").strip()
+    traffic_id = str(claims.get("sub") or "").strip()
+    if device_id:
+        headers["x-msh-device-id"] = device_id
+    if session_id:
+        headers["x-msh-session-id"] = session_id
+    if traffic_id:
+        headers["x-traffic-id"] = traffic_id
+    response = requests.post(
+        REFRESH_ENDPOINT,
+        headers=headers,
+        json={"refreshToken": refresh_token},
+        timeout=30,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Kimi token refresh failed: HTTP {response.status_code}")
+    data = response.json()
+    new_access = str(data.get("accessToken") or "").strip()
+    new_refresh = str(data.get("refreshToken") or "").strip()
+    if not new_access:
+        raise RuntimeError("Kimi token refresh returned no accessToken")
+    return new_access, new_refresh or refresh_token
+
+
+def _ensure_fresh_token(access_token: str, refresh_token: str) -> str:
+    """Returns an access token valid for the next ~10 minutes, refreshing
+    via the refresh token when needed. Refreshed tokens are cached in memory
+    and persisted to credentials.json."""
+    if not refresh_token:
+        return access_token
+    with _token_lock:
+        cached = _token_cache.get(refresh_token)
+        if cached and cached["access"] and cached["exp"] - int(time.time()) > 120:
+            return cached["access"]
+    exp = _jwt_exp(access_token)
+    if exp and exp - int(time.time()) > 300:
+        return access_token
+    new_access, new_refresh = _refresh_access_token(refresh_token)
+    with _token_lock:
+        _token_cache[refresh_token] = {
+            "access": new_access,
+            "refresh": new_refresh,
+            "exp": _jwt_exp(new_access),
+        }
+    _persist_tokens(new_access, new_refresh)
+    debug_log("kimi_token_refreshed", refresh_exp=_jwt_exp(new_refresh))
+    return new_access
+
+
+def _with_fresh_token(token: str, refresh_token: str) -> str:
+    return _ensure_fresh_token(token, refresh_token)
+
+
 def _text_from_content(content) -> str:
     if isinstance(content, str):
         return content
@@ -115,8 +212,8 @@ def _flags_for(request_model: str):
     return flags["thinking"], flags["search"]
 
 
-def chat_completion(token: str, payload: dict):
-    access_token = _access_token(token)
+def chat_completion(token: str, payload: dict, refresh_token: str = ""):
+    access_token = _ensure_fresh_token(_access_token(token), refresh_token or "")
     request_model = str(payload.get("model") or "kimi")
     enable_thinking, enable_search = _flags_for(request_model)
     prompt = _prompt_from_messages(payload.get("messages") or [])
@@ -133,9 +230,34 @@ def chat_completion(token: str, payload: dict):
         "options": {"thinking": enable_thinking},
     }
 
+    # Kimi gateway now binds requests to the JWT via x-msh-* context headers
+    # (device_id, ssid, sub). Missing them makes even fresh tokens rejected
+    # with "invalid user token". All values are derived from the token itself.
+    claims = _decode_jwt_payload(access_token)
+    device_id = str(claims.get("device_id") or "").strip()
+    session_id = str(claims.get("ssid") or "").strip()
+    traffic_id = str(claims.get("sub") or "").strip()
+    headers = {
+        **FAKE_HEADERS,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/connect+json",
+        "connect-protocol-version": "1",
+        "x-msh-platform": "web",
+        "x-msh-version": "2.0.0",
+    }
+    if device_id:
+        headers["x-msh-device-id"] = device_id
+    if session_id:
+        headers["x-msh-session-id"] = session_id
+    if traffic_id:
+        headers["x-traffic-id"] = traffic_id
+    shield = (os.environ.get("KIMI_MSH_SHIELD_DATA") or "").strip()
+    if shield:
+        headers["x-msh-shield-data"] = shield
+
     response = requests.post(
         f"{KIMI_API_BASE}/apiv2/kimi.gateway.chat.v1.ChatService/Chat",
-        headers={**FAKE_HEADERS, "Authorization": f"Bearer {access_token}", "Content-Type": "application/connect+json"},
+        headers=headers,
         data=_build_frame(body),
         timeout=120,
         stream=True,
@@ -181,8 +303,8 @@ def _delta_from_op(previous: str, op: str, content: str):
     return content, content if not previous else ""
 
 
-def stream_chunks(token: str, payload: dict):
-    response, request_model = chat_completion(token, payload)
+def stream_chunks(token: str, payload: dict, refresh_token: str = ""):
+    response, request_model = chat_completion(token, payload, refresh_token)
     builder = OpenAIStreamBuilder("kimi", request_model)
     block_state = {}
     total_content = 0
@@ -216,8 +338,8 @@ def stream_chunks(token: str, payload: dict):
     yield builder.finish()
 
 
-def complete_non_stream(token: str, payload: dict):
-    response, request_model = chat_completion(token, payload)
+def complete_non_stream(token: str, payload: dict, refresh_token: str = ""):
+    response, request_model = chat_completion(token, payload, refresh_token)
     content_parts = []
     conversation_id = "kimi"
 

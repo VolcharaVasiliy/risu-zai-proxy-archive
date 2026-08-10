@@ -13,6 +13,7 @@ const REPO_KEYS = [
   "GOOGLE_AI_STUDIO_API_KEY",
   "GROK_COOKIE",
   "KIMI_TOKEN",
+  "KIMI_REFRESH_TOKEN",
   "INCEPTION_SESSION_TOKEN",
   "INCEPTION_COOKIE",
   "LONGCAT_COOKIE",
@@ -321,21 +322,42 @@ const PROVIDERS = [
     id: "kimi",
     name: "Kimi",
     url: "https://www.kimi.com/",
-    keys: ["KIMI_TOKEN"],
+    keys: ["KIMI_TOKEN", "KIMI_REFRESH_TOKEN"],
     async run() {
       let token = await findCookie("https://www.kimi.com/", "access_token");
       if (!token) token = await findCookie("https://kimi.com/", "access_token");
-      if (!token) {
+      let refresh = await findCookie("https://www.kimi.com/", "refresh_token");
+      if (!refresh) refresh = await findCookie("https://kimi.com/", "refresh_token");
+      let found = [];
+      if (!token || !refresh) {
         const ls = await readLsOnActiveTab("kimi.com", [
           { key: "access_token", json: false },
           { key: "anonymous_access_token", json: false },
+          { key: "refresh_token", json: false },
         ]);
-        if (ls) token = String(ls.access_token || ls.anonymous_access_token || "").trim();
+        if (ls) {
+          found = Object.keys(ls);
+          if (!token) token = String(ls.access_token || ls.anonymous_access_token || "").trim();
+          if (!refresh) refresh = String(ls.refresh_token || "").trim();
+        }
+      }
+      if (!token || !refresh) {
+        /* ищем любые токеноподобные ключи, чтобы обнаружить refresh-механизм */
+        const probe = await readLsProbe("kimi.com");
+        if (probe) {
+          for (const k of Object.keys(probe)) {
+            if (!found.includes(k)) found.push(k);
+            if (!token && /access_token|anonymous/i.test(k)) token = String(probe[k] || "").trim();
+            if (!refresh && /refresh/i.test(k)) refresh = String(probe[k] || "").trim();
+          }
+        }
       }
       setCred("KIMI_TOKEN", token);
+      setCred("KIMI_REFRESH_TOKEN", refresh);
+      const keys = found.length ? `; ls keys: ${found.join(", ")}` : "";
       return {
         ok: !!token,
-        detail: token ? "access_token есть" : "нет токена — войдите в kimi и откройте сайт во вкладке",
+        detail: `access ${token ? "есть" : "НЕТ"}, refresh ${refresh ? "есть" : "НЕТ"}${keys}`,
       };
     },
   },
@@ -369,12 +391,40 @@ const PROVIDERS = [
     url: "https://console.mistral.ai/",
     keys: ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN"],
     async run() {
-      const cookie = await cookieHeader("https://console.mistral.ai/");
-      const list = await cookieList("https://console.mistral.ai/");
-      const csrf = list.find((c) => c.name === "csrftoken" || c.name.startsWith("csrf_token_"));
+      let cookie = await cookieHeader("https://console.mistral.ai/");
+      let list = await cookieList("https://console.mistral.ai/");
+      let csrf = list.find((c) => c.name === "csrftoken" || c.name.startsWith("csrf_token_"));
+      let cdpUsed = false;
+      if (!/session/i.test(cookie)) {
+        /* сессионная кука может быть партиционированной — cookies API её не видит (как у mimo) */
+        const cdp = await readCookiesViaCdp("mistral");
+        if (cdp && cdp.length) {
+          const hostCookies = cdp.filter((c) => c.domain.includes("mistral.ai"));
+          if (hostCookies.length) {
+            list = hostCookies;
+            cookie = hostCookies
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => `${c.name}=${c.value}`)
+              .join("; ");
+            const csrfHit = hostCookies.find(
+              (c) => c.name === "csrftoken" || c.name.startsWith("csrf_token_")
+            );
+            if (csrfHit) csrf = csrfHit;
+            cdpUsed = true;
+          }
+        }
+      }
       setCred("MISTRAL_COOKIE", cookie);
       setCred("MISTRAL_CSRF_TOKEN", csrf && csrf.value);
-      return { ok: !!csrf, detail: csrf ? "csrf есть" : "нет csrf_token" };
+      let detail;
+      if (csrf) {
+        detail = "csrf есть";
+        if (cdpUsed) detail += " (CDP)";
+      } else {
+        detail = "нет csrf_token";
+        if (cdpUsed) detail = "нет csrf_token (CDP)";
+      }
+      return { ok: !!csrf, detail };
     },
   },
   {
