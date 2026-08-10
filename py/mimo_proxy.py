@@ -268,12 +268,23 @@ def chat_completion(credentials: dict, payload: dict):
     return response, body["conversationId"], model
 
 
+def _mimo_decode(raw):
+    if isinstance(raw, str):
+        return raw
+    for encoding in ("utf-8", "gbk", "gb18030", "big5"):
+        try:
+            return raw.decode(encoding)
+        except Exception:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 def _iter_sse_events(response):
     current_event = ""
 
     def _yield_lines():
         try:
-            for raw_line in response.iter_lines(decode_unicode=True):
+            for raw_line in response.iter_lines(decode_unicode=False):
                 yield raw_line
             return
         except TypeError:
@@ -294,9 +305,7 @@ def _iter_sse_events(response):
     for raw in _yield_lines():
         if raw is None:
             continue
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="ignore")
-        line = raw.strip()
+        line = _mimo_decode(raw).strip()
         if not line:
             continue
         if line.startswith("event:"):
