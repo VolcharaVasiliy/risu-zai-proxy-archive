@@ -149,30 +149,39 @@ async function readCookiesViaCdp(hostMatch) {
   }
   if (!tab || !tab.url || !tab.url.includes(hostMatch)) return null;
   const tabId = tab.id;
-  try {
-    const ok = await new Promise((resolve) => {
-      chrome.debugger.attach({ tabId }, "1.3", () => resolve(!chrome.runtime.lastError));
-    });
-    if (!ok) return null;
-    const res = await cdpSend(tabId, "Network.getAllCookies");
+  const result = await Promise.race([
+    (async () => {
+      const ok = await new Promise((resolve) => {
+        chrome.debugger.attach({ tabId }, "1.3", () => resolve(!chrome.runtime.lastError));
+      });
+      if (!ok) return null;
+      const res = await cdpSend(tabId, "Network.getAllCookies");
+      try {
+        chrome.debugger.detach({ tabId });
+      } catch (e) {
+        /* уже отцеплен */
+      }
+      if (!res || !Array.isArray(res.cookies)) return null;
+      const out = res.cookies.map((c) => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        httpOnly: !!c.httpOnly,
+        partitioned: !!c.partitionKey,
+      }));
+      out.tabUrl = tab.url;
+      return out;
+    })(),
+    new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+  ]);
+  if (!result) {
     try {
       chrome.debugger.detach({ tabId });
     } catch (e) {
-      /* уже отцеплен */
+      /* не прикреплялись */
     }
-    if (!res || !Array.isArray(res.cookies)) return null;
-    const out = res.cookies.map((c) => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      httpOnly: !!c.httpOnly,
-      partitioned: !!c.partitionKey,
-    }));
-    out.tabUrl = tab.url;
-    return out;
-  } catch (e) {
-    return null;
   }
+  return result;
 }
 
 /* ---------- провайдеры ---------- */
@@ -606,6 +615,8 @@ async function scan() {
         "Совет: для Z.ai, DeepSeek, Qwen, ChatGLM и Kimi откройте сайт во вкладке и нажмите «Сканировать» ещё раз — так подхватятся localStorage-токены."
       );
     }
+  } catch (e) {
+    showHint("Ошибка расширения: " + (e && e.message ? e.message : String(e)));
   } finally {
     sweep.remove();
     btn.disabled = false;
@@ -613,6 +624,14 @@ async function scan() {
     btn.querySelector(".scan-btn-label").textContent = "Сканировать";
   }
 }
+
+window.addEventListener("error", (e) => {
+  showHint("Ошибка расширения: " + (e.message || "неизвестная"));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e.reason;
+  showHint("Ошибка расширения: " + (reason && reason.message ? reason.message : String(reason)));
+});
 
 async function activeTabHost() {
   try {
@@ -636,44 +655,50 @@ $("jsonToggle").addEventListener("click", () => {
 });
 
 $("debugBtn").addEventListener("click", async () => {
-  let all = [];
   try {
-    all = await chrome.cookies.getAll({});
-  } catch (e) {
-    all = [];
-  }
-  const byDomain = {};
-  const tokens = [];
-  for (const c of all) {
-    byDomain[c.domain] = (byDomain[c.domain] || 0) + 1;
-    if (/token|session|service/i.test(c.name)) tokens.push(`${c.domain} :: ${c.name}`);
-  }
-  const out = {
-    total: all.length,
-    domains: Object.keys(byDomain)
-      .sort((a, b) => a.localeCompare(b))
-      .map((d) => `${d} (${byDomain[d]})`),
-    tokenLike: tokens.slice(0, 40),
-  };
-  const cdp = await readCookiesViaCdp("");
-  if (cdp) {
-    const cdpDomains = {};
-    const mimoViaCdp = cdp.filter((c) => c.domain.endsWith("xiaomimimo.com"));
-    for (const c of cdp) {
-      cdpDomains[c.domain] = (cdpDomains[c.domain] || 0) + 1;
+    let all = [];
+    try {
+      all = await chrome.cookies.getAll({});
+    } catch (e) {
+      all = [];
     }
-    out.cdp = {
-      tabUrl: cdp.tabUrl || undefined,
-      total: cdp.length,
-      domains: Object.keys(cdpDomains)
+    const byDomain = {};
+    const tokens = [];
+    for (const c of all) {
+      byDomain[c.domain] = (byDomain[c.domain] || 0) + 1;
+      if (/token|session|service/i.test(c.name)) tokens.push(`${c.domain} :: ${c.name}`);
+    }
+    const out = {
+      total: all.length,
+      domains: Object.keys(byDomain)
         .sort((a, b) => a.localeCompare(b))
-        .map((d) => `${d} (${cdpDomains[d]})`),
-      xiaomimimoViaCdp: mimoViaCdp.map((c) => c.name),
+        .map((d) => `${d} (${byDomain[d]})`),
+      tokenLike: tokens.slice(0, 40),
     };
+    const cdp = await readCookiesViaCdp("");
+    if (cdp) {
+      const cdpDomains = {};
+      const mimoViaCdp = cdp.filter((c) => c.domain.endsWith("xiaomimimo.com"));
+      for (const c of cdp) {
+        cdpDomains[c.domain] = (cdpDomains[c.domain] || 0) + 1;
+      }
+      out.cdp = {
+        tabUrl: cdp.tabUrl || undefined,
+        total: cdp.length,
+        domains: Object.keys(cdpDomains)
+          .sort((a, b) => a.localeCompare(b))
+          .map((d) => `${d} (${cdpDomains[d]})`),
+        xiaomimimoViaCdp: mimoViaCdp.map((c) => c.name),
+      };
+    } else {
+      out.cdp = "недоступно — активируйте вкладку с сайтом или CDP не прикрепился";
+    }
+    $("jsonToggle").classList.add("open");
+    $("jsonBody").classList.remove("hidden");
+    $("jsonOut").value = JSON.stringify(out, null, 2);
+  } catch (e) {
+    showHint("Ошибка расширения: " + (e && e.message ? e.message : String(e)));
   }
-  $("jsonToggle").classList.add("open");
-  $("jsonBody").classList.remove("hidden");
-  $("jsonOut").value = JSON.stringify(out, null, 2);
 });
 
 $("copyBtn").addEventListener("click", async () => {
