@@ -386,15 +386,17 @@ def _bootstrap(credentials: dict):
             raise RuntimeError(f"Gemini Web init failed: HTTP {response.status_code} {preview}")
 
         text = response.text
-        access_token = _capture_value(text, "SNlM0e")
+        forced_token = os.environ.get("GEMINI_WEB_AT_TOKEN", "").strip()
+        forced_sid = os.environ.get("GEMINI_WEB_F_SID", "").strip()
+        access_token = forced_token or _capture_value(text, "SNlM0e")
         if not access_token:
             raise RuntimeError("Gemini Web init page does not contain SNlM0e; cookies may be missing or expired")
 
         state = {
             "access_token": access_token,
             "build_label": _capture_value(text, "cfb2h"),
-            "session_id": _capture_value(text, "FdrFJe"),
-            "language": _capture_value(text, "TuX5cc") or "en",
+            "session_id": forced_sid or _capture_value(text, "FdrFJe"),
+            "language": os.environ.get("GEMINI_WEB_LANGUAGE", "").strip() or _capture_value(text, "TuX5cc") or "en",
             "push_id": _capture_value(text, "qKIAYe"),
             "use_curl": use_curl,
         }
