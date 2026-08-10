@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "RisuAI Proxy — Credentials Exporter",
+  "version": "1.0.0",
+  "description": "Собирает куки и токены провайдеров и выгружает credentials.json для risu-zai-proxy",
+  "permissions": ["cookies", "scripting", "activeTab", "clipboardWrite", "storage"],
+  "host_permissions": [
+    "https://chat.z.ai/*",
+    "https://chat.deepseek.com/*",
+    "https://api.arcee.ai/*",
+    "https://chat.arcee.ai/*",
+    "https://gemini.google.com/*",
+    "https://aistudio.google.com/*",
+    "https://grok.com/*",
+    "https://www.kimi.com/*",
+    "https://kimi.com/*",
+    "https://chat.inceptionlabs.ai/*",
+    "https://longcat.chat/*",
+    "https://console.mistral.ai/*",
+    "https://aistudio.xiaomimimo.com/*",
+    "https://chatgpt.com/*",
+    "https://www.perplexity.ai/*",
+    "https://www.phind.com/*",
+    "https://chat.qwen.ai/*",
+    "https://chatglm.cn/*"
+  ],
+  "action": {
+    "default_title": "Credentials Exporter",
+    "default_popup": "popup.html"
+  }
+}

@@ -165,6 +165,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\launch-gemini-auth
 python .\scripts\get-qwen-creds.py
 ```
 
+### Credentials Exporter extension (easy way)
+
+Skip the manual scripts — the browser extension collects cookies/tokens from all providers and downloads a ready `credentials.json`:
+
+1. Install: open `chrome://extensions` (Firefox: `about:debugging#/runtime/this-firefox`), enable Developer mode, click **Load unpacked** and pick `extensions/credentials-exporter`.
+2. Log in to the provider sites you use (in the browser where the extension is installed).
+3. Open the extension popup and press **Сканировать**.
+4. For localStorage-based providers (Z.ai, DeepSeek, Qwen, ChatGLM): open the site in a tab and scan again — tokens are picked up from the active tab.
+5. Enter your AI Studio API key manually if you use it, then press **Скачать credentials.json** and put the file in the repo root.
+
+Progress is saved between popup opens, so you can scan sites one by one — collected values are never overwritten. Details: [extensions/credentials-exporter/README.md](extensions/credentials-exporter/README.md).
+
 ## Codex Notes
 
 Codex can talk to this proxy directly:

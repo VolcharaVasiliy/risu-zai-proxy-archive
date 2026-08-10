@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none"
+                stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="header-text">
+        <h1>Credentials Exporter</h1>
+        <p>Сбор токенов и кук для risu-zai-proxy</p>
+      </div>
+      <span id="ver" class="ver">1.0</span>
+    </header>
+
+    <div class="stage">
+      <button id="scanBtn" class="scan-btn" type="button">
+        <span class="scan-btn-label">Сканировать</span>
+      </button>
+      <button id="clearBtn" class="clear-link hidden" type="button">Очистить собранное</button>
+      <p id="hint" class="hint hidden"></p>
+    </div>
+
+    <div class="grid-wrap">
+      <div id="grid" class="grid"></div>
+    </div>
+
+    <div class="panel" id="apiPanel">
+      <button id="apiToggle" class="panel-toggle" type="button">
+        API-ключи вручную
+        <span class="chevron"></span>
+      </button>
+      <div id="apiBody" class="panel-body hidden">
+        <label class="field-label" for="studioKey">Google AI Studio (GOOGLE_AI_STUDIO_API_KEY)</label>
+        <input id="studioKey" class="field" type="text" spellcheck="false" autocomplete="off"
+               placeholder="AIza..." />
+      </div>
+    </div>
+
+    <div class="panel" id="jsonPanel">
+      <button id="jsonToggle" class="panel-toggle" type="button">
+        Предпросмотр credentials.json
+        <span class="chevron"></span>
+      </button>
+      <div id="jsonBody" class="panel-body hidden">
+        <textarea id="jsonOut" class="json-out" readonly spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="copyBtn" class="btn ghost" type="button">Копировать</button>
+          <button id="dlBtn" class="btn solid" type="button" disabled>Скачать credentials.json</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      Установка: chrome://extensions → Режим разработчика → Загрузить распакованное.
+      Для Z.ai и DeepSeek откройте сайт во вкладке перед сканированием.
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
