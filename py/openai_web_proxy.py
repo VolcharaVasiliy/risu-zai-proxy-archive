@@ -30,7 +30,7 @@ OWNED_BY = "chatgpt.com"
 BASE_URL = (os.environ.get("OPENAI_WEB_BASE_URL", "").strip() or "https://chatgpt.com").rstrip("/")
 DEFAULT_USER_AGENT = os.environ.get(
     "OPENAI_WEB_USER_AGENT",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36",
 ).strip()
 MODEL_ALIASES = {
     "chatgpt": "auto",
@@ -168,17 +168,16 @@ def base_headers(access_token: str = "", account_id: str = "", device_id: str = 
     headers = {
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "ru,en;q=0.9",
         "Content-Type": "application/json",
-        "Origin": BASE_URL,
-        "Oai-Language": "en-US",
+        "Oai-Language": "ru-RU",
         "Priority": "u=1, i",
         "Referer": f"{BASE_URL}/",
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": DEFAULT_USER_AGENT,
-        "Sec-Ch-Ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+        "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "YaBrowser";v="26.3", "Yowser";v="2.5"',
         "Sec-Ch-Ua-Mobile": "?0",
         "Sec-Ch-Ua-Platform": '"Windows"',
     }
@@ -192,8 +191,15 @@ def base_headers(access_token: str = "", account_id: str = "", device_id: str = 
 
 
 def cookie_headers(cookie_header: str) -> dict:
-    headers = base_headers(device_id=str(uuid.uuid4()))
+    device_id = str(uuid.uuid4())
+    for part in str(cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == "oai-did" and value:
+            device_id = value
+            break
+    headers = base_headers(device_id=device_id)
     headers["Cookie"] = cookie_header
+    headers["Oai-Session-Id"] = str(uuid.uuid4())
     return headers
 
 

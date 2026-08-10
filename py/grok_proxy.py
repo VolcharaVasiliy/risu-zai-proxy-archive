@@ -27,7 +27,7 @@ except ImportError:
 BASE_URL = "https://grok.com"
 CHAT_ENDPOINT = f"{BASE_URL}/rest/app-chat/conversations/new"
 OWNED_BY = "grok.com"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36"
 
 SUPPORTED_MODELS = [
     "grok-3-mini",
@@ -86,13 +86,13 @@ def _headers(cookie_header: str) -> dict:
     user_agent = os.environ.get("GROK_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
     return {
         "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "ru,en;q=0.9",
         "Content-Type": "application/json",
         "Cookie": cookie_header,
         "Origin": BASE_URL,
         "Priority": "u=1, i",
         "Referer": f"{BASE_URL}/",
-        "Sec-Ch-Ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+        "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "YaBrowser";v="26.3", "Yowser";v="2.5"',
         "Sec-Ch-Ua-Arch": '"x86"',
         "Sec-Ch-Ua-Bitness": '"64"',
         "Sec-Ch-Ua-Mobile": "?0",

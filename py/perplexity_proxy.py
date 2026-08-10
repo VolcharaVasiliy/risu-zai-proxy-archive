@@ -39,8 +39,8 @@ SUPPORTED_MODELS = [
 ]
 
 MODEL_MAP = {
-    "auto": "pplx_pro",
-    "turbo": "pplx_pro",
+    "auto": "turbo",
+    "turbo": "turbo",
     "pplx-pro": "pplx_pro",
     "pplx_pro": "pplx_pro",
     "gpt-5": "gpt5",
@@ -61,17 +61,24 @@ MODEL_MAP = {
 FAKE_HEADERS = {
     "Accept": "text/event-stream",
     "Accept-Encoding": "gzip, deflate, br, zstd",
-    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Language": "ru,en;q=0.9",
     "Cache-Control": "no-cache",
     "Origin": PERPLEXITY_URL,
-    "Sec-Ch-Ua": '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+    "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "YaBrowser";v="26.3", "Yowser";v="2.5"',
     "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"macOS"',
+    "Sec-Ch-Ua-Platform": '"Windows"',
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36",
 }
+
+
+def _pplx_account_id(cookie_header: str) -> str:
+    import re
+
+    match = re.search(r"__Secure-pplx\.session\.([0-9a-fA-F-]{36})", str(cookie_header or ""))
+    return match.group(1) if match else ""
 
 
 def supports_model(model: str) -> bool:
@@ -125,8 +132,8 @@ def _request_body(query: str, model: str) -> dict:
     return {
         "params": {
             "attachments": [],
-            "language": "en-US",
-            "timezone": "America/Los_Angeles",
+            "language": "ru-RU",
+            "timezone": "Europe/Moscow",
             "search_focus": "internet",
             "sources": ["web"],
             "search_recency_filter": None,
@@ -209,10 +216,15 @@ def chat_completion(cookie_header: str, payload: dict):
         **FAKE_HEADERS,
         "Content-Type": "application/json",
         "Cookie": cookie_header,
-        "x-perplexity-request-reason": "perplexity-query-state-provider",
+        "x-perplexity-request-endpoint": QUERY_ENDPOINT,
+        "x-perplexity-request-reason": "ask-query-state-provider",
+        "x-perplexity-request-try-number": "1",
         "x-request-id": request_id,
         "Referer": f"{PERPLEXITY_URL}/",
     }
+    account_id = _pplx_account_id(cookie_header)
+    if account_id:
+        headers["x-pplx-account"] = account_id
     body = _request_body(query, model)
     session = _session()
 
