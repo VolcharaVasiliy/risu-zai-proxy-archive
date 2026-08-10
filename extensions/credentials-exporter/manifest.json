@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
   "name": "RisuAI Proxy — Credentials Exporter",
-  "version": "1.0.0",
-  "description": "Собирает куки и токены провайдеров и выгружает credentials.json для risu-zai-proxy",
-  "permissions": ["cookies", "scripting", "activeTab", "clipboardWrite", "storage", "debugger"],
+  "version": "1.1.0",
+  "description": "Собирает куки, localStorage-токены и заголовки запросов провайдеров и выгружает credentials.json для risu-zai-proxy",
+  "permissions": ["cookies", "scripting", "activeTab", "clipboardWrite", "storage", "debugger", "webRequest"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://chat.z.ai/*",
     "https://chat.deepseek.com/*",

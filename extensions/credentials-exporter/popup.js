@@ -33,6 +33,12 @@ const REPO_KEYS = [
   "PI_LOCAL_TOKEN",
   "QWEN_AI_COOKIE",
   "QWEN_AI_TOKEN",
+  "QWEN_AI_BX_UA",
+  "QWEN_AI_BX_UA_CREATE",
+  "QWEN_AI_BX_UA_CHAT",
+  "QWEN_AI_BX_UMIDTOKEN",
+  "QWEN_AI_BX_V",
+  "QWEN_AI_TIMEZONE",
   "UNCLOSEAI_TOKEN",
   "UNCLOSEAI_COOKIE",
   "PERPLEXITY_SESSION_TOKEN",
@@ -156,6 +162,17 @@ function unquote(v) {
   let s = String(v == null ? "" : v).trim();
   if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') s = s.slice(1, -1);
   return s;
+}
+
+/* ---------- сетевой перехват (background.js) ---------- */
+
+function readHeaderCapture(host) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ rzaiHeaderCapture: {} }, (data) => {
+      const map = data.rzaiHeaderCapture || {};
+      resolve(map[host] || null);
+    });
+  });
 }
 
 /* ---------- CDP-фолбэк ----------
@@ -619,10 +636,30 @@ const PROVIDERS = [
     keys: ["QWEN_AI_COOKIE", "QWEN_AI_TOKEN"],
     async run() {
       const url = "https://chat.qwen.ai/";
+      /* CDP видит httpOnly и партиционированные куки (ssxmod_*, acw_tc и др.),
+         chrome.cookies API их пропускает — вкладка должна быть на chat.qwen.ai */
+      const cdp = await readCookiesViaCdp("qwen.ai");
       let cookie = await cookieHeader(url);
       if (!cookie) cookie = await cookieHeader("https://qwen.ai/");
       let token = await findCookie(url, "token");
       if (!token) token = await findCookie("https://qwen.ai/", "token");
+      if (cdp && Array.isArray(cdp)) {
+        const map = new Map();
+        for (const c of cdp) {
+          if (!c.value) continue;
+          if (!String(c.domain || "").includes("qwen.ai")) continue;
+          map.set(c.name, c.value);
+        }
+        const fromCdp = [...map.entries()]
+          .map(([name, value]) => `${name}=${value}`)
+          .sort()
+          .join("; ");
+        if (fromCdp) cookie = fromCdp;
+        if (!token) {
+          const tokenHit = map.get("token");
+          if (tokenHit) token = String(tokenHit).trim();
+        }
+      }
       if (!token) {
         const ls = await readLsOnActiveTab("chat.qwen.ai", [{ key: "Qwen-Max-User-Info", json: true }]);
         if (ls) token = String(ls["Qwen-Max-User-Info"] || "").trim();
@@ -651,9 +688,32 @@ const PROVIDERS = [
           }
         }
       }
+      const cap = await readHeaderCapture("chat.qwen.ai");
+      if (cap && cap.headers) {
+        const rec = (name) => cap.headers[name];
+        const val = (name) => (rec(name) && rec(name).value) || "";
+        const bxCreate = val("bx-ua-create") || val("bx-ua");
+        const bxChat = val("bx-ua-chat") || val("bx-ua");
+        setCred("QWEN_AI_BX_UA", val("bx-ua") || bxCreate || bxChat);
+        setCred("QWEN_AI_BX_UA_CREATE", bxCreate);
+        setCred("QWEN_AI_BX_UA_CHAT", bxChat);
+        setCred("QWEN_AI_BX_UMIDTOKEN", val("bx-umidtoken"));
+        setCred("QWEN_AI_BX_V", val("bx-v"));
+        setCred("QWEN_AI_TIMEZONE", val("timezone"));
+      }
       setCred("QWEN_AI_COOKIE", cookie);
       setCred("QWEN_AI_TOKEN", token);
-      return { ok: !!cookie, detail: cookie ? (token ? "куки и токен есть" : "куки есть") : "нет кук — зайдите на chat.qwen.ai" };
+      const bxInfo = cap && cap.headers && (cap.headers["bx-ua"] || cap.headers["bx-umidtoken"])
+        ? "; bx-* перехвачены"
+        : "";
+      const nCookies = cookie ? cookie.split("; ").filter(Boolean).length : 0;
+      const cdpNote = cdp && Array.isArray(cdp) ? " (CDP)" : "";
+      return {
+        ok: !!cookie,
+        detail: cookie
+          ? `${nCookies} кук${cdpNote}, токен ${token ? "есть" : "нет"}${bxInfo}`
+          : "нет кук — зайдите на chat.qwen.ai" + bxInfo,
+      };
     },
   },
   {
@@ -868,6 +928,12 @@ $("debugBtn").addEventListener("click", async () => {
     } else {
       out.cdp = "недоступно — активируйте вкладку с сайтом или CDP не прикрепился";
     }
+    const headerCapture = await new Promise((resolve) => {
+      chrome.storage.local.get({ rzaiHeaderCapture: {} }, (data) =>
+        resolve(data.rzaiHeaderCapture || {})
+      );
+    });
+    out.headerCapture = headerCapture;
     $("jsonToggle").classList.add("open");
     $("jsonBody").classList.remove("hidden");
     $("jsonOut").value = JSON.stringify(out, null, 2);

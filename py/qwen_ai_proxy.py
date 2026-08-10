@@ -66,24 +66,23 @@ MODEL_MAP = {
 
 DEFAULT_HEADERS = {
     "Accept": "application/json",
-    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Accept-Language": "ru-RU,ru;q=0.9",
     "Content-Type": "application/json",
+    "x-accel-buffering": "no",
     "source": "web",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-    "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36",
+    "sec-ch-ua": '"Not(A:Brand";v="8", "Chromium";v="144", "YaBrowser";v="26.3", "Yowser";v="2.5"',
     "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
+    "sec-ch-ua-platform": '"Windows"',
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
-    "bx-v": "2.5.36",
-    "Timezone": "Mon Feb 23 2026 22:06:02 GMT+0800",
-    "Version": "0.2.7",
-    "Origin": "https://chat.qwen.ai",
+    "bx-v": "2.5.37",
+    "Version": "0.2.83",
 }
 
-DEFAULT_BX_V = "2.5.36"
-DEFAULT_TIMEZONE = "Thu Apr 16 2026 00:34:21 GMT+0300"
+DEFAULT_BX_V = "2.5.37"
+DEFAULT_TIMEZONE = "Mon Aug 10 2026 21:34:43 GMT+0300"
 
 
 def supports_model(model: str) -> bool:
@@ -209,8 +208,6 @@ def _headers(credentials: dict, chat_id: str = "", phase: str = "create"):
         headers["bx-ua"] = bx_ua
     if credentials["bx_umidtoken"]:
         headers["bx-umidtoken"] = credentials["bx_umidtoken"]
-    if credentials["token"]:
-        headers["Authorization"] = f"Bearer {credentials['token']}"
     if chat_id:
         headers["Referer"] = f"{QWEN_AI_BASE}/c/{chat_id}"
     if credentials["cookie"]:
@@ -262,6 +259,8 @@ def chat_completion(credentials: dict, payload: dict):
         "stream": True,
         "version": "2.1",
         "incremental_output": True,
+        "chatId": chat_id,
+        "parentId": "",
         "chat_id": chat_id,
         "chat_mode": "normal",
         "model": model_id.replace("-thinking", "").replace("-fast", ""),
@@ -269,6 +268,8 @@ def chat_completion(credentials: dict, payload: dict):
         "messages": [
             {
                 "fid": fid,
+                "id": None,
+                "model": "",
                 "parentId": None,
                 "childrenIds": [child_id],
                 "role": "user",
