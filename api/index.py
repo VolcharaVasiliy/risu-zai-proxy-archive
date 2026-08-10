@@ -110,7 +110,40 @@ class handler(BaseHTTPRequestHandler):
         route = self._route()
 
         if route == "health":
-            send_json(self, 200, {"ok": True})
+            import time as _time
+            from py.zai_captcha import (
+                CAPTCHA_FILE,
+                fresh_param,
+                ttl_seconds,
+            )
+
+            captcha_status = {"exists": False}
+            if os.path.exists(CAPTCHA_FILE):
+                try:
+                    with open(CAPTCHA_FILE, "r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    captured_at = int(payload.get("captured_at") or 0)
+                    age_seconds = (
+                        round(_time.time() - captured_at / 1000.0, 1)
+                        if captured_at
+                        else None
+                    )
+                    captcha_status = {
+                        "exists": True,
+                        "captured_at": captured_at,
+                        "age_seconds": age_seconds,
+                        "ttl_seconds": ttl_seconds(),
+                        "expired": bool(captured_at and age_seconds is not None and age_seconds > ttl_seconds()),
+                        "param_length": len(str(payload.get("captcha_verify_param") or "")),
+                        "fresh": bool(fresh_param()),
+                    }
+                except Exception as exc:
+                    captcha_status = {"exists": True, "read_error": str(exc)}
+            send_json(
+                self,
+                200,
+                {"ok": True, "captcha_file": captcha_status},
+            )
             return
 
         if route == "models":
