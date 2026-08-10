@@ -197,8 +197,18 @@ const PROVIDERS = [
     async run() {
       let token = await findCookie("https://www.kimi.com/", "access_token");
       if (!token) token = await findCookie("https://kimi.com/", "access_token");
+      if (!token) {
+        const ls = await readLsOnActiveTab("kimi.com", [
+          { key: "access_token", json: false },
+          { key: "anonymous_access_token", json: false },
+        ]);
+        if (ls) token = String(ls.access_token || ls.anonymous_access_token || "").trim();
+      }
       setCred("KIMI_TOKEN", token);
-      return { ok: !!token, detail: token ? "access_token есть" : "нет куки access_token" };
+      return {
+        ok: !!token,
+        detail: token ? "access_token есть" : "нет токена — войдите в kimi и откройте сайт во вкладке",
+      };
     },
   },
   {
@@ -438,11 +448,11 @@ async function scan() {
     refreshClearBtn();
 
     const activeHost = await activeTabHost();
-    const lsProviders = ["chat.z.ai", "chat.deepseek.com", "chat.qwen.ai", "chatglm.cn"];
+    const lsProviders = ["chat.z.ai", "chat.deepseek.com", "chat.qwen.ai", "chatglm.cn", "kimi.com"];
     const missing = lsProviders.filter((h) => !(activeHost && activeHost.includes(h)));
     if (missing.length) {
       showHint(
-        "Совет: для Z.ai, DeepSeek, Qwen и ChatGLM откройте сайт во вкладке и нажмите «Сканировать» ещё раз — так подхватятся localStorage-токены."
+        "Совет: для Z.ai, DeepSeek, Qwen, ChatGLM и Kimi откройте сайт во вкладке и нажмите «Сканировать» ещё раз — так подхватятся localStorage-токены."
       );
     }
   } finally {

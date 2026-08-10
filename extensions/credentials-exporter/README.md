@@ -20,7 +20,7 @@
 
 ### localStorage-провайдеры
 
-Z.ai, DeepSeek, Qwen и ChatGLM хранят токены не в куках, а в localStorage.
+Z.ai, DeepSeek, Qwen, ChatGLM и Kimi хранят токены не в куках, а в localStorage.
 Для них откройте сайт во вкладке и нажмите «Сканировать» повторно — расширение
 прочитает localStorage активной вкладки (нужно разрешение `scripting`).
 
@@ -38,7 +38,7 @@ AI Studio (GOOGLE_AI_STUDIO_API_KEY) вводится вручную в попа
 | Gemini Web | gemini.google.com | GEMINI_WEB_COOKIE (все куки; 1PSID/1PSIDTS прокси вытаскивает сам) |
 | AI Studio | — | GOOGLE_AI_STUDIO_API_KEY (вручную) |
 | Grok | grok.com | GROK_COOKIE |
-| Kimi | www.kimi.com | KIMI_TOKEN (кука `access_token`) |
+| Kimi | www.kimi.com | KIMI_TOKEN (localStorage `access_token` / кука `access_token`) |
 | Inception | chat.inceptionlabs.ai | INCEPTION_COOKIE, INCEPTION_SESSION_TOKEN (кука `session`) |
 | LongCat | longcat.chat | LONGCAT_COOKIE |
 | Mistral | console.mistral.ai | MISTRAL_COOKIE, MISTRAL_CSRF_TOKEN (кука `csrf_token_*`) |
