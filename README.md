@@ -14,6 +14,8 @@ OpenAI-compatible proxy for RisuAI, Codex, Zed, and other OpenAI-style clients. 
 - Credential helpers for common browser/session providers
 - Vercel deploy path, local Python server, and Cloudflare fallback for Inception
 
+> **Z.ai is local-only.** The Z.ai provider needs an Aliyun `captcha_verify_param`, which is bound to the public IP that solved the captcha, so it works only from a host that can run `scripts/fetch-zai-captcha.mjs` (local machine or a VPS with Chromium) — not from Vercel or CI runners. Details and env switches: `docs/providers.md` → «Z.ai Captcha (Local-Only)».
+
 ## Quick Start On Windows
 
 Prerequisites:

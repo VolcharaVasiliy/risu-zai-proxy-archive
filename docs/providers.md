@@ -6,7 +6,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 
 | Provider | Model ids | Required env | Optional env | Manual source | Automatic source | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Z.ai | `glm-5-agent`, `glm-5-search`, `glm-5`, `glm-5.1-agent`, `glm-5.1-search`, `glm-5.1`, `GLM-5-Turbo`, `glm-4.7`, `glm-4.6v`, `glm-4.6`, `glm-4.5v`, `glm-4.5-air` | `ZAI_TOKEN` | `x-zai-token` header | Logged-in `chat.z.ai` session | `scripts/get-zai-token.ps1`, `scripts/get-provider-creds.py` | Stable production provider. The `*-agent` aliases enable Z.ai thinking/search flags and are the recommended Z.ai picks for agent clients using the prompt shim. Some accounts now gate `GLM-5.1` behind a higher plan level. |
+| Z.ai | `glm-5-agent`, `glm-5-search`, `glm-5`, `glm-5.1-agent`, `glm-5.1-search`, `glm-5.1`, `GLM-5-Turbo`, `glm-4.7`, `glm-4.6v`, `glm-4.6`, `glm-4.5v`, `glm-4.5-air` | `ZAI_TOKEN` | `x-zai-token` header | Logged-in `chat.z.ai` session | `scripts/get-zai-token.ps1`, `scripts/get-provider-creds.py` | Stable production provider. The `*-agent` aliases enable Z.ai thinking/search flags and are the recommended Z.ai picks for agent clients using the prompt shim. Some accounts now gate `GLM-5.1` behind a higher plan level. **LOCAL-ONLY**: every completion needs an Aliyun `captcha_verify_param`, and that token is bound to the resolving IP of the machine that solved the captcha — so the Z.ai provider does not work when deployed to Vercel or any other host with a different public IP (see [Z.ai Captcha (Local-Only)](#zai-captcha-local-only)). |
 | GLM Web | `chatglm-web`, `chatglm-web-thinking`, `chatglm-web-deepresearch` | `GLM_REFRESH_TOKEN` | `GLM_TOKEN`, `x-glm-refresh-token`, `x-glm-token` | Logged-in `chatglm.cn` session | `scripts/get-provider-creds.py` | Separate ChatGLM web path. In practice this is the more reliable GLM browser-session route when `chat.z.ai` account-level gating blocks `GLM-5.1`. |
 | DeepSeek | `deepseek-chat`, `deepseek-reasoner`, `deepseek-search` | `DEEPSEEK_TOKEN` | `x-deepseek-token` header | Logged-in `chat.deepseek.com` session | `scripts/get-provider-creds.py` | Browser-session style token provider. |
 | Arcee | `trinity-mini`, `trinity-large-preview`, `trinity-large-thinking` | `ARCEE_ACCESS_TOKEN` | `ARCEE_SESSION_ID`, `x-arcee-access-token`, `x-arcee-session-id` | Logged-in `chat.arcee.ai` / `api.arcee.ai` bearer cookie | `scripts/get-arcee-creds.py` | Uses the `api.arcee.ai` `access_token` bearer token; request session id can be any UUID. |
@@ -26,6 +26,20 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Inflection / Pi API | `pi-api`, `pi-3.1`, aliases `inflection-pi`, `inflection_3_pi`, `pi-3-1` | `INFLECTION_API_KEY` or `PI_INFLECTION_API_KEY` | `INFLECTION_API_BASE` | `https://developers.inflection.ai/keys` | Manual only | Official API path, works on Vercel. |
 | Pi Web Local | `pi-web-local` | none | `PI_LOCAL_*` | Local `pi.ai` browser profile | `scripts/launch-pi-auth.ps1`, `scripts/pi-browser-bridge.mjs` | Local-only browser automation path. |
 | UncloseAI | `uncloseai-hermes`, `uncloseai-qwen-vl`, `uncloseai-gpt-oss`, `uncloseai-r1-distill` | none | none | Public endpoint | none | Intentionally credential-free. |
+
+## Z.ai Captcha (Local-Only)
+
+`chat.z.ai` requires an Aliyun "human verification" token (`captcha_verify_param`) on every `/api/v2/chat/completions` call. The proxy solves this automatically as follows:
+
+1. `scripts/fetch-zai-captcha.mjs` launches headless Edge (or `--headed`), opens `chat.z.ai`, sends a probe chat, and intercepts the `captcha_verify_param` from the app's retried completion request. Result is saved to `captcha_param.json`.
+2. `py/zai_captcha.py` caches the token with a TTL (`ZAI_CAPTCHA_TTL_SECONDS`, default 60) and spawns the grabber on demand (single in-flight run), or never spawns it in `ZAI_CAPTCHA_MODE=file` / `off` mode.
+3. `py/zai_proxy.py` includes the token in the completion body and refreshes + retries automatically when the upstream answers `FRONTEND_CAPTCHA_REQUIRED` (both as an HTTP error and inside the SSE stream).
+
+**IP binding (why Vercel does not work).** The token is bound to the public IP that solved the captcha: requests from the same IP succeed, requests from another IP (e.g. a Vercel function) are rejected with `人机验证失败，请重新验证后再试` / `FRONTEND_CAPTCHA_REQUIRED`. It is not bound to the browser fingerprint — the same token works fine from a plain `requests` client on the same machine. Consequences:
+
+- The Z.ai provider is **local-only**: run `py/server.py`, or any host that keeps a stable public IP and can run the grabber (e.g. a VPS with Chromium). Vercel / GitHub Actions runners have different egress IPs and cannot substitute.
+- Keep `ZAI_CAPTCHA_MODE=file` on hosts without the grabber, and a generous `ZAI_CAPTCHA_TTL_SECONDS`.
+- `captcha_param.json` and `captcha-grabber.log` are runtime artifacts; `captcha-grabber-debug.png` is written on grabber failures.
 
 ## Responses Route Support
 
