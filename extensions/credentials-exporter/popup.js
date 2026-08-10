@@ -251,10 +251,18 @@ const PROVIDERS = [
     name: "MiMo",
     keys: ["MIMO_COOKIE", "MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN"],
     async run() {
-      const url = "https://aistudio.xiaomimimo.com/";
-      const st = await findCookie(url, "serviceToken");
-      const uid = await findCookie(url, "userId");
-      const ph = await findCookie(url, "xiaomichatbot_ph");
+      const hosts = ["aistudio.xiaomimimo.com", "xiaomimimo.com"];
+      let cookie = "";
+      for (const h of hosts) {
+        if (cookie) break;
+        cookie = await cookieHeader(`https://${h}/`);
+      }
+      let st = "", uid = "", ph = "";
+      for (const h of hosts) {
+        if (!st) st = await findCookie(`https://${h}/`, "serviceToken");
+        if (!uid) uid = await findCookie(`https://${h}/`, "userId");
+        if (!ph) ph = await findCookie(`https://${h}/`, "xiaomichatbot_ph");
+      }
       setCred("MIMO_SERVICE_TOKEN", st);
       setCred("MIMO_USER_ID", uid);
       setCred("MIMO_PH_TOKEN", ph);
@@ -303,12 +311,44 @@ const PROVIDERS = [
     name: "Phind",
     keys: ["PHIND_COOKIE", "PHIND_NONCE"],
     async run() {
-      const cookie = await cookieHeader("https://www.phind.com/");
-      const list = await cookieList("https://www.phind.com/");
-      const nonceHit = list.find((c) => /nonce|csrf/i.test(c.name));
+      /* Прокси ходит на phindai.org (WordPress AJAX) — куки нужны именно оттуда,
+         nonce вытаскиваем из HTML страницы /phind-chat/ */
+      let cookie = await cookieHeader("https://phindai.org/");
+      if (!cookie) cookie = await cookieHeader("https://www.phind.com/");
+      let nonce = "";
+      try {
+        const r = await fetch("https://phindai.org/phind-chat/", { credentials: "include" });
+        if (r.ok) {
+          const text = await r.text();
+          const patterns = [
+            /phindAjax\.nonce\s*=\s*["']([^"']+)["']/,
+            /"nonce"\s*:\s*"([^"]+)"/,
+            /nonce["']?\s*:\s*["']([^"']+)["']/,
+          ];
+          for (const re of patterns) {
+            const m = text.match(re);
+            if (m) {
+              nonce = m[1];
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        /* сеть недоступна из попапа */
+      }
+      if (!nonce) {
+        const list = await cookieList("https://www.phind.com/");
+        const nonceHit = list.find((c) => /nonce|csrf/i.test(c.name));
+        nonce = (nonceHit && nonceHit.value) || "";
+      }
       setCred("PHIND_COOKIE", cookie);
-      setCred("PHIND_NONCE", nonceHit && nonceHit.value);
-      return { ok: !!cookie, detail: cookie ? `${cookie.split("; ").length} кук` : "нет кук" };
+      setCred("PHIND_NONCE", nonce);
+      return {
+        ok: !!cookie,
+        detail: cookie
+          ? `${cookie.split("; ").length} кук` + (nonce ? " + nonce" : ", nonce не найден")
+          : "нет кук — зайдите на phindai.org",
+      };
     },
   },
   {
@@ -317,15 +357,17 @@ const PROVIDERS = [
     keys: ["QWEN_AI_COOKIE", "QWEN_AI_TOKEN"],
     async run() {
       const url = "https://chat.qwen.ai/";
-      const cookie = await cookieHeader(url);
+      let cookie = await cookieHeader(url);
+      if (!cookie) cookie = await cookieHeader("https://qwen.ai/");
       let token = await findCookie(url, "token");
+      if (!token) token = await findCookie("https://qwen.ai/", "token");
       if (!token) {
         const ls = await readLsOnActiveTab("chat.qwen.ai", [{ key: "Qwen-Max-User-Info", json: true }]);
         if (ls) token = String(ls["Qwen-Max-User-Info"] || "").trim();
       }
       setCred("QWEN_AI_COOKIE", cookie);
       setCred("QWEN_AI_TOKEN", token);
-      return { ok: !!cookie, detail: cookie ? (token ? "куки и токен есть" : "куки есть") : "нет кук" };
+      return { ok: !!cookie, detail: cookie ? (token ? "куки и токен есть" : "куки есть") : "нет кук — зайдите на chat.qwen.ai" };
     },
   },
   {

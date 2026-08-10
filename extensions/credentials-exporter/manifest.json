@@ -18,10 +18,13 @@
     "https://longcat.chat/*",
     "https://console.mistral.ai/*",
     "https://aistudio.xiaomimimo.com/*",
+    "https://xiaomimimo.com/*",
     "https://chatgpt.com/*",
     "https://www.perplexity.ai/*",
     "https://www.phind.com/*",
+    "https://phindai.org/*",
     "https://chat.qwen.ai/*",
+    "https://qwen.ai/*",
     "https://chatglm.cn/*"
   ],
   "action": {
