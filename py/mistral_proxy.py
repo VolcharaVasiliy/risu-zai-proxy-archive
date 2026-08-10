@@ -88,7 +88,7 @@ def _get_cookie_value(cookie_header: str, cookie_name: str) -> str:
 def _csrf_from_cookie(cookie_header: str) -> str:
     for part in str(cookie_header or "").split(";"):
         key, sep, value = part.partition("=")
-        if sep and key.strip().startswith("csrf_token_"):
+        if sep and (key.strip().startswith("csrf_token_") or key.strip() == "csrftoken"):
             return value.strip()
     return ""
 

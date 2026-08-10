@@ -633,7 +633,7 @@ def resolve_credentials(handler, provider_id: str):
         if not csrf_token and cookie:
             for part in cookie.split(";"):
                 key, sep, value = part.partition("=")
-                if sep and key.strip().startswith("csrf_token_"):
+                if sep and (key.strip().startswith("csrf_token_") or key.strip() == "csrftoken"):
                     csrf_token = value.strip()
                     break
         return {"cookie": cookie, "csrf_token": csrf_token} if cookie else None

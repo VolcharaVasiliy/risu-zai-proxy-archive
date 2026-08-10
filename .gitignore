@@ -26,3 +26,5 @@ REPORT.md
 
 .env*.local
 .vercel
+
+credentials.json

@@ -92,7 +92,7 @@ body {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 10px; padding: 7px 9px;
   transition: border-color 0.2s ease, background 0.2s ease;
-  cursor: default;
+  cursor: pointer;
 }
 .chip:hover { background: var(--panel-2); }
 .chip .dot {

@@ -26,13 +26,10 @@ const REPO_KEYS = [
   "PERPLEXITY_COOKIE",
   "PHIND_COOKIE",
   "PHIND_NONCE",
-  "INFLECTION_TOKEN",
-  "INFLECTION_COOKIE",
+  "INFLECTION_API_KEY",
   "PI_LOCAL_TOKEN",
   "QWEN_AI_COOKIE",
   "QWEN_AI_TOKEN",
-  "QWEN_AI_BX_COOKIE",
-  "QWEN_AI_BX_TOKEN",
   "UNCLOSEAI_TOKEN",
   "UNCLOSEAI_COOKIE",
   "PERPLEXITY_SESSION_TOKEN",
@@ -87,6 +84,42 @@ async function readLsOnActiveTab(pageMatch, wanted) {
       args: [wanted],
     });
     return (res && res[0] && res[0].result) || {};
+  } catch (e) {
+    return null;
+  }
+}
+
+/* Ищет в localStorage активной вкладки ключи, похожие на токены, и
+   возвращает {имя: значение}. См. readLsProbe. */
+const LS_PROBE = () => {
+  const out = {};
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && /token|user|auth/i.test(k)) out[k] = window.localStorage.getItem(k);
+    }
+  } catch (e) {
+    /* нет доступа */
+  }
+  return out;
+};
+
+async function readLsProbe(pageMatch) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.url || !/^https?:/.test(tab.url)) return null;
+  let host = "";
+  try {
+    host = new URL(tab.url).hostname;
+  } catch (e) {
+    return null;
+  }
+  if (!host.includes(pageMatch)) return null;
+  try {
+    const res = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: LS_PROBE,
+    });
+    return (res && res[0] && res[0].result) || null;
   } catch (e) {
     return null;
   }
@@ -198,6 +231,7 @@ const PROVIDERS = [
   {
     id: "zai",
     name: "Z.ai (GLM)",
+    url: "https://chat.z.ai/",
     keys: ["ZAI_TOKEN"],
     async run() {
       let token = "";
@@ -211,6 +245,7 @@ const PROVIDERS = [
   {
     id: "deepseek",
     name: "DeepSeek",
+    url: "https://chat.deepseek.com/",
     keys: ["DEEPSEEK_TOKEN"],
     async run() {
       let token = "";
@@ -230,6 +265,7 @@ const PROVIDERS = [
   {
     id: "arcee",
     name: "Arcee",
+    url: "https://api.arcee.ai/",
     keys: ["ARCEE_ACCESS_TOKEN"],
     async run() {
       const token = await findCookie("https://api.arcee.ai/", "access_token");
@@ -240,6 +276,7 @@ const PROVIDERS = [
   {
     id: "gemini-web",
     name: "Gemini Web",
+    url: "https://gemini.google.com/",
     keys: ["GEMINI_WEB_COOKIE"],
     async run() {
       const cookie = await cookieHeader("https://gemini.google.com/");
@@ -250,6 +287,7 @@ const PROVIDERS = [
   {
     id: "ai-studio",
     name: "AI Studio",
+    url: "https://aistudio.google.com/",
     keys: ["GOOGLE_AI_STUDIO_API_KEY"],
     async run() {
       const key = $("studioKey").value.trim();
@@ -258,8 +296,20 @@ const PROVIDERS = [
     },
   },
   {
+    id: "inflection",
+    name: "Inflection",
+    url: "https://developers.inflection.ai/keys",
+    keys: ["INFLECTION_API_KEY"],
+    async run() {
+      const key = $("inflectionKey").value.trim();
+      setCred("INFLECTION_API_KEY", key);
+      return { ok: !!key, detail: key ? "ключ задан" : "введите ключ ниже" };
+    },
+  },
+  {
     id: "grok",
     name: "Grok",
+    url: "https://grok.com/",
     keys: ["GROK_COOKIE"],
     async run() {
       const cookie = await cookieHeader("https://grok.com/");
@@ -270,6 +320,7 @@ const PROVIDERS = [
   {
     id: "kimi",
     name: "Kimi",
+    url: "https://www.kimi.com/",
     keys: ["KIMI_TOKEN"],
     async run() {
       let token = await findCookie("https://www.kimi.com/", "access_token");
@@ -291,6 +342,7 @@ const PROVIDERS = [
   {
     id: "inception",
     name: "Inception",
+    url: "https://chat.inceptionlabs.ai/",
     keys: ["INCEPTION_COOKIE", "INCEPTION_SESSION_TOKEN"],
     async run() {
       const cookie = await cookieHeader("https://chat.inceptionlabs.ai/");
@@ -303,6 +355,7 @@ const PROVIDERS = [
   {
     id: "longcat",
     name: "LongCat",
+    url: "https://longcat.chat/",
     keys: ["LONGCAT_COOKIE"],
     async run() {
       const cookie = await cookieHeader("https://longcat.chat/");
@@ -313,11 +366,12 @@ const PROVIDERS = [
   {
     id: "mistral",
     name: "Mistral",
+    url: "https://console.mistral.ai/",
     keys: ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN"],
     async run() {
       const cookie = await cookieHeader("https://console.mistral.ai/");
       const list = await cookieList("https://console.mistral.ai/");
-      const csrf = list.find((c) => c.name.startsWith("csrf_token_"));
+      const csrf = list.find((c) => c.name === "csrftoken" || c.name.startsWith("csrf_token_"));
       setCred("MISTRAL_COOKIE", cookie);
       setCred("MISTRAL_CSRF_TOKEN", csrf && csrf.value);
       return { ok: !!csrf, detail: csrf ? "csrf есть" : "нет csrf_token" };
@@ -326,6 +380,7 @@ const PROVIDERS = [
   {
     id: "mimo",
     name: "MiMo",
+    url: "https://aistudio.xiaomimimo.com/#/c",
     keys: ["MIMO_COOKIE", "MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN"],
     async run() {
       const found = { st: "", uid: "", ph: "" };
@@ -335,7 +390,7 @@ const PROVIDERS = [
       } catch (e) {
         /* без доступа */
       }
-      const list = all.filter(
+      let list = all.filter(
         (c) => c.domain === "xiaomimimo.com" || c.domain.endsWith(".xiaomimimo.com")
       );
       /* cookies API не видит (партиционирование/инкогнито) — пробуем CDP */
@@ -379,6 +434,7 @@ const PROVIDERS = [
   {
     id: "chatgpt",
     name: "ChatGPT",
+    url: "https://chatgpt.com/",
     keys: ["OPENAI_WEB_COOKIE", "OPENAI_WEB_ACCESS_TOKEN"],
     async run() {
       const cookie = await cookieHeader("https://chatgpt.com/");
@@ -403,6 +459,7 @@ const PROVIDERS = [
   {
     id: "perplexity",
     name: "Perplexity",
+    url: "https://www.perplexity.ai/",
     keys: ["PERPLEXITY_COOKIE", "PERPLEXITY_SESSION_TOKEN"],
     async run() {
       const cookie = await cookieHeader("https://www.perplexity.ai/");
@@ -415,6 +472,7 @@ const PROVIDERS = [
   {
     id: "phind",
     name: "Phind",
+    url: "https://phindai.org/phind-chat/",
     keys: ["PHIND_COOKIE", "PHIND_NONCE"],
     async run() {
       /* Прокси ходит на phindai.org (WordPress AJAX) — куки нужны именно оттуда,
@@ -480,6 +538,7 @@ const PROVIDERS = [
   {
     id: "qwen",
     name: "Qwen",
+    url: "https://chat.qwen.ai/",
     keys: ["QWEN_AI_COOKIE", "QWEN_AI_TOKEN"],
     async run() {
       const url = "https://chat.qwen.ai/";
@@ -491,6 +550,30 @@ const PROVIDERS = [
         const ls = await readLsOnActiveTab("chat.qwen.ai", [{ key: "Qwen-Max-User-Info", json: true }]);
         if (ls) token = String(ls["Qwen-Max-User-Info"] || "").trim();
       }
+      if (!token) {
+        /* имя ключа могло поменяться — ищем похожие ключи в localStorage */
+        const probe = await readLsProbe("chat.qwen.ai");
+        if (probe) {
+          for (const [k, v] of Object.entries(probe)) {
+            if (typeof v !== "string" || !v || v === "null" || v === "undefined") continue;
+            let cand = v;
+            try {
+              const parsed = JSON.parse(v);
+              if (parsed && typeof parsed === "object") {
+                if (typeof parsed.token === "string" && parsed.token) cand = parsed.token;
+                else if (typeof parsed.access_token === "string" && parsed.access_token)
+                  cand = parsed.access_token;
+              }
+            } catch (e) {
+              /* сырое значение */
+            }
+            if (cand.length > 40) {
+              token = cand;
+              break;
+            }
+          }
+        }
+      }
       setCred("QWEN_AI_COOKIE", cookie);
       setCred("QWEN_AI_TOKEN", token);
       return { ok: !!cookie, detail: cookie ? (token ? "куки и токен есть" : "куки есть") : "нет кук — зайдите на chat.qwen.ai" };
@@ -499,6 +582,7 @@ const PROVIDERS = [
   {
     id: "chatglm",
     name: "ChatGLM",
+    url: "https://chatglm.cn/",
     keys: ["GLM_REFRESH_TOKEN"],
     async run() {
       let rt = await findCookie("https://chatglm.cn/", "chatglm_refresh_token");
@@ -555,6 +639,9 @@ function makeChips() {
     chip.id = `chip-${p.id}`;
     chip.title = p.name;
     chip.innerHTML = `<span class="dot"></span><span class="name">${p.name}</span><span class="count"></span>`;
+    if (p.url) {
+      chip.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
+    }
     grid.appendChild(chip);
   }
 }
@@ -749,7 +836,7 @@ for (const key of REPO_KEYS) creds[key] = "";
 
 makeChips();
 
-chrome.storage.local.get({ [STORE_KEY]: null, studioKey: "" }, (data) => {
+chrome.storage.local.get({ [STORE_KEY]: null, studioKey: "", inflectionKey: "" }, (data) => {
   const saved = data[STORE_KEY];
   if (saved && saved.creds) {
     for (const key of REPO_KEYS) {
@@ -766,6 +853,7 @@ chrome.storage.local.get({ [STORE_KEY]: null, studioKey: "" }, (data) => {
     refreshClearBtn();
   }
   if (data.studioKey) $("studioKey").value = data.studioKey;
+  if (data.inflectionKey) $("inflectionKey").value = data.inflectionKey;
 });
 
 $("clearBtn").addEventListener("click", () => {
@@ -784,4 +872,8 @@ $("clearBtn").addEventListener("click", () => {
 
 $("studioKey").addEventListener("input", (e) => {
   chrome.storage.local.set({ studioKey: e.target.value.trim() });
+});
+
+$("inflectionKey").addEventListener("input", (e) => {
+  chrome.storage.local.set({ inflectionKey: e.target.value.trim() });
 });
