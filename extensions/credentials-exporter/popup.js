@@ -115,6 +115,13 @@ async function findCookie(url, name) {
   return (hit && hit.value) || "";
 }
 
+/* Снимает обёртку из кавычек с значений кук ("value" -> value) */
+function unquote(v) {
+  let s = String(v == null ? "" : v).trim();
+  if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') s = s.slice(1, -1);
+  return s;
+}
+
 /* ---------- провайдеры ---------- */
 
 const PROVIDERS = [
@@ -252,17 +259,28 @@ const PROVIDERS = [
     keys: ["MIMO_COOKIE", "MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN"],
     async run() {
       const hosts = ["aistudio.xiaomimimo.com", "xiaomimimo.com"];
+      const want = {
+        st: ["xiaomichatbot_serviceToken", "serviceToken"],
+        uid: ["userId"],
+        ph: ["xiaomichatbot_ph"],
+      };
+      const found = { st: "", uid: "", ph: "" };
       let cookie = "";
       for (const h of hosts) {
-        if (cookie) break;
-        cookie = await cookieHeader(`https://${h}/`);
+        if (!cookie) cookie = await cookieHeader(`https://${h}/`);
+        const list = await cookieList(`https://${h}/`);
+        for (const key of Object.keys(want)) {
+          if (found[key]) continue;
+          for (const cname of want[key]) {
+            const hit = list.find((c) => c.name === cname);
+            if (hit) {
+              found[key] = unquote(hit.value);
+              break;
+            }
+          }
+        }
       }
-      let st = "", uid = "", ph = "";
-      for (const h of hosts) {
-        if (!st) st = await findCookie(`https://${h}/`, "serviceToken");
-        if (!uid) uid = await findCookie(`https://${h}/`, "userId");
-        if (!ph) ph = await findCookie(`https://${h}/`, "xiaomichatbot_ph");
-      }
+      const st = found.st, uid = found.uid, ph = found.ph;
       setCred("MIMO_SERVICE_TOKEN", st);
       setCred("MIMO_USER_ID", uid);
       setCred("MIMO_PH_TOKEN", ph);

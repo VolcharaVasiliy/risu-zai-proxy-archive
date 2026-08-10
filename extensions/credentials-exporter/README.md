@@ -42,7 +42,7 @@ AI Studio (GOOGLE_AI_STUDIO_API_KEY) вводится вручную в попа
 | Inception | chat.inceptionlabs.ai | INCEPTION_COOKIE, INCEPTION_SESSION_TOKEN (кука `session`) |
 | LongCat | longcat.chat | LONGCAT_COOKIE |
 | Mistral | console.mistral.ai | MISTRAL_COOKIE, MISTRAL_CSRF_TOKEN (кука `csrf_token_*`) |
-| MiMo | aistudio.xiaomimimo.com / xiaomimimo.com | MIMO_SERVICE_TOKEN, MIMO_USER_ID, MIMO_PH_TOKEN, MIMO_COOKIE |
+| MiMo | aistudio.xiaomimimo.com / xiaomimimo.com | MIMO_SERVICE_TOKEN (кука `xiaomichatbot_serviceToken`), MIMO_USER_ID, MIMO_PH_TOKEN, MIMO_COOKIE |
 | ChatGPT | chatgpt.com | OPENAI_WEB_COOKIE, OPENAI_WEB_ACCESS_TOKEN (из `/api/auth/session`) |
 | Perplexity | www.perplexity.ai | PERPLEXITY_COOKIE, PERPLEXITY_SESSION_TOKEN (`__Secure-next-auth.session-token`) |
 | Phind | phindai.org (основной), www.phind.com | PHIND_COOKIE, PHIND_NONCE (из HTML `phindai.org/phind-chat/`) |
