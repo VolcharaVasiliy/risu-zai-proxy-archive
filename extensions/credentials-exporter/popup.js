@@ -550,6 +550,31 @@ $("jsonToggle").addEventListener("click", () => {
   $("jsonBody").classList.toggle("hidden");
 });
 
+$("debugBtn").addEventListener("click", async () => {
+  let all = [];
+  try {
+    all = await chrome.cookies.getAll({});
+  } catch (e) {
+    all = [];
+  }
+  const byDomain = {};
+  const tokens = [];
+  for (const c of all) {
+    byDomain[c.domain] = (byDomain[c.domain] || 0) + 1;
+    if (/token|session|service/i.test(c.name)) tokens.push(`${c.domain} :: ${c.name}`);
+  }
+  const out = {
+    total: all.length,
+    domains: Object.keys(byDomain)
+      .sort((a, b) => a.localeCompare(b))
+      .map((d) => `${d} (${byDomain[d]})`),
+    tokenLike: tokens.slice(0, 40),
+  };
+  $("jsonToggle").classList.add("open");
+  $("jsonBody").classList.remove("hidden");
+  $("jsonOut").value = JSON.stringify(out, null, 2);
+});
+
 $("copyBtn").addEventListener("click", async () => {
   const text = $("jsonOut").value;
   if (!text) return;
