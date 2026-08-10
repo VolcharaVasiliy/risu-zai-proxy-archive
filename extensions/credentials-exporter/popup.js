@@ -149,39 +149,47 @@ async function readCookiesViaCdp(hostMatch) {
   }
   if (!tab || !tab.url || !tab.url.includes(hostMatch)) return null;
   const tabId = tab.id;
-  const result = await Promise.race([
-    (async () => {
-      const ok = await new Promise((resolve) => {
-        chrome.debugger.attach({ tabId }, "1.3", () => resolve(!chrome.runtime.lastError));
-      });
-      if (!ok) return null;
-      const res = await cdpSend(tabId, "Network.getAllCookies");
+  try {
+    const result = await Promise.race([
+      (async () => {
+        try {
+          const ok = await new Promise((resolve) => {
+            chrome.debugger.attach({ tabId }, "1.3", () => resolve(!chrome.runtime.lastError));
+          });
+          if (!ok) return null;
+          const res = await cdpSend(tabId, "Network.getAllCookies");
+          try {
+            chrome.debugger.detach({ tabId });
+          } catch (e) {
+            /* уже отцеплен */
+          }
+          if (!res || !Array.isArray(res.cookies)) return null;
+          const out = res.cookies.map((c) => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            httpOnly: !!c.httpOnly,
+            partitioned: !!c.partitionKey,
+          }));
+          out.tabUrl = tab.url;
+          return out;
+        } catch (e) {
+          return null;
+        }
+      })(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+    ]);
+    if (!result) {
       try {
         chrome.debugger.detach({ tabId });
       } catch (e) {
-        /* уже отцеплен */
+        /* не прикреплялись */
       }
-      if (!res || !Array.isArray(res.cookies)) return null;
-      const out = res.cookies.map((c) => ({
-        name: c.name,
-        value: c.value,
-        domain: c.domain,
-        httpOnly: !!c.httpOnly,
-        partitioned: !!c.partitionKey,
-      }));
-      out.tabUrl = tab.url;
-      return out;
-    })(),
-    new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
-  ]);
-  if (!result) {
-    try {
-      chrome.debugger.detach({ tabId });
-    } catch (e) {
-      /* не прикреплялись */
     }
+    return result;
+  } catch (e) {
+    return null;
   }
-  return result;
 }
 
 /* ---------- провайдеры ---------- */
@@ -587,7 +595,10 @@ async function scan() {
       try {
         result = await p.run();
       } catch (e) {
-        result = { ok: false, detail: "ошибка" };
+        result = {
+          ok: false,
+          detail: e && e.message ? "ошибка: " + e.message : "ошибка: " + String(e),
+        };
       }
       const kept = p.keys.some((k) => String(creds[k] || "").trim());
       let state = "err";
