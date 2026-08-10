@@ -86,6 +86,9 @@ def _spawn_grabber(force):
     with _grabber_lock:
         if _active_grabber is not None and _active_grabber.poll() is None:
             return _active_grabber
+        if not os.path.exists(GRABBER_SCRIPT):
+            debug_log("grabber_script_missing", path=GRABBER_SCRIPT)
+            return None
         node = os.environ.get("ZAI_NODE", "node")
         command = [
             node,
