@@ -26,3 +26,5 @@ REPORT.md
 .env*.local
 .vercel
 
+captcha_param.json
+captcha-grabber-debug.png

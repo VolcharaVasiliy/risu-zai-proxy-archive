@@ -20,8 +20,9 @@ OWNED_BY = "chat.arcee.ai"
 BASE_URL = (os.environ.get("ARCEE_BASE_URL", "").strip() or "https://api.arcee.ai").rstrip("/")
 ORIGIN_URL = (os.environ.get("ARCEE_ORIGIN_URL", "").strip() or "https://chat.arcee.ai").rstrip("/")
 CREATE_CHAT_ENDPOINT = f"{BASE_URL}/app/v1/completions/create-chat"
+REFRESH_ENDPOINT = f"{BASE_URL}/app/v1/refresh"
 
-DEFAULT_MODEL = "trinity-nano-6b"
+DEFAULT_MODEL = "trinity-large-thinking"
 SUPPORTED_MODELS = [
     "trinity-nano-6b",
     "trinity-mini",
@@ -67,6 +68,17 @@ def map_model(model: str) -> str:
         if lowered == item.lower():
             return item
     return DEFAULT_MODEL
+
+
+def _model_fallback_order(requested: str) -> list:
+    preferred = [item for item in SUPPORTED_MODELS if item == requested]
+    rest = [item for item in SUPPORTED_MODELS if item != requested]
+    order = preferred + [requested] if requested not in preferred else preferred + rest
+    unique = []
+    for item in order:
+        if item not in unique:
+            unique.append(item)
+    return unique
 
 
 def _headers(token: str, session_id: str, accept: str = "text/plain") -> dict:
@@ -160,28 +172,49 @@ def _strip_markers(text: str) -> str:
 
 
 def _parse_response(raw_text: str) -> dict:
+    """Parses the SSE stream returned by create-chat (OpenAI-style chunks)."""
     raw_text = str(raw_text or "")
-    reasoning_parts = [match.strip() for match in THINK_RE.findall(raw_text) if match.strip()]
-
+    reasoning_parts = []
+    content_parts = []
     metadata = {}
-    metadata_match = METADATA_RE.search(raw_text)
-    if metadata_match:
-        try:
-            metadata = json.loads(metadata_match.group(1).strip())
-        except Exception:
-            metadata = {}
-
     init_payload = {}
-    init_match = STREAM_INIT_RE.search(raw_text)
-    if init_match:
-        try:
-            init_payload = json.loads(init_match.group(1).strip())
-        except Exception:
-            init_payload = {}
 
+    for line in raw_text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            payload = json.loads(data)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            choices = payload.get("choices") or []
+            for choice in choices:
+                delta = choice.get("delta") or {}
+                if delta.get("reasoning_content"):
+                    reasoning_parts.append(str(delta["reasoning_content"]))
+                if delta.get("content"):
+                    content_parts.append(str(delta["content"]))
+            if payload.get("object") == "chat.completion":
+                message = ((payload.get("choices") or [{}])[0]).get("message") or {}
+                if message.get("reasoning_content"):
+                    reasoning_parts.append(str(message["reasoning_content"]))
+                if message.get("content"):
+                    content_parts.append(str(message["content"]))
+            if payload.get("usage"):
+                metadata["usage"] = payload["usage"]
+            if payload.get("user_message_id") or payload.get("assistant_message_id"):
+                init_payload = payload
+            if payload.get("metadata"):
+                metadata.update(payload["metadata"])
+
+    content = "".join(content_parts).strip()
+    reasoning = "".join(reasoning_parts).strip()
     return {
-        "content": _strip_markers(raw_text),
-        "reasoning": "\n\n".join(reasoning_parts).strip(),
+        "content": content,
+        "reasoning": reasoning,
         "metadata": metadata,
         "stream_init": init_payload,
         "raw_text": raw_text,
@@ -210,30 +243,112 @@ def _request_body(payload: dict, request_model: str, session_id: str) -> dict:
     }
 
 
+_TOKEN_CACHE: dict[str, tuple] = {}
+
+
+def _jwt_exp(token: str) -> int:
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * ((4 - len(payload) % 4) % 4)
+        data = json.loads(__import__("base64").urlsafe_b64decode(payload.encode()).decode())
+        return int(data.get("exp") or 0)
+    except Exception:
+        return 0
+
+
+def _persist_tokens(token: str) -> None:
+    try:
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "credentials.json")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["ARCEE_ACCESS_TOKEN"] = token
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _refresh_access_token(token: str) -> str:
+    """Calls the /app/v1/refresh endpoint. The refresh endpoint expects the
+    current access token as a cookie (not a bearer header)."""
+    response = requests.post(
+        REFRESH_ENDPOINT,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Origin": ORIGIN_URL,
+            "Referer": f"{ORIGIN_URL}/",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36"
+            ),
+        },
+        cookies={"access_token": token},
+        timeout=30,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Arcee token refresh failed: HTTP {response.status_code} {response.text[:200]}")
+    data = response.json()
+    new_token = str(data.get("access_token") or "").strip()
+    if not new_token:
+        raise RuntimeError(f"Arcee token refresh returned no access_token: {data}")
+    return new_token
+
+
+def _ensure_fresh_token(token: str) -> str:
+    """Returns an access token valid for the next ~50 minutes, refreshing via
+    the /app/v1/refresh endpoint when the current one is close to expiry."""
+    if not token:
+        return ""
+    cached = _TOKEN_CACHE.get(token)
+    if cached and cached[1] - int(time.time()) > 300:
+        return cached[0]
+    exp = _jwt_exp(token)
+    if exp and exp - int(time.time()) > 300:
+        return token
+    new_token = _refresh_access_token(token)
+    new_exp = _jwt_exp(new_token) or (int(time.time()) + 3600)
+    _TOKEN_CACHE[token] = (new_token, new_exp)
+    _persist_tokens(new_token)
+    debug_log("arcee_token_refreshed", expires_in=new_exp - int(time.time()))
+    return new_token
+
+
 def _run_chat(credentials: dict, payload: dict) -> dict:
-    token = str((credentials or {}).get("token") or "").strip()
+    token = _ensure_fresh_token(str((credentials or {}).get("token") or "").strip())
     if not token:
         raise RuntimeError("Arcee access token is required")
 
-    request_model = map_model(payload.get("model") or "")
+    requested_model = map_model(payload.get("model") or "")
     session_id = _session_id(credentials)
-    request_body = _request_body(payload, request_model, session_id)
+    request_body = _request_body(payload, requested_model, session_id)
 
-    response = requests.post(
-        CREATE_CHAT_ENDPOINT,
-        headers=_headers(token, session_id),
-        json=request_body,
-        timeout=120,
-    )
-    if response.status_code != 200:
-        preview = ""
-        try:
-            preview = response.text[:500]
-        except Exception:
-            pass
-        raise RuntimeError(f"Arcee create-chat failed: HTTP {response.status_code} {preview}".strip())
+    model_error = None
+    for candidate in _model_fallback_order(requested_model):
+        candidate_body = dict(request_body, base_model_name=candidate)
+        response = requests.post(
+            CREATE_CHAT_ENDPOINT,
+            headers=_headers(token, session_id),
+            json=candidate_body,
+            timeout=120,
+        )
+        if response.status_code != 200:
+            preview = ""
+            try:
+                preview = response.text[:500]
+            except Exception:
+                pass
+            raise RuntimeError(f"Arcee create-chat failed: HTTP {response.status_code} {preview}".strip())
 
-    parsed = _parse_response(response.text)
+        parsed = _parse_response(response.text)
+        if "not accessible with the current access profile" in parsed.get("raw_text", ""):
+            model_error = parsed.get("raw_text", "")[:300]
+            continue
+        break
+    else:
+        raise RuntimeError(f"Arcee has no accessible model: {model_error or 'unknown'}")
+
     metadata = parsed.get("metadata") or {}
     init_payload = parsed.get("stream_init") or {}
     content = str(parsed.get("content") or "").strip()
@@ -242,7 +357,7 @@ def _run_chat(credentials: dict, payload: dict) -> dict:
 
     debug_log(
         "arcee_chat_done",
-        model=request_model,
+        model=candidate,
         chat_id=str(metadata.get("chat_id") or session_id),
         assistant_message_id=str(metadata.get("assistant_message_id") or init_payload.get("assistant_message_id") or ""),
         content_length=len(content),
@@ -250,7 +365,7 @@ def _run_chat(credentials: dict, payload: dict) -> dict:
     )
 
     return {
-        "model": request_model,
+        "model": candidate,
         "session_id": session_id,
         "content": content,
         "reasoning": str(parsed.get("reasoning") or "").strip(),

@@ -13,6 +13,19 @@ from urllib.parse import urlencode
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 import requests
 
+try:
+    from py.zai_captcha import (
+        get_captcha_param,
+        force_refresh,
+        is_captcha_required_text,
+    )
+except ImportError:
+    from zai_captcha import (
+        get_captcha_param,
+        force_refresh,
+        is_captcha_required_text,
+    )
+
 BASE = "https://chat.z.ai"
 X_FE_VERSION = "prod-fe-1.1.82"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -265,6 +278,8 @@ def build_common_headers(token: str):
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
+        "Accept-Language": "en-US",
+        "x-region": "overseas",
         "X-FE-Version": X_FE_VERSION,
         "Cookie": f"token={token}",
         "Origin": BASE,
@@ -431,18 +446,18 @@ def build_query(
         "platform": "web",
         "token": token,
         "user_agent": UA,
-        "language": "zh-CN",
-        "languages": "zh-CN,zh",
-        "timezone": "Asia/Shanghai",
+        "language": "ru",
+        "languages": "ru,en",
+        "timezone": "Europe/Moscow",
         "cookie_enabled": "true",
-        "screen_width": "1512",
-        "screen_height": "982",
-        "screen_resolution": "1512x982",
-        "viewport_height": "945",
-        "viewport_width": "923",
-        "viewport_size": "923x945",
-        "color_depth": "30",
-        "pixel_ratio": "2",
+        "screen_width": "1920",
+        "screen_height": "1080",
+        "screen_resolution": "1920x1080",
+        "viewport_height": "960",
+        "viewport_width": "1365",
+        "viewport_size": "1365x960",
+        "color_depth": "32",
+        "pixel_ratio": "1",
         "current_url": f"{BASE}/c/{chat_id}",
         "pathname": f"/c/{chat_id}",
         "search": "",
@@ -451,8 +466,8 @@ def build_query(
         "hostname": "chat.z.ai",
         "protocol": "https:",
         "referrer": "",
-        "title": "Z.ai - Free AI Chatbot & Agent powered by GLM-5 & GLM-4.7",
-        "timezone_offset": "-480",
+        "title": "Z.ai - Advanced AI Chatbot & Agent powered by GLM-5.2",
+        "timezone_offset": "-180",
         "local_time": now.isoformat() + "Z",
         "utc_time": now.strftime("%a, %d %b %Y %H:%M:%S GMT"),
         "is_mobile": "false",
@@ -468,17 +483,26 @@ def build_query(
 def build_features(request_model: str, web_search=False, reasoning_effort=None):
     lowered = str(request_model or "").lower()
     agent_mode = "agent" in lowered or "browse" in lowered
-    return {
+    reasoning = (
+        bool(reasoning_effort and reasoning_effort not in {"none", "off", "false", "0"})
+        or "think" in lowered
+        or "r1" in lowered
+        or agent_mode
+    )
+    result = {
         "image_generation": False,
         "web_search": False,
         "auto_web_search": bool(web_search) or "search" in lowered or agent_mode,
         "preview_mode": True,
         "flags": [],
-        "enable_thinking": bool(reasoning_effort)
-        or "think" in lowered
-        or "r1" in lowered
-        or agent_mode,
+        "vlm_tools_enable": False,
+        "vlm_web_search_enable": False,
+        "vlm_website_mode": False,
+        "enable_thinking": reasoning,
     }
+    if reasoning:
+        result["reasoning_effort"] = reasoning_effort or "max"
+    return result
 
 
 def _upstream_error_message(item) -> str:
@@ -654,6 +678,34 @@ def openai_stream_chunks(response, model: str, chat_id: str, session_key: str = 
     }
 
 
+def stream_chunks_with_captcha_retry(token: str, payload: dict, max_refreshes: int = 2):
+    captcha_refreshes = 0
+    while True:
+        upstream, chat_id, model = chat_completion(token, payload)
+        session_key = str(
+            payload.get("conversation_id") or payload.get("chat_id") or ""
+        ).strip()
+        try:
+            for chunk in openai_stream_chunks(
+                upstream, model, chat_id, session_key=session_key
+            ):
+                yield chunk
+            return
+        except RuntimeError as err:
+            upstream.close()
+            if not is_captcha_required_text(str(err)):
+                raise
+            if captcha_refreshes >= max_refreshes:
+                raise
+            captcha_refreshes += 1
+            debug_log(
+                "stream_captcha_retry",
+                refresh=captcha_refreshes,
+                error=str(err)[:200],
+            )
+            force_refresh()
+
+
 def chat_completion(token: str, payload: dict):
     request_model = payload.get("model", "glm-5.2")
     model = map_model(request_model)
@@ -760,6 +812,11 @@ def chat_completion(token: str, payload: dict):
         "background_tasks": {"title_generation": True, "tags_generation": True},
     }
 
+    captcha_param = get_captcha_param(wait_seconds=0)
+    if captcha_param:
+        body["captcha_verify_param"] = captcha_param
+        debug_log("captcha_param_included", length=len(captcha_param))
+
     headers = build_common_headers(token)
     headers.update(
         {
@@ -779,18 +836,43 @@ def chat_completion(token: str, payload: dict):
 
     query = build_query(token, chat_id, request_id, timestamp_ms, user_id)
     response = None
-    completion_paths = ("/api/agent/v2/chat/completions", "/api/v2/chat/completions")
-    for index, path in enumerate(completion_paths):
-        response = requests.post(
-            f"{BASE}{path}?{query}",
-            headers=headers,
-            json=body,
-            timeout=120,
-            stream=True,
-        )
-        if response.status_code != 405 or index == len(completion_paths) - 1:
+    completion_paths = ("/api/v2/chat/completions", "/api/agent/v2/chat/completions")
+    for retry_index in (1, 2):
+        for index, path in enumerate(completion_paths):
+            response = requests.post(
+                f"{BASE}{path}?{query}",
+                headers=headers,
+                json=body,
+                timeout=120,
+                stream=True,
+            )
+            if response.status_code != 405 or index == len(completion_paths) - 1:
+                break
+            response.close()
+        if response.status_code not in {401, 403, 429}:
             break
+        response_status = response.status_code
+        error_text = ""
+        try:
+            error_text = response.text[:4096]
+        except Exception:
+            pass
         response.close()
+        response = None
+        if not is_captcha_required_text(error_text) or retry_index == 2:
+            break
+        debug_log(
+            "captcha_required_refresh",
+            attempt=retry_index,
+            status_code=response_status,
+            body_fragment=error_text[:200],
+        )
+        fresh_captcha = force_refresh()
+        if not fresh_captcha:
+            break
+        body["captcha_verify_param"] = fresh_captcha
+    if response is None:
+        raise RuntimeError("Z.ai upstream request failed (captcha refresh unavailable)")
     response.raise_for_status()
     if stateful_sessions:
         payload["_zai_continuation_state"] = {
@@ -888,13 +970,26 @@ def complete_non_stream(token: str, payload: dict):
     attempts = max_retries + 1
     last_result = None
     last_meta = None
+    captcha_refreshed = False
 
     for attempt in range(1, attempts + 1):
-        upstream, chat_id, model = chat_completion(token, payload)
         try:
-            result, meta = collect_non_stream(upstream, model, chat_id)
-        finally:
-            upstream.close()
+            upstream, chat_id, model = chat_completion(token, payload)
+            try:
+                result, meta = collect_non_stream(upstream, model, chat_id)
+            finally:
+                upstream.close()
+        except RuntimeError as err:
+            if not captcha_refreshed and is_captcha_required_text(str(err)):
+                captcha_refreshed = True
+                debug_log(
+                    "non_stream_captcha_retry",
+                    attempt=attempt,
+                    error=str(err)[:200],
+                )
+                force_refresh()
+                continue
+            raise
 
         last_result = result
         last_meta = meta

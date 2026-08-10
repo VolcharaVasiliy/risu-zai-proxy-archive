@@ -10,6 +10,8 @@ const REPO_KEYS = [
   "DEEPSEEK_TOKEN",
   "ARCEE_ACCESS_TOKEN",
   "GEMINI_WEB_COOKIE",
+  "GEMINI_WEB_SECURE_1PSID",
+  "GEMINI_WEB_SECURE_1PSIDTS",
   "GOOGLE_AI_STUDIO_API_KEY",
   "GROK_COOKIE",
   "KIMI_TOKEN",
@@ -278,11 +280,36 @@ const PROVIDERS = [
     id: "gemini-web",
     name: "Gemini Web",
     url: "https://gemini.google.com/",
-    keys: ["GEMINI_WEB_COOKIE"],
+    keys: ["GEMINI_WEB_COOKIE", "GEMINI_WEB_SECURE_1PSID", "GEMINI_WEB_SECURE_1PSIDTS"],
     async run() {
-      const cookie = await cookieHeader("https://gemini.google.com/");
+      let cookie = await cookieHeader("https://gemini.google.com/");
+      let s1psid = "";
+      let s1psidts = "";
+      const cdp = await readCookiesViaCdp("gemini.google.com");
+      if (cdp) {
+        const all = [...cdp];
+        const pick = (name) => {
+          const hit = all.find((c) => c.name === name);
+          return hit ? String(hit.value || "") : "";
+        };
+        s1psid = pick("__Secure-1PSID");
+        s1psidts = pick("__Secure-1PSIDTS");
+        if (!s1psid || !s1psidts) {
+          const google = all.filter((c) => c.domain === ".google.com");
+          for (const c of google) {
+            if (c.name === "__Secure-1PSID" && !s1psid) s1psid = String(c.value || "");
+            if (c.name === "__Secure-1PSIDTS" && !s1psidts) s1psidts = String(c.value || "");
+            if (cookie.indexOf(` ${c.name}=`) < 0 && cookie.indexOf(`${c.name}=`) !== 0) {
+              cookie += `${cookie ? "; " : ""}${c.name}=${c.value}`;
+            }
+          }
+        }
+      }
       setCred("GEMINI_WEB_COOKIE", cookie);
-      return { ok: !!cookie, detail: cookie ? `${cookie.split("; ").length} кук` : "нет кук" };
+      setCred("GEMINI_WEB_SECURE_1PSID", s1psid);
+      setCred("GEMINI_WEB_SECURE_1PSIDTS", s1psidts);
+      const detail = s1psid ? "SID есть" : cookie ? "SID нет" : "нет кук";
+      return { ok: !!(cookie && s1psid), detail };
     },
   },
   {

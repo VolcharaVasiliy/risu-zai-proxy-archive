@@ -54,6 +54,97 @@ FAKE_HEADERS = {
 _TOKEN_CACHE = {}
 
 
+def _persist_tokens(access_token: str, refresh_token: str) -> None:
+    """Writes refreshed tokens back to credentials.json so a server restart
+    keeps working without rescanning."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "credentials.json")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["GLM_REFRESH_TOKEN"] = refresh_token
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _request_headers(auth: str, device_id: str) -> dict:
+    sign = _generate_sign()
+    return {
+        "Authorization": auth,
+        "Content-Type": "application/json;charset=utf-8",
+        "App-Name": "chatglm",
+        "X-Device-Id": device_id,
+        "X-App-Platform": "pc",
+        "X-App-Version": "0.0.1",
+        "X-App-fr": "default",
+        "X-Request-Id": str(uuid.uuid4()).replace("-", ""),
+        "X-Exp-Groups": "",
+        "X-Device-Model": "",
+        "X-Device-Brand": "",
+        "X-Nonce": sign["nonce"],
+        "X-Sign": sign["sign"],
+        "X-Timestamp": sign["timestamp"],
+        "User-Agent": FAKE_HEADERS["User-Agent"],
+    }
+
+
+def _guest_access() -> dict:
+    device_id = str(uuid.uuid4()).replace("-", "")
+    response = requests.post(
+        f"{GLM_API_BASE}/user-api/guest/access",
+        headers=_request_headers("", device_id),
+        json={},
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if data.get("status") != 0 or not data.get("result", {}).get("access_token"):
+        raise RuntimeError(f"GLM guest access failed: {data.get('message') or data}")
+    return data["result"]
+
+
+def _refresh_tokens(refresh_token: str) -> dict:
+    response = requests.post(
+        f"{GLM_API_BASE}/user-api/user/refresh",
+        headers=_request_headers(f"Bearer {refresh_token}", str(uuid.uuid4()).replace("-", "")),
+        json={},
+        timeout=30,
+    )
+    if response.status_code in (400, 401, 403):
+        raise RuntimeError(f"GLM refresh rejected: {response.status_code}")
+    response.raise_for_status()
+    data = response.json()
+    if data.get("status") != 0 or not data.get("result", {}).get("access_token"):
+        raise RuntimeError(f"GLM token refresh failed: {data.get('message') or data}")
+    return data["result"]
+
+
+def acquire_access_token(refresh_token: str) -> tuple:
+    cached = _TOKEN_CACHE.get(refresh_token)
+    if cached and cached["expires_at"] > time.time():
+        return cached["access_token"], cached.get("refresh_token", refresh_token)
+
+    result = None
+    try:
+        result = _refresh_tokens(refresh_token)
+    except RuntimeError as refresh_error:
+        debug_log("glm_refresh_fallback_guest", reason=str(refresh_error))
+        result = _guest_access()
+
+    access_token = result["access_token"]
+    new_refresh_token = result.get("refresh_token", "") or refresh_token
+    _TOKEN_CACHE[refresh_token] = {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "expires_at": time.time() + 3500,
+    }
+    if new_refresh_token != refresh_token:
+        _TOKEN_CACHE[new_refresh_token] = _TOKEN_CACHE[refresh_token]
+        _persist_tokens(access_token, new_refresh_token)
+    return access_token, new_refresh_token
+
+
 def supports_model(model: str) -> bool:
     if re.fullmatch(r"[a-z0-9]{24,}", str(model or "")):
         return True
@@ -140,7 +231,7 @@ def _generate_sign():
     digits = [int(char) for char in timestamp]
     checksum = (sum(digits) - digits[-2]) % 10
     signed_timestamp = timestamp[:-2] + str(checksum) + timestamp[-1]
-    nonce = str(uuid.uuid4())
+    nonce = str(uuid.uuid4()).replace("-", "")
     sign = _md5(f"{signed_timestamp}-{nonce}-{SIGN_SECRET}")
     return {"timestamp": signed_timestamp, "nonce": nonce, "sign": sign}
 
@@ -160,41 +251,8 @@ def _chat_mode_for(model: str, payload: dict) -> str:
     return ""
 
 
-def acquire_access_token(refresh_token: str) -> str:
-    cached = _TOKEN_CACHE.get(refresh_token)
-    if cached and cached["expires_at"] > time.time():
-        return cached["access_token"]
-
-    sign = _generate_sign()
-    response = requests.post(
-        f"{GLM_API_BASE}/user-api/user/refresh",
-        headers={
-            "Authorization": f"Bearer {refresh_token}",
-            **FAKE_HEADERS,
-            "X-Device-Id": str(uuid.uuid4()),
-            "X-Nonce": sign["nonce"],
-            "X-Request-Id": str(uuid.uuid4()),
-            "X-Sign": sign["sign"],
-            "X-Timestamp": sign["timestamp"],
-        },
-        json={},
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-    if (data.get("code") not in {0, None} and data.get("status") not in {0, None}) or not data.get("result", {}).get("access_token"):
-        raise RuntimeError(f"GLM token refresh failed: {data.get('message') or data}")
-
-    access_token = data["result"]["access_token"]
-    _TOKEN_CACHE[refresh_token] = {
-        "access_token": access_token,
-        "expires_at": time.time() + 3500,
-    }
-    return access_token
-
-
 def chat_completion(refresh_token: str, payload: dict):
-    access_token = acquire_access_token(refresh_token)
+    access_token, _new_refresh = acquire_access_token(refresh_token)
     request_model = payload.get("model", "chatglm-web")
     
     body_messages = []
@@ -223,7 +281,6 @@ def chat_completion(refresh_token: str, payload: dict):
 
     prompt_len = sum(len(m["content"][0]["text"]) for m in body_messages)
 
-    sign = _generate_sign()
     body = {
         "assistant_id": _assistant_id_for(request_model),
         "conversation_id": payload.get("conversation_id") or payload.get("chat_id") or "",
@@ -245,15 +302,7 @@ def chat_completion(refresh_token: str, payload: dict):
     }
     response = requests.post(
         f"{GLM_API_BASE}/backend-api/assistant/stream",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            **FAKE_HEADERS,
-            "X-Device-Id": str(uuid.uuid4()),
-            "X-Request-Id": str(uuid.uuid4()),
-            "X-Sign": sign["sign"],
-            "X-Timestamp": sign["timestamp"],
-            "X-Nonce": sign["nonce"],
-        },
+        headers=_request_headers(f"Bearer {access_token}", str(uuid.uuid4()).replace("-", "")),
         json=body,
         timeout=120,
         stream=True,

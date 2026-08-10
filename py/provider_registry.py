@@ -923,23 +923,18 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
             return
 
     if provider_id == "zai":
-        upstream, chat_id, model = zai_proxy.chat_completion(
-            credentials["token"], payload
-        )
-        if original_payload is not payload and payload.get("_zai_continuation_state"):
-            original_payload["_zai_continuation_state"] = payload.get(
-                "_zai_continuation_state"
-            )
         try:
-            session_key = str(
-                payload.get("conversation_id") or payload.get("chat_id") or ""
-            ).strip()
-            for chunk in zai_proxy.openai_stream_chunks(
-                upstream, model, chat_id, session_key=session_key
+            for chunk in zai_proxy.stream_chunks_with_captcha_retry(
+                credentials["token"], payload
             ):
                 yield chunk
         finally:
-            upstream.close()
+            if original_payload is not payload and payload.get(
+                "_zai_continuation_state"
+            ):
+                original_payload["_zai_continuation_state"] = payload.get(
+                    "_zai_continuation_state"
+                )
         return
 
     if provider_id == "deepseek":
