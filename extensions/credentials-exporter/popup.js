@@ -258,26 +258,23 @@ const PROVIDERS = [
     name: "MiMo",
     keys: ["MIMO_COOKIE", "MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN"],
     async run() {
-      const hosts = ["aistudio.xiaomimimo.com", "xiaomimimo.com"];
-      const want = {
-        st: ["xiaomichatbot_serviceToken", "serviceToken"],
-        uid: ["userId"],
-        ph: ["xiaomichatbot_ph"],
-      };
       const found = { st: "", uid: "", ph: "" };
-      let cookie = "";
-      for (const h of hosts) {
-        if (!cookie) cookie = await cookieHeader(`https://${h}/`);
-        const list = await cookieList(`https://${h}/`);
-        for (const key of Object.keys(want)) {
-          if (found[key]) continue;
-          for (const cname of want[key]) {
-            const hit = list.find((c) => c.name === cname);
-            if (hit) {
-              found[key] = unquote(hit.value);
-              break;
-            }
-          }
+      let all = [];
+      try {
+        all = await chrome.cookies.getAll({});
+      } catch (e) {
+        /* без доступа */
+      }
+      const list = all.filter(
+        (c) => c.domain === "xiaomimimo.com" || c.domain.endsWith(".xiaomimimo.com")
+      );
+      for (const c of list) {
+        if (c.name === "xiaomichatbot_serviceToken" || c.name === "serviceToken") {
+          if (!found.st) found.st = unquote(c.value);
+        } else if (c.name === "userId") {
+          if (!found.uid) found.uid = unquote(c.value);
+        } else if (c.name === "xiaomichatbot_ph") {
+          if (!found.ph) found.ph = unquote(c.value);
         }
       }
       const st = found.st, uid = found.uid, ph = found.ph;
@@ -285,7 +282,16 @@ const PROVIDERS = [
       setCred("MIMO_USER_ID", uid);
       setCred("MIMO_PH_TOKEN", ph);
       setCred("MIMO_COOKIE", st && uid && ph ? `serviceToken=${st}; userId=${uid}; xiaomichatbot_ph=${ph}` : "");
-      return { ok: !!(st && uid && ph), detail: st && uid && ph ? "все три токена есть" : "не хватает токенов" };
+      const missing = [];
+      if (!st) missing.push("serviceToken");
+      if (!uid) missing.push("userId");
+      if (!ph) missing.push("ph");
+      return {
+        ok: !!(st && uid && ph),
+        detail: st && uid && ph
+          ? "все три токена есть"
+          : `нет: ${missing.join(", ")} (${list.length} кук на xiaomimimo)`,
+      };
     },
   },
   {
