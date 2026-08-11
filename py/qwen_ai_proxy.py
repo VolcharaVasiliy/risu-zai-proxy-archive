@@ -31,19 +31,28 @@ SUPPORTED_MODELS = [
     "Qwen2.5-Max",
 ]
 
+# Upstream model ids below were verified live against chat.qwen.ai (2026-08-11):
+# qwen3.8-max, qwen3.7-max, qwen3.7-plus, qwen3.6-plus. All other ids (qwen3-max,
+# qwen2.5-max, qwen3.6-max, qwen3.6-flash, qwen3.5-*, ...) now return
+# "Not_Found"/"Model not found" upstream and are remapped to the nearest live one.
+# NOTE: if a request returns empty content + HTTP 200, check whether upstream
+# answered with the bx anti-bot JSON punish ({"ret":["FAIL_SYS_USER_VALIDATE",
+# "RGV587_ERROR::SM::..."...]}) instead of SSE. That is transient and per-IP:
+# it clears by itself after a cooldown, and using different public IPs avoids it.
 MODEL_MAP = {
     "Qwen3.8-Max": "qwen3.8-max",
     "Qwen3.7-Max": "qwen3.7-max",
     "Qwen3.7-Max-Preview": "qwen3.7-max",
     "Qwen3.7-Plus": "qwen3.7-plus",
-    "Qwen3.6-Max": "qwen3.6-max",
+    "Qwen3.6-Max": "qwen3.6-plus",
     "Qwen3.6-Plus": "qwen3.6-plus",
-    "Qwen3.6-Flash": "qwen3.6-flash",
-    "Qwen3.5-Plus": "qwen3.5-plus",
-    "Qwen3.5-Omni": "qwen3.5-omni",
-    "Qwen3.5-Max-Preview": "qwen3.5-max-preview",
-    "Qwen3-Max": "qwen3-max",
-    "Qwen2.5-Max": "qwen2.5-max",
+    "Qwen3.6-Flash": "qwen3.6-plus",
+    "Qwen3.5-Plus": "qwen3.6-plus",
+    "Qwen3.5-Omni": "qwen3.6-plus",
+    "Qwen3.5-Max-Preview": "qwen3.8-max",
+    "Qwen3.5": "qwen3.8-max",
+    "Qwen3-Max": "qwen3.8-max",
+    "Qwen2.5-Max": "qwen3.8-max",
     "qwen": "qwen3.8-max",
     "qwen3": "qwen3.8-max",
     "qwen3.8": "qwen3.8-max",
@@ -52,16 +61,16 @@ MODEL_MAP = {
     "qwen3.7-max": "qwen3.7-max",
     "qwen3.7-max-preview": "qwen3.7-max",
     "qwen3.7-plus": "qwen3.7-plus",
-    "qwen3.6": "qwen3.6-max",
-    "qwen3.6-max": "qwen3.6-max",
+    "qwen3.6": "qwen3.6-plus",
+    "qwen3.6-max": "qwen3.6-plus",
     "qwen3.6-plus": "qwen3.6-plus",
-    "qwen3.6-flash": "qwen3.6-flash",
-    "qwen3.5": "qwen3.5",
-    "qwen3.5-omni": "qwen3.5-omni",
-    "qwen3.5-max-preview": "qwen3.5-max-preview",
-    "qwen3.5-plus": "qwen3.5-plus",
-    "qwen2.5": "qwen2.5-max",
-    "qwen2.5-max": "qwen2.5-max",
+    "qwen3.6-flash": "qwen3.6-plus",
+    "qwen3.5": "qwen3.8-max",
+    "qwen3.5-omni": "qwen3.6-plus",
+    "qwen3.5-max-preview": "qwen3.8-max",
+    "qwen3.5-plus": "qwen3.6-plus",
+    "qwen2.5": "qwen3.8-max",
+    "qwen2.5-max": "qwen3.8-max",
 }
 
 DEFAULT_HEADERS = {
