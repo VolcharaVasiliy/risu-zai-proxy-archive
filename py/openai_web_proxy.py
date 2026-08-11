@@ -59,6 +59,13 @@ DOC_KEYS = ["location", "_reactListening"]
 WIN_KEYS = ["window", "document", "navigator", "location", "origin", "localStorage", "sessionStorage", "fetch"]
 MODEL_TRIM_CHARS = "\"'[]"
 
+# Values captured from a live chatgpt.com session (2026-08-10 dump). The web
+# frontend now sends f/conversation (instead of /conversation) and derives
+# sentinel tokens via prepare -> finalize. These are the client build/version
+# strings observed in the dump; they may need periodic updates.
+OAI_CLIENT_BUILD = "9180376"
+OAI_CLIENT_VERSION = "prod-9388715ac602ed281d3d6f2d87edbb3f7b13706c"
+
 
 class ScriptSrcParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
@@ -170,6 +177,8 @@ def base_headers(access_token: str = "", account_id: str = "", device_id: str = 
         "Accept-Encoding": "gzip, deflate, br, zstd",
         "Accept-Language": "ru,en;q=0.9",
         "Content-Type": "application/json",
+        "Oai-Client-Build-Number": os.environ.get("OPENAI_WEB_CLIENT_BUILD", OAI_CLIENT_BUILD),
+        "Oai-Client-Version": os.environ.get("OPENAI_WEB_CLIENT_VERSION", OAI_CLIENT_VERSION),
         "Oai-Language": "ru-RU",
         "Priority": "u=1, i",
         "Referer": f"{BASE_URL}/",
@@ -392,25 +401,63 @@ def fetch_chat_requirements(sess, headers: dict):
     if not get_dpl(sess, headers):
         raise RuntimeError("OpenAI Web sentinel dpl was not resolved")
     config = proof_config()
-    response = sess.post(
-        f"{BASE_URL}/backend-api/sentinel/chat-requirements",
+
+    prepare_response = sess.post(
+        f"{BASE_URL}/backend-api/sentinel/chat-requirements/prepare",
         headers=headers,
         json={"p": requirements_token(config)},
         timeout=30,
     )
-    if response.status_code != 200:
-        raise RuntimeError(f"OpenAI Web chat requirements failed: HTTP {response.status_code}")
-    data = response.json() or {}
-    if ((data.get("turnstile") or {}).get("required")):
-        raise RuntimeError("OpenAI Web requested Turnstile verification")
-    if ((data.get("arkose") or {}).get("required")):
-        raise RuntimeError("OpenAI Web requested Arkose verification")
-    pow_info = data.get("proofofwork") or {}
+    if prepare_response.status_code not in {200, 201}:
+        raise RuntimeError(f"OpenAI Web chat requirements prepare failed: HTTP {prepare_response.status_code}")
+    prepare_data = prepare_response.json() or {}
+    prepare_token = str(prepare_data.get("prepare_token") or prepare_data.get("token") or "").strip()
+
+    turnstile_required = bool(((prepare_data.get("turnstile") or {}).get("required")))
+    arkose_required = bool(((prepare_data.get("arkose") or {}).get("required")))
+    pow_info = prepare_data.get("proofofwork") or {}
     solved = proof_token(pow_info.get("seed"), pow_info.get("difficulty"), config) if pow_info.get("required") else ""
-    token = str(data.get("token") or "").strip()
+
+    finalize_payload = {}
+    if prepare_token:
+        finalize_payload["prepare_token"] = prepare_token
+    if solved:
+        finalize_payload["proofofwork"] = solved
+    if turnstile_required:
+        turnstile_token = os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
+        if turnstile_token:
+            finalize_payload["turnstile"] = turnstile_token
+    if not finalize_payload:
+        raise RuntimeError("OpenAI Web chat requirements prepare returned no token")
+
+    finalize_response = sess.post(
+        f"{BASE_URL}/backend-api/sentinel/chat-requirements/finalize",
+        headers=headers,
+        json=finalize_payload,
+        timeout=30,
+    )
+    if finalize_response.status_code not in {200, 201}:
+        raise RuntimeError(f"OpenAI Web chat requirements finalize failed: HTTP {finalize_response.status_code}")
+    finalize_data = finalize_response.json() or {}
+    token = str(finalize_data.get("token") or "").strip()
+
+    if turnstile_required and not token and os.environ.get("OPENAI_WEB_SENTINEL_CHAT", "").strip():
+        token = os.environ.get("OPENAI_WEB_SENTINEL_CHAT", "").strip()
+
     if not token:
         raise RuntimeError("OpenAI Web chat requirements token is empty")
-    return {"chat_token": token, "proof_token": solved, "persona": str(data.get("persona") or "")}
+
+    result = {
+        "chat_token": token,
+        "proof_token": solved,
+        "persona": str(finalize_data.get("persona") or prepare_data.get("persona") or ""),
+        "turnstile_required": turnstile_required,
+        "arkose_required": arkose_required,
+    }
+    if arkose_required:
+        raise RuntimeError("OpenAI Web requested Arkose verification")
+    debug_log("openai_web_chat_requirements", token_prefix=token[:16], proof=bool(solved), turnstile=turnstile_required, arkose=arkose_required)
+    return result
 
 
 def text_from_content(content) -> str:
@@ -465,22 +512,30 @@ def conversation_request(payload: dict, request_model: str, upstream_model: str,
             "pixel_ratio": 1.5,
             "screen_height": random.randint(900, 1200),
             "screen_width": random.randint(1400, 2200),
+            "app_name": "chatgpt.com",
+            "has_web_push_capabilities": True,
+            "web_push_notification_permission": "default",
         },
+        "client_prepare_state": "success",
         "conversation_mode": {"kind": "primary_assistant"},
         "conversation_origin": None,
+        "enable_message_followups": True,
+        "force_parallel_switch": "auto",
         "force_paragen": False,
         "force_paragen_model_slug": "",
         "force_rate_limit": False,
         "force_use_sse": True,
         "history_and_training_disabled": bool(payload.get("history_disabled", True)),
+        "local_function_names": ["local.continue_in_work"],
         "messages": chat_messages,
         "model": upstream_model,
         "paragen_cot_summary_display_override": "allow",
         "paragen_stream_type_override": None,
-        "parent_message_id": str(uuid.uuid4()),
+        "parent_message_id": "client-created-root",
         "reset_rate_limits": False,
         "suggestions": [],
-        "supported_encodings": [],
+        "supported_encodings": ["v1"],
+        "supports_buffering": True,
         "system_hints": [],
         "timezone": "Europe/Moscow",
         "timezone_offset_min": -180,
@@ -505,32 +560,55 @@ def iter_events(response):
                 break
             continue
         try:
-            yield json.loads(data)
+            event = json.loads(data)
         except Exception:
             continue
+        if not isinstance(event, dict):
+            continue
+        yield event
 
 
-def extract_delta(event: dict, state: dict):
-    if event.get("error"):
-        raise RuntimeError(str(event.get("error")))
-    message = event.get("message") or {}
-    if not message:
-        return {"delta": "", "finished": event.get("type") == "moderation"}
+def extract_patch_delta(ops: list, state: dict) -> dict:
+    deltas = []
+    finished = False
+    for op in ops:
+        if not isinstance(op, dict):
+            continue
+        op_name = op.get("o")
+        path = str(op.get("p") or "")
+        val = op.get("v")
+        if op_name == "append" and path == "/message/content/parts/0" and isinstance(val, str) and val:
+            deltas.append(val)
+        elif op_name == "replace" and path == "/message/end_turn" and val is True:
+            finished = True
+        elif op_name == "replace" and path == "/message/status" and str(val or "") == "finished_successfully":
+            if deltas or state.get("text"):
+                finished = True
+    delta = "".join(deltas)
+    if delta:
+        state["text"] = str(state.get("text") or "") + delta
+    return {"delta": delta, "finished": finished}
 
-    if not state.get("response_id") and event.get("conversation_id"):
-        state["response_id"] = str(event.get("conversation_id"))
+
+def extract_message_delta(message: dict, state: dict) -> dict:
+    if not state.get("response_id"):
+        state["response_id"] = str(message.get("conversation_id") or "")
 
     author_role = str(((message.get("author") or {}).get("role") or "")).strip().lower()
     if author_role != "assistant":
         return {"delta": "", "finished": False}
 
-    content = message.get("content") or {}
-    if str(content.get("content_type") or "") != "text":
-        return {"delta": "", "finished": bool(message.get("end_turn"))}
+    content = message.get("content") or ""
+    if isinstance(content, str):
+        text = content
+    else:
+        content = content if isinstance(content, dict) else {}
+        if str(content.get("content_type") or "") != "text":
+            return {"delta": "", "finished": bool(message.get("end_turn"))}
+        parts = content.get("parts") or []
+        text = str(parts[0] if parts and isinstance(parts[0], str) else "")
 
     message_id = str(message.get("id") or "").strip()
-    parts = content.get("parts") or []
-    text = str(parts[0] if parts and isinstance(parts[0], str) else "")
     if state.get("message_id") != message_id:
         state["message_id"] = message_id
         state["text"] = ""
@@ -539,6 +617,29 @@ def extract_delta(event: dict, state: dict):
     state["text"] = text
     finished = str(message.get("status") or "") == "finished_successfully" and bool(message.get("end_turn"))
     return {"delta": delta, "finished": finished}
+
+
+def extract_delta(event: dict, state: dict) -> dict:
+    if event.get("error"):
+        raise RuntimeError(str(event.get("error")))
+
+    message = event.get("message")
+    if isinstance(message, dict):
+        return extract_message_delta(message, state)
+
+    event_type = str(event.get("type") or "")
+    op = str(event.get("o") or "")
+    if op == "patch" and isinstance(event.get("v"), list):
+        return extract_patch_delta(event["v"], state)
+
+    if event_type == "resume_conversation_token" and event.get("conversation_id"):
+        state["response_id"] = state["response_id"] or str(event["conversation_id"])
+    elif event_type == "input_message" and event.get("conversation_id"):
+        state["response_id"] = state["response_id"] or str(event["conversation_id"])
+    elif event_type == "message_stream_complete":
+        if state.get("text"):
+            return {"delta": "", "finished": True}
+    return {"delta": "", "finished": False}
 
 
 def chat_completion(credentials: dict, payload: dict):
@@ -556,17 +657,26 @@ def chat_completion(credentials: dict, payload: dict):
         stream_headers.update(
             {
                 "Accept": "text/event-stream",
+                "Oai-Client-Build-Number": os.environ.get("OPENAI_WEB_CLIENT_BUILD", OAI_CLIENT_BUILD),
+                "Oai-Client-Version": os.environ.get("OPENAI_WEB_CLIENT_VERSION", OAI_CLIENT_VERSION),
+                "Oai-Language": "ru-RU",
+                "Oai-Session-Id": str(uuid.uuid4()),
                 "Openai-Sentinel-Chat-Requirements-Token": requirements["chat_token"],
-                "Openai-Sentinel-Proof-Token": requirements["proof_token"],
+                "X-Openai-Target-Path": "/backend-api/f/conversation",
+                "X-Openai-Target-Route": "/backend-api/f/conversation",
             }
         )
-        if not requirements["proof_token"]:
-            stream_headers.pop("Openai-Sentinel-Proof-Token", None)
+        if requirements["proof_token"]:
+            stream_headers["Openai-Sentinel-Proof-Token"] = requirements["proof_token"]
+        if requirements.get("turnstile_required"):
+            turnstile_token = os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
+            if turnstile_token:
+                stream_headers["Openai-Sentinel-Turnstile-Token"] = turnstile_token
         body = conversation_request(payload, request_model, upstream_model, chat_messages)
         sess, response, use_curl = perform_request(
             sess,
             "POST",
-            f"{BASE_URL}/backend-api/conversation",
+            f"{BASE_URL}/backend-api/f/conversation",
             headers=stream_headers,
             json=body,
             use_curl=use_curl,
