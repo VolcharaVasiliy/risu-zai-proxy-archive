@@ -21,9 +21,11 @@ import requests
 try:
     from py.openai_stream import OpenAIStreamBuilder
     from py.zai_proxy import debug_log
+    from py.openai_turnstile import fresh_token, force_refresh as force_refresh_turnstile
 except ImportError:
     from openai_stream import OpenAIStreamBuilder
     from zai_proxy import debug_log
+    from openai_turnstile import fresh_token, force_refresh as force_refresh_turnstile
 
 
 OWNED_BY = "chatgpt.com"
@@ -65,6 +67,33 @@ MODEL_TRIM_CHARS = "\"'[]"
 # strings observed in the dump; they may need periodic updates.
 OAI_CLIENT_BUILD = "9180376"
 OAI_CLIENT_VERSION = "prod-9388715ac602ed281d3d6f2d87edbb3f7b13706c"
+
+# Retry behaviour when OpenAI answers with an empty stream or rejects the
+# sentinel prepare with HTTP 403 (both are upstream rate-limit / missing-turnstile
+# signals). Each retry refreshes the turnstile token and waits a short backoff.
+OPENAI_WEB_MAX_RETRIES = int(os.environ.get("OPENAI_WEB_MAX_RETRIES", "3") or "3")
+OPENAI_WEB_RETRY_DELAY = float(os.environ.get("OPENAI_WEB_RETRY_DELAY", "3") or "3")
+
+
+def _resolve_turnstile_token() -> str:
+    try:
+        token = fresh_token()
+        if token:
+            return token
+        return os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
+    except Exception:
+        return os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
+
+
+def _refresh_turnstile():
+    try:
+        force_refresh_turnstile(wait_seconds=0)
+    except Exception:
+        pass
+
+
+def _is_prepare_403(text: str) -> bool:
+    return "prepare failed: HTTP 403" in (text or "")
 
 
 class ScriptSrcParser(HTMLParser):
@@ -402,6 +431,10 @@ def fetch_chat_requirements(sess, headers: dict):
         raise RuntimeError("OpenAI Web sentinel dpl was not resolved")
     config = proof_config()
 
+    turnstile_token = _resolve_turnstile_token()
+    if turnstile_token:
+        headers["openai-sentinel-turnstile-token"] = turnstile_token
+
     prepare_response = sess.post(
         f"{BASE_URL}/backend-api/sentinel/chat-requirements/prepare",
         headers=headers,
@@ -423,10 +456,8 @@ def fetch_chat_requirements(sess, headers: dict):
         finalize_payload["prepare_token"] = prepare_token
     if solved:
         finalize_payload["proofofwork"] = solved
-    if turnstile_required:
-        turnstile_token = os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
-        if turnstile_token:
-            finalize_payload["turnstile"] = turnstile_token
+    if turnstile_required and turnstile_token:
+        finalize_payload["turnstile"] = turnstile_token
     if not finalize_payload:
         raise RuntimeError("OpenAI Web chat requirements prepare returned no token")
 
@@ -669,7 +700,7 @@ def chat_completion(credentials: dict, payload: dict):
         if requirements["proof_token"]:
             stream_headers["Openai-Sentinel-Proof-Token"] = requirements["proof_token"]
         if requirements.get("turnstile_required"):
-            turnstile_token = os.environ.get("OPENAI_WEB_SENTINEL_TURNSTILE", "").strip()
+            turnstile_token = _resolve_turnstile_token()
             if turnstile_token:
                 stream_headers["Openai-Sentinel-Turnstile-Token"] = turnstile_token
         body = conversation_request(payload, request_model, upstream_model, chat_messages)
@@ -693,63 +724,109 @@ def chat_completion(credentials: dict, payload: dict):
 
 
 def stream_chunks(credentials: dict, payload: dict):
-    sess, response, request_model = chat_completion(credentials, payload)
-    builder = OpenAIStreamBuilder(str(uuid.uuid4()), request_model)
-    state = {"response_id": "", "message_id": "", "text": ""}
-    saw_any = False
-    try:
-        for event in iter_events(response):
-            info = extract_delta(event, state)
-            if state["response_id"]:
-                builder.set_response_id(state["response_id"])
-            if info["delta"]:
-                saw_any = True
-                for chunk in builder.content(info["delta"]):
-                    yield chunk
-            if info["finished"]:
-                break
-    finally:
-        response.close()
-        sess.close()
-    if not saw_any:
+    attempt = 0
+    while attempt < OPENAI_WEB_MAX_RETRIES:
+        attempt += 1
+        try:
+            sess, response, request_model = chat_completion(credentials, payload)
+        except RuntimeError as err:
+            if attempt < OPENAI_WEB_MAX_RETRIES and _is_prepare_403(str(err)):
+                debug_log("openai_web_stream_prepare_403", attempt=attempt, max=OPENAI_WEB_MAX_RETRIES)
+                _refresh_turnstile()
+                time.sleep(OPENAI_WEB_RETRY_DELAY)
+                continue
+            raise
+        builder = OpenAIStreamBuilder(str(uuid.uuid4()), request_model)
+        state = {"response_id": "", "message_id": "", "text": ""}
+        saw_any = False
+        try:
+            for event in iter_events(response):
+                info = extract_delta(event, state)
+                if state["response_id"]:
+                    builder.set_response_id(state["response_id"])
+                if info["delta"]:
+                    saw_any = True
+                    for chunk in builder.content(info["delta"]):
+                        yield chunk
+                if info["finished"]:
+                    break
+        finally:
+            response.close()
+            sess.close()
+        if saw_any:
+            debug_log(
+                "openai_web_stream_done",
+                chat_id=builder.response_id,
+                model=request_model,
+                content_length=len(str(state.get("text") or "")),
+            )
+            yield builder.finish()
+            return
+        debug_log("openai_web_empty_stream", attempt=attempt, max=OPENAI_WEB_MAX_RETRIES)
+        if attempt < OPENAI_WEB_MAX_RETRIES:
+            _refresh_turnstile()
+            time.sleep(OPENAI_WEB_RETRY_DELAY)
+            continue
         role_chunk = builder.ensure_role("content")
         if role_chunk is not None:
             yield role_chunk
-    debug_log("openai_web_stream_done", chat_id=builder.response_id, model=request_model, content_length=len(str(state.get("text") or "")))
-    yield builder.finish()
+        debug_log(
+            "openai_web_stream_done",
+            chat_id=builder.response_id,
+            model=request_model,
+            content_length=0,
+        )
+        yield builder.finish()
+        return
 
 
 def complete_non_stream(credentials: dict, payload: dict):
-    sess, response, request_model = chat_completion(credentials, payload)
-    state = {"response_id": "", "message_id": "", "text": ""}
-    saw_finished = False
-    try:
-        for event in iter_events(response):
-            info = extract_delta(event, state)
-            if info["finished"]:
-                saw_finished = True
-                break
-    finally:
-        response.close()
-        sess.close()
-    content = str(state.get("text") or "")
-    if not content:
+    attempt = 0
+    while attempt < OPENAI_WEB_MAX_RETRIES:
+        attempt += 1
+        try:
+            sess, response, request_model = chat_completion(credentials, payload)
+        except RuntimeError as err:
+            if attempt < OPENAI_WEB_MAX_RETRIES and _is_prepare_403(str(err)):
+                debug_log("openai_web_complete_prepare_403", attempt=attempt, max=OPENAI_WEB_MAX_RETRIES)
+                _refresh_turnstile()
+                time.sleep(OPENAI_WEB_RETRY_DELAY)
+                continue
+            raise
+        state = {"response_id": "", "message_id": "", "text": ""}
+        saw_finished = False
+        try:
+            for event in iter_events(response):
+                info = extract_delta(event, state)
+                if info["finished"]:
+                    saw_finished = True
+                    break
+        finally:
+            response.close()
+            sess.close()
+        content = str(state.get("text") or "")
+        if content:
+            result = {
+                "id": state.get("response_id") or str(uuid.uuid4()),
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": request_model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            }
+            meta = {
+                "provider": "openai-web",
+                "chat_id": result["id"],
+                "model": request_model,
+                "content_length": len(content),
+                "empty_content": not bool(content),
+                "finished": saw_finished,
+            }
+            debug_log("openai_web_non_stream_done", **meta)
+            return result, meta
+        debug_log("openai_web_empty_completion", attempt=attempt, max=OPENAI_WEB_MAX_RETRIES)
+        if attempt < OPENAI_WEB_MAX_RETRIES:
+            _refresh_turnstile()
+            time.sleep(OPENAI_WEB_RETRY_DELAY)
+            continue
         raise RuntimeError("OpenAI Web returned an empty completion")
-    result = {
-        "id": state.get("response_id") or str(uuid.uuid4()),
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": request_model,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-    }
-    meta = {
-        "provider": "openai-web",
-        "chat_id": result["id"],
-        "model": request_model,
-        "content_length": len(content),
-        "empty_content": not bool(content),
-        "finished": saw_finished,
-    }
-    debug_log("openai_web_non_stream_done", **meta)
-    return result, meta

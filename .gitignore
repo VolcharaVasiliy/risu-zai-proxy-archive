@@ -11,6 +11,8 @@ __pycache__/
 path-config.json
 *.pyd
 *.log
+openai_turnstile.json
+openai-turnstile-grabber.log
 run/
 .env
 .env.*

@@ -146,6 +146,49 @@ class handler(BaseHTTPRequestHandler):
             )
             return
 
+        if route == "openai-turnstile":
+            import time as _time
+
+            from py.openai_turnstile import (
+                TURNSTILE_FILE,
+                fresh_token,
+                ttl_seconds,
+            )
+
+            turnstile_status = {"exists": False}
+            if os.path.exists(TURNSTILE_FILE):
+                try:
+                    with open(TURNSTILE_FILE, "r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    captured_at = int(payload.get("captured_at") or 0)
+                    age_seconds = (
+                        round(_time.time() - captured_at / 1000.0, 1)
+                        if captured_at
+                        else None
+                    )
+                    turnstile_status = {
+                        "exists": True,
+                        "captured_at": captured_at,
+                        "age_seconds": age_seconds,
+                        "ttl_seconds": ttl_seconds(),
+                        "expired": bool(
+                            captured_at
+                            and ttl_seconds() > 0
+                            and age_seconds is not None
+                            and age_seconds > ttl_seconds()
+                        ),
+                        "token_length": len(str(payload.get("turnstile_token") or "")),
+                        "fresh": bool(fresh_token()),
+                    }
+                except Exception as exc:
+                    turnstile_status = {"exists": True, "read_error": str(exc)}
+            send_json(
+                self,
+                200,
+                {"ok": True, "openai_turnstile_file": turnstile_status},
+            )
+            return
+
         if route == "models":
             if not proxy_authorized(self):
                 send_json(self, 401, proxy_auth_error())
@@ -191,12 +234,45 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route not in {"chat", "responses", "responses-chat", "java-chat"}:
+        if route not in {"chat", "responses", "responses-chat", "java-chat", "openai-turnstile"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
         if not proxy_authorized(self):
             send_json(self, 401, proxy_auth_error())
+            return
+
+        if route == "openai-turnstile":
+            import time as _time
+
+            from py.openai_turnstile import TURNSTILE_FILE
+
+            try:
+                body = read_json_body(self)
+            except Exception:
+                send_json(self, 400, {"error": {"message": "Invalid JSON body"}})
+                return
+            token = str((body or {}).get("turnstile_token") or "").strip()
+            if not token:
+                send_json(self, 400, {"error": {"message": "turnstile_token is required"}})
+                return
+            payload = {
+                "turnstile_token": token,
+                "captured_at": int((body or {}).get("captured_at") or _time.time() * 1000),
+            }
+            proof = str((body or {}).get("proof_token") or "").strip()
+            if proof:
+                payload["proof_token"] = proof
+            try:
+                with open(TURNSTILE_FILE, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle)
+                send_json(
+                    self,
+                    200,
+                    {"ok": True, "written": TURNSTILE_FILE, "token_length": len(token)},
+                )
+            except Exception as exc:
+                send_json(self, 500, {"ok": False, "error": str(exc)})
             return
 
         try:
