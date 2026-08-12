@@ -268,9 +268,16 @@ def _persist_tokens(token: str) -> None:
         pass
 
 
-def _refresh_access_token(token: str) -> str:
-    """Calls the /app/v1/refresh endpoint. The refresh endpoint expects the
-    current access token as a cookie (not a bearer header)."""
+def _refresh_access_token(token: str, refresh_token: str = "") -> str:
+    """Calls the /app/v1/refresh endpoint. Arcee mints a fresh 60-minute
+    access_token from a long-lived httpOnly `refresh_token` cookie (the same
+    cookie the browser uses to stay logged in for ~30 days). Falls back to the
+    current access_token cookie when no refresh_token is available."""
+    cookies = {}
+    if refresh_token:
+        cookies["refresh_token"] = refresh_token
+    if token:
+        cookies["access_token"] = token
     response = requests.post(
         REFRESH_ENDPOINT,
         headers={
@@ -284,7 +291,7 @@ def _refresh_access_token(token: str) -> str:
                 "Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36"
             ),
         },
-        cookies={"access_token": token},
+        cookies=cookies,
         timeout=30,
     )
     if response.status_code != 200:
@@ -296,18 +303,20 @@ def _refresh_access_token(token: str) -> str:
     return new_token
 
 
-def _ensure_fresh_token(token: str) -> str:
+def _ensure_fresh_token(token: str, refresh_token: str = "") -> str:
     """Returns an access token valid for the next ~50 minutes, refreshing via
-    the /app/v1/refresh endpoint when the current one is close to expiry."""
+    the /app/v1/refresh endpoint when the current one is close to expiry.
+    With a refresh_token, the session renews indefinitely (like the browser);
+    without one, the token only lasts until the access_token itself expires."""
     if not token:
         return ""
-    cached = _TOKEN_CACHE.get(token)
-    if cached and cached[1] - int(time.time()) > 300:
-        return cached[0]
     exp = _jwt_exp(token)
     if exp and exp - int(time.time()) > 300:
         return token
-    new_token = _refresh_access_token(token)
+    cached = _TOKEN_CACHE.get(token)
+    if cached and cached[1] - int(time.time()) > 300:
+        return cached[0]
+    new_token = _refresh_access_token(token, refresh_token)
     new_exp = _jwt_exp(new_token) or (int(time.time()) + 3600)
     _TOKEN_CACHE[token] = (new_token, new_exp)
     _persist_tokens(new_token)
@@ -316,7 +325,10 @@ def _ensure_fresh_token(token: str) -> str:
 
 
 def _run_chat(credentials: dict, payload: dict) -> dict:
-    token = _ensure_fresh_token(str((credentials or {}).get("token") or "").strip())
+    token = _ensure_fresh_token(
+        str((credentials or {}).get("token") or "").strip(),
+        str((credentials or {}).get("refresh_token") or "").strip(),
+    )
     if not token:
         raise RuntimeError("Arcee access token is required")
 

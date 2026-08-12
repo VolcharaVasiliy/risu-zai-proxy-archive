@@ -54,7 +54,11 @@ async function main() {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
   });
   // Seed cookies so the LB/Cloudflare session is warm (login persists in profile).
-  await context.addCookies(cookieHeaderToObjects(String(creds.ARCEE_COOKIE || "").trim()));
+  try {
+    await context.addCookies(cookieHeaderToObjects(String(creds.ARCEE_COOKIE || "").trim()));
+  } catch (e) {
+    console.log("seed cookies skipped:", e.message);
+  }
   console.log("profile persisted at", PROFILE_DIR);
 
   let found = null;
@@ -130,16 +134,40 @@ async function main() {
   const token = found.value;
   const allCookies = await context.cookies();
   const cookieHeader = allCookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  const refreshCookie = allCookies.find((c) => c.name === "refresh_token");
+  const refreshToken = refreshCookie ? refreshCookie.value : "";
 
-  const data = { access_token: token, token_key: found.key, captured_at: Date.now(), cookie: cookieHeader };
+  function jwtExp(t) {
+    try {
+      const p = t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const pad = p + "=".repeat((4 - (p.length % 4)) % 4);
+      return JSON.parse(Buffer.from(pad, "base64").toString("utf8")).exp || 0;
+    } catch {
+      return 0;
+    }
+  }
+  const expiresAt = jwtExp(token);
+
+  const data = {
+    access_token: token,
+    token_key: found.key,
+    refresh_token: refreshToken,
+    captured_at: Date.now(),
+    expires_at: expiresAt ? expiresAt * 1000 : null,
+    cookie: cookieHeader,
+  };
   fs.writeFileSync(OUT_FILE, JSON.stringify(data, null, 2), "utf8");
 
   try {
     const full = JSON.parse(fs.readFileSync(CREDENTIALS_FILE, "utf8"));
     full.ARCEE_ACCESS_TOKEN = token;
     full.ARCEE_COOKIE = cookieHeader;
+    if (refreshToken) full.ARCEE_REFRESH_TOKEN = refreshToken;
     fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(full, null, 2), "utf8");
-    console.log("updated credentials.json ARCEE_ACCESS_TOKEN + ARCEE_COOKIE");
+    console.log(
+      "updated credentials.json ARCEE_ACCESS_TOKEN + ARCEE_COOKIE" +
+        (refreshToken ? " + ARCEE_REFRESH_TOKEN" : " (no refresh_token cookie found)")
+    );
   } catch (e) {
     console.log("credentials write warn:", e.message);
   }

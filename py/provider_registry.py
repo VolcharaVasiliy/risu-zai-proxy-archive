@@ -456,7 +456,15 @@ def resolve_credentials(handler, provider_id: str):
         session_id = env_or_kv_token("ARCEE_SESSION_ID") or header_token(
             handler, "x-arcee-session-id"
         )
-        return {"token": token, "session_id": session_id} if token else None
+        refresh_token = env_or_header_token(
+            handler, ["ARCEE_REFRESH_TOKEN"], ["x-arcee-refresh-token"]
+        )
+        if not token:
+            return None
+        creds = {"token": token, "session_id": session_id}
+        if refresh_token:
+            creds["refresh_token"] = refresh_token
+        return creds
 
     if provider_id == "gemini-web":
         cookie = env_or_kv_token("GEMINI_WEB_COOKIE") or header_token(

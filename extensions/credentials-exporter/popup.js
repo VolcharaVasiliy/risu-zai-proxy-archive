@@ -9,6 +9,7 @@ const REPO_KEYS = [
   "ZAI_TOKEN",
   "DEEPSEEK_TOKEN",
   "ARCEE_ACCESS_TOKEN",
+  "ARCEE_REFRESH_TOKEN",
   "GEMINI_WEB_COOKIE",
   "GEMINI_WEB_SECURE_1PSID",
   "GEMINI_WEB_SECURE_1PSIDTS",
@@ -286,11 +287,19 @@ const PROVIDERS = [
     id: "arcee",
     name: "Arcee",
     url: "https://api.arcee.ai/",
-    keys: ["ARCEE_ACCESS_TOKEN"],
+    keys: ["ARCEE_ACCESS_TOKEN", "ARCEE_REFRESH_TOKEN"],
     async run() {
       const token = await findCookie("https://api.arcee.ai/", "access_token");
       setCred("ARCEE_ACCESS_TOKEN", token);
-      return { ok: !!token, detail: token ? "access_token есть" : "нет куки access_token" };
+      /* refresh_token — httpOnly-кука (~30 дней); даёт прокси вечно
+         обновлять access_token через POST /app/v1/refresh (как браузер). */
+      const refresh = await findCookie("https://api.arcee.ai/", "refresh_token");
+      setCred("ARCEE_REFRESH_TOKEN", refresh);
+      const ok = !!token;
+      const detail = token
+        ? `access_token есть${refresh ? ", refresh_token есть" : ", refresh_token НЕТ"}`
+        : "нет куки access_token";
+      return { ok, detail };
     },
   },
   {
