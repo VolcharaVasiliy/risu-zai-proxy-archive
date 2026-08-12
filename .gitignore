@@ -28,3 +28,7 @@ REPORT.md
 .env*.local
 .vercel
 
+
+# Arcee local browser profile + captured token (secrets)
+.arcee-edge-profile/
+arcee_access_token.json
