@@ -189,6 +189,34 @@ class handler(BaseHTTPRequestHandler):
             )
             return
 
+        if route == "grok-cf-clearance":
+            import time as _time
+
+            from py.grok_proxy import CLEARANCE_FILE, fresh_cf_clearance
+
+            status = {"exists": False}
+            if os.path.exists(CLEARANCE_FILE):
+                try:
+                    with open(CLEARANCE_FILE, "r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    captured_at = int(payload.get("captured_at") or 0)
+                    age_seconds = (
+                        round(_time.time() - captured_at / 1000.0, 1)
+                        if captured_at
+                        else None
+                    )
+                    status = {
+                        "exists": True,
+                        "captured_at": captured_at,
+                        "age_seconds": age_seconds,
+                        "token_length": len(str(payload.get("cf_clearance") or "")),
+                        "fresh": bool(fresh_cf_clearance()),
+                    }
+                except Exception as exc:
+                    status = {"exists": True, "read_error": str(exc)}
+            send_json(self, 200, {"ok": True, "grok_cf_clearance_file": status})
+            return
+
         if route == "models":
             if not proxy_authorized(self):
                 send_json(self, 401, proxy_auth_error())
@@ -234,7 +262,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route not in {"chat", "responses", "responses-chat", "java-chat", "openai-turnstile"}:
+        if route not in {"chat", "responses", "responses-chat", "java-chat", "openai-turnstile", "grok-cf-clearance"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
@@ -270,6 +298,36 @@ class handler(BaseHTTPRequestHandler):
                     self,
                     200,
                     {"ok": True, "written": TURNSTILE_FILE, "token_length": len(token)},
+                )
+            except Exception as exc:
+                send_json(self, 500, {"ok": False, "error": str(exc)})
+            return
+
+        if route == "grok-cf-clearance":
+            import time as _time
+
+            from py.grok_proxy import CLEARANCE_FILE
+
+            try:
+                body = read_json_body(self)
+            except Exception:
+                send_json(self, 400, {"error": {"message": "Invalid JSON body"}})
+                return
+            token = str((body or {}).get("cf_clearance") or "").strip()
+            if not token:
+                send_json(self, 400, {"error": {"message": "cf_clearance is required"}})
+                return
+            payload = {
+                "cf_clearance": token,
+                "captured_at": int((body or {}).get("captured_at") or _time.time() * 1000),
+            }
+            try:
+                with open(CLEARANCE_FILE, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle)
+                send_json(
+                    self,
+                    200,
+                    {"ok": True, "written": CLEARANCE_FILE, "token_length": len(token)},
                 )
             except Exception as exc:
                 send_json(self, 500, {"ok": False, "error": str(exc)})

@@ -23,6 +23,83 @@ except ImportError:
     from openai_stream import OpenAIStreamBuilder
     from zai_proxy import debug_log
 
+try:
+    from py.grok_cf_clearance import (
+        fresh_cookie as _grok_file_cookie,
+        grab_enabled as _grok_grab_enabled,
+        force_refresh as _grok_force_refresh,
+    )
+except Exception:
+    def _grok_grab_enabled():
+        return False
+
+    def _grok_force_refresh(wait_seconds=None):
+        return None
+
+    def _grok_file_cookie():
+        return None
+
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _grok_cf_clearance_file():
+    return os.environ.get("GROK_CF_CLEARANCE_FILE") or os.path.join(PROJECT_ROOT, "grok_cf_clearance.json")
+
+
+def _grok_bridge_url():
+    # Local browser-bridge that drives a logged-in Edge instance and relays the
+    # xAI Realtime WebSocket (Cloudflare blocks server-side WS/REST from Python).
+    return os.environ.get("GROK_BRIDGE_URL", "").strip() or "http://127.0.0.1:8771"
+
+
+def _grok_bridge_enabled():
+    mode = os.environ.get("GROK_BRIDGE_MODE", "auto").strip().lower()
+    if mode == "off":
+        return False
+    if mode == "on":
+        return True
+    # auto: enabled when a bridge URL is configured (default points at localhost:8771)
+    return bool(_grok_bridge_url())
+
+
+def fresh_cf_clearance():
+    # Primary source: grok_cf_clearance.json written by the browser extension (or a grabber).
+    # Fallback: GROK_CF_CLEARANCE env (manual paste from DevTools). cf_clearance is a
+    # Cloudflare cookie that expires (~30 min); the extension should rewrite the file on refresh.
+    try:
+        with open(_grok_cf_clearance_file(), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        tok = str((data or {}).get("cf_clearance") or "").strip()
+        if tok:
+            return tok
+    except Exception:
+        pass
+    env = os.environ.get("GROK_CF_CLEARANCE", "").strip()
+    return env or None
+
+
+CLEARANCE_FILE = _grok_cf_clearance_file()
+
+
+def _merge_cf_clearance(cookie_header):
+    # Prefer the full grok.com cookie set captured by the grabber (it already
+    # includes the cf_clearance that Cloudflare issued alongside the matching
+    # __cf_bm / bot-management cookies). Falling back to just merging a bare
+    # cf_clearance into GROK_COOKIE fails because Cloudflare binds cf_clearance
+    # to the exact bot cookies from the solving session.
+    file_cookie = _grok_file_cookie()
+    if file_cookie:
+        return file_cookie
+    cookie = str(cookie_header or "").strip()
+    tok = fresh_cf_clearance()
+    if not tok:
+        return cookie
+    if re.search(r"(?:^|;\s*)cf_clearance=", cookie):
+        return cookie
+    sep = "; " if cookie and not cookie.endswith(";") else ""
+    return f"{cookie}{sep}cf_clearance={tok}"
+
 
 BASE_URL = "https://grok.com"
 CHAT_ENDPOINT = f"{BASE_URL}/rest/app-chat/conversations/new"
@@ -77,9 +154,35 @@ def _session(use_curl: bool = True):
 
 
 def _statsig_id() -> str:
-    suffix = "".join(random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(10))
-    message = f"e:TypeError: Cannot read properties of undefined (reading '{suffix}')"
-    return base64.b64encode(message.encode("utf-8")).decode("ascii")
+    raw = bytes(
+        random.choice(range(256)) for _ in range(64)
+    )
+    return base64.b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _sentry_trace() -> str:
+    trace_id = uuid.uuid4().hex
+    span_id = uuid.uuid4().hex[:16]
+    return f"{trace_id}-{span_id}-0"
+
+
+def _traceparent() -> str:
+    trace_id = uuid.uuid4().hex
+    span_id = uuid.uuid4().hex[:16]
+    return f"00-{trace_id}-{span_id}-00"
+
+
+def _sentry_baggage() -> str:
+    return (
+        "sentry-environment=production"
+        ",sentry-release=grok-web"
+        ",sentry-public_key=b311e0f2690c81f25e2c4cf6d4f7ce1c"
+        f",sentry-trace_id={uuid.uuid4().hex}"
+        ",sentry-org_id=4508179396558848"
+        ",sentry-sampled=false"
+        f",sentry-sample_rand={random.random()}"
+        ",sentry-sample_rate=0"
+    )
 
 
 def _headers(cookie_header: str) -> dict:
@@ -88,21 +191,26 @@ def _headers(cookie_header: str) -> dict:
         "Accept": "*/*",
         "Accept-Language": "ru,en;q=0.9",
         "Content-Type": "application/json",
-        "Cookie": cookie_header,
+        "Cookie": _merge_cf_clearance(cookie_header),
         "Origin": BASE_URL,
-        "Priority": "u=1, i",
         "Referer": f"{BASE_URL}/",
-        "Sec-Ch-Ua": '"Not(A:Brand";v="8", "Chromium";v="144", "YaBrowser";v="26.3", "Yowser";v="2.5"',
+        "Sec-Ch-Ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Microsoft Edge";v="146"',
         "Sec-Ch-Ua-Arch": '"x86"',
         "Sec-Ch-Ua-Bitness": '"64"',
+        "Sec-Ch-Ua-Full-Version": '"146.0.3856.62"',
+        "Sec-Ch-Ua-Full-Version-List": '"Chromium";v="146.0.3856.62", "Not-A.Brand";v="24.0.0.0", "Microsoft Edge";v="146.0.3856.62"',
         "Sec-Ch-Ua-Mobile": "?0",
         "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Ch-Ua-Platform-Version": '"10.0.0"',
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": user_agent,
-        "x-statsig-id": _statsig_id(),
-        "x-xai-request-id": str(uuid.uuid4()),
+        "X-Statsig-Id": _statsig_id(),
+        "X-Xai-Request-Id": str(uuid.uuid4()),
+        "Baggage": _sentry_baggage(),
+        "Sentry-Trace": _sentry_trace(),
+        "Traceparent": _traceparent(),
     }
 
 
@@ -228,9 +336,145 @@ def _iter_sse_data(response):
             yield data
 
 
+def _iter_bridge_sse(response):
+    for raw in response.iter_lines():
+        if not raw:
+            continue
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("data:"):
+            data = line[5:].strip()
+        else:
+            data = line
+        if data:
+            yield data
+
+
+def _bridge_parse(data: str):
+    if data == "[DONE]" or data == '"[DONE]"':
+        return None
+    try:
+        obj = json.loads(data)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    return obj
+
+
+def _bridge_post(request_model: str, prompt: str):
+    if not prompt:
+        raise RuntimeError("Grok prompt is empty")
+    url = _grok_bridge_url() + "/chat"
+    try:
+        response = requests.post(
+            url,
+            json={"prompt": prompt, "model": request_model},
+            stream=True,
+            timeout=180,
+            proxies={"http": None, "https": None},
+        )
+    except Exception as e:
+        raise RuntimeError(
+            "Grok bridge unreachable at %s (run: node scripts/grok-ws-bridge.mjs): %s" % (url, e)
+        )
+    if response.status_code != 200:
+        body = ""
+        try:
+            body = response.text[:300]
+        except Exception:
+            pass
+        response.close()
+        raise RuntimeError("Grok bridge error: HTTP %s %s" % (response.status_code, body))
+    return response
+
+
+def _bridge_stream_chunks(cookie_header: str, payload: dict):
+    request_model = str(payload.get("model") or "grok-3-mini")
+    prompt = _prompt_from_messages(payload.get("messages") or [])
+    response = _bridge_post(request_model, prompt)
+    builder = OpenAIStreamBuilder(str(uuid.uuid4()), request_model)
+    answer_text = ""
+    saw_done = False
+    try:
+        for data in _iter_bridge_sse(response):
+            if data == "[DONE]":
+                saw_done = True
+                break
+            obj = _bridge_parse(data)
+            if obj is None:
+                continue
+            if "error" in obj:
+                raise RuntimeError("Grok bridge: %s" % obj.get("error"))
+            choices = obj.get("choices") or []
+            if not choices:
+                continue
+            token = (choices[0].get("delta") or {}).get("content")
+            if token:
+                answer_text += token
+                yield from builder.content(token)
+    finally:
+        response.close()
+
+    debug_log("grok_bridge_stream_done", model=request_model, content_length=len(answer_text), saw_done=saw_done)
+    yield builder.finish()
+
+
+def _bridge_complete_non_stream(cookie_header: str, payload: dict):
+    request_model = str(payload.get("model") or "grok-3-mini")
+    prompt = _prompt_from_messages(payload.get("messages") or [])
+    response = _bridge_post(request_model, prompt)
+    answer_text = ""
+    reasoning_text = ""
+    saw_done = False
+    try:
+        for data in _iter_bridge_sse(response):
+            if data == "[DONE]":
+                saw_done = True
+                break
+            obj = _bridge_parse(data)
+            if obj is None:
+                continue
+            if "error" in obj:
+                raise RuntimeError("Grok bridge: %s" % obj.get("error"))
+            choices = obj.get("choices") or []
+            if not choices:
+                continue
+            token = (choices[0].get("delta") or {}).get("content")
+            if token:
+                answer_text += token
+    finally:
+        response.close()
+
+    message = {"role": "assistant", "content": answer_text}
+    result = {
+        "id": str(uuid.uuid4()),
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request_model,
+        "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+    meta = {
+        "chat_id": result["id"],
+        "model": request_model,
+        "provider": "grok",
+        "content_length": len(message["content"]),
+        "empty_content": not bool(message["content"]),
+        "saw_done": saw_done,
+    }
+    debug_log("grok_bridge_non_stream_done", **meta)
+    return result, meta
+
+
 def chat_completion(cookie_header: str, payload: dict):
     request_model = str(payload.get("model") or "grok-3")
     request_body = _request_body(request_model, payload)
+    max_retries = int(os.environ.get("GROK_MAX_RETRIES", "2") or "2")
+    retry_delay = int(os.environ.get("GROK_RETRY_DELAY", "3") or "3")
     used_transport = "curl_cffi" if curl_requests is not None else "requests"
 
     def _post(use_curl: bool):
@@ -244,39 +488,69 @@ def chat_completion(cookie_header: str, payload: dict):
         )
         return session, response
 
-    session, response = _post(use_curl=True)
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        session, response = _post(use_curl=True)
 
-    if response.status_code == 403 and curl_requests is not None:
-        response.close()
-        session.close()
-        session, response = _post(use_curl=False)
-        used_transport = "requests"
+        if response.status_code == 403 and curl_requests is not None:
+            response.close()
+            session.close()
+            session, response = _post(use_curl=False)
+            used_transport = "requests"
 
-    if response.status_code in {401, 403}:
-        body_text = ""
-        try:
-            body_text = response.text[:300]
-        except Exception:
-            pass
-        response.close()
-        session.close()
-        raise RuntimeError(f"Grok authentication failed: HTTP {response.status_code} {body_text}".strip())
+        if response.status_code in {401, 403}:
+            body_text = ""
+            try:
+                body_text = response.text[:300]
+            except Exception:
+                pass
+            response.close()
+            session.close()
+            last_err = RuntimeError(
+                f"Grok authentication failed: HTTP {response.status_code} {body_text}".strip()
+            )
+            if response.status_code == 403 and attempt < max_retries:
+                debug_log(
+                    "grok_auth_retry",
+                    attempt=attempt,
+                    max=max_retries,
+                    has_clearance=bool(fresh_cf_clearance()),
+                )
+                if _grok_grab_enabled():
+                    grab_timeout = float(
+                        os.environ.get("GROK_CF_CLEARANCE_GRAB_TIMEOUT", "180") or "180"
+                    )
+                    debug_log("grok_clearance_refresh_start", attempt=attempt)
+                    _grok_force_refresh(wait_seconds=grab_timeout)
+                    debug_log(
+                        "grok_clearance_refresh_done",
+                        attempt=attempt,
+                        has_clearance=bool(fresh_cf_clearance()),
+                    )
+                time.sleep(retry_delay)
+                continue
+            raise last_err
 
-    if response.status_code != 200:
-        body_text = ""
-        try:
-            body_text = response.text[:300]
-        except Exception:
-            pass
-        response.close()
-        session.close()
-        raise RuntimeError(f"Grok completion failed: HTTP {response.status_code} {body_text}".strip())
+        if response.status_code != 200:
+            body_text = ""
+            try:
+                body_text = response.text[:300]
+            except Exception:
+                pass
+            response.close()
+            session.close()
+            raise RuntimeError(f"Grok completion failed: HTTP {response.status_code} {body_text}".strip())
 
-    debug_log("grok_chat_started", model=request_model, transport=used_transport)
-    return session, response, request_model
+        debug_log("grok_chat_started", model=request_model, transport=used_transport)
+        return session, response, request_model
+
+    raise last_err or RuntimeError("Grok authentication failed")
 
 
 def stream_chunks(cookie_header: str, payload: dict):
+    if _grok_bridge_enabled():
+        yield from _bridge_stream_chunks(cookie_header, payload)
+        return
     session, response, request_model = chat_completion(cookie_header, payload)
     builder = OpenAIStreamBuilder(str(uuid.uuid4()), request_model)
     answer_text = ""
@@ -325,6 +599,8 @@ def stream_chunks(cookie_header: str, payload: dict):
 
 
 def complete_non_stream(cookie_header: str, payload: dict):
+    if _grok_bridge_enabled():
+        return _bridge_complete_non_stream(cookie_header, payload)
     session, response, request_model = chat_completion(cookie_header, payload)
     response_id = ""
     answer_parts = []

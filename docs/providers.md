@@ -13,7 +13,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Gemini Web | `gemini-3-flash`, `gemini-3-pro`, `gemini-3-flash-thinking`; `gemini-web*` aliases still resolve but are hidden from `/v1/models` | `GEMINI_WEB_SECURE_1PSID` | `GEMINI_WEB_SECURE_1PSIDTS`, `GEMINI_WEB_COOKIE`, `GEMINI_WEB_MODELS` | Logged-in `gemini.google.com` / Google cookie session | `scripts/launch-gemini-auth.ps1`, `scripts/get-gemini-web-creds.py`, `scripts/get-provider-creds.py` | Account/region gated. Only models with captured internal model headers are listed by default; use `GEMINI_WEB_MODELS` for newly discovered web-only variants. Can auto-use WinINET proxy locally. |
 | Google AI Studio Web | `google-ai-studio-web`, `ai-studio-web`, `ai-studio-web-pro`, `ai-studio-web-3-pro`, `ai-studio-web-3-flash`, `ai-studio-web-flash`, `ai-studio-web-lite` | `GOOGLE_AI_STUDIO_WEB_COOKIE` | `GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE`, `GOOGLE_AI_STUDIO_WEB_HEADERS`, `GOOGLE_AI_STUDIO_WEB_API_KEY`, `GOOGLE_AI_STUDIO_WEB_VISIT_ID`, `GOOGLE_AI_STUDIO_WEB_EXT_519733851_BIN` | Logged-in `aistudio.google.com` Google cookies plus captured web request template for generation | Manual network capture only | Experimental private AI Studio web RPC path. `CountTokens` can work with cookies/SAPISID auth alone; `GenerateContent` needs a browser-captured body/template because slot `4` is a content/session-bound capability blob. |
 | Google AI Studio / Gemini API | configured `gemini-*` ids, including `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-pro-preview-customtools`, `gemini-3.1-flash-lite`, `gemini-3-pro-preview`, `gemini-3-pro-image-preview`, `gemini-3-flash-preview`; `ai-studio*` aliases still resolve but are hidden from `/v1/models` | `GOOGLE_AI_STUDIO_API_KEY` or `GEMINI_API_KEY` | `GOOGLE_AI_STUDIO_MODELS`, `GOOGLE_AI_STUDIO_API_BASE`, `GOOGLE_AI_STUDIO_*`, `MULTIMODAL_*` | `https://aistudio.google.com/app/apikey` | Manual only | Official API path with native images and native Gemini function calling. Also powers optional image descriptions for text-only providers. |
-| Grok | `grok-3`, `grok-4`, `grok-4-thinking`, `grok-4.1-fast` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE` | Logged-in `grok.com` browser session | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py` | Cookie-based browser provider. |
+| Grok | `grok-3`, `grok-3-mini`, `grok-3-thinking`, `grok-4`, `grok-4-mini`, `grok-4-thinking`, `grok-4-heavy`, `grok-4.1-fast`, `grok-4.1-mini`, `grok-4.1-thinking`, `grok-4.1-expert`, `grok-4.20-beta` | `GROK_COOKIE` | `GROK_SSO`, `GROK_CF_CLEARANCE`, `GROK_CF_CLEARANCE_FILE`, `GROK_BRIDGE_URL`, `GROK_BRIDGE_MODE`, `GROK_BRIDGE_PORT`, `GROK_BRIDGE_HEADLESS`, `GROK_CF_CLEARANCE_MODE`, `GROK_CF_CLEARANCE_TIMEOUT_SECONDS`, `GROK_CF_CLEARANCE_PROXY`, `GROK_NODE` | Logged-in `grok.com` browser session via a local Edge bridge | `scripts/launch-grok-auth.ps1`, `scripts/get-grok-creds.py`, `scripts/fetch-grok-cf-clearance.mjs`, `scripts/grok-ws-bridge.mjs` | **Local browser-bridge provider.** `grok.com` sits behind Cloudflare, and generation runs over the xAI Realtime WebSocket (`wss://grok.com/ws/mgw`) which Cloudflare blocks for any server-side client: a direct REST `POST /rest/app-chat/conversations/new` and `/responses` return `403` anti-bot, and a Python WebSocket upgrade is rejected too. So Grok is served by a local browser bridge — `scripts/grok-ws-bridge.mjs` launches a logged-in Edge, opens the in-page WebSocket, and relays streamed tokens to the proxy over `http://127.0.0.1:8771/chat` as SSE. `py/grok_proxy.py` streams those chunks as OpenAI SSE. Run the bridge next to the proxy (`GROK_BRIDGE_URL` default `http://127.0.0.1:8771`, `GROK_BRIDGE_MODE` = `auto`/`on`/`off`). Like Z.ai this is **local-only**: Cloudflare binds `cf_clearance` to the solving browser's IP, so it does not work on Vercel. The bridge uses `GROK_COOKIE` plus a `cf_clearance` from `grok_cf_clearance.json` (see [Grok Cloudflare cf_clearance](#grok-cloudflare-cf_clearance)) and re-runs `scripts/fetch-grok-cf-clearance.mjs` automatically when the clearance is missing/expired (`GROK_CF_CLEARANCE_MODE=auto`). |
 | OpenAI Web | `chatgpt-auto` and discovered ChatGPT web slugs | `OPENAI_WEB_ACCESS_TOKEN` | `OPENAI_WEB_COOKIE`, `OPENAI_WEB_DEVICE_ID`, `OPENAI_WEB_ACCOUNT_ID`, `OPENAI_WEB_MODELS`, `OPENAI_WEB_SENTINEL_TURNSTILE`, `OPENAI_WEB_SENTINEL_CHAT` | Logged-in `chatgpt.com` session | `scripts/launch-openai-auth.ps1`, `scripts/get-openai-web-creds.py`, `scripts/fetch-openai-turnstile.mjs` | Uses the web auth/session flow, not the public API. Local `credentials.json` loads are mirrored to uppercase env names, so `openai_web_*` exports work without renaming. The new `f/conversation` protocol requires a sentinel `turnstile` token on free accounts; without it OpenAI rate-limits (~1 in 4 answers empty / 403 on prepare). The token is read from `openai_turnstile.json` (see [OpenAI Web Sentinel Turnstile](#openai-web-sentinel-turnstile)) with TTL, then falls back to `OPENAI_WEB_SENTINEL_TURNSTILE`. |
 | Qwen International | `Qwen3.8-Max`, `Qwen3.7-Max`, `Qwen3.7-Plus`, `Qwen3.6-Max`, `Qwen3.6-Plus`, `Qwen3.6-Flash`, `Qwen3.5-Omni`, `Qwen3.5-Max-Preview`, `Qwen3.5`, `Qwen3-Max`, `Qwen2.5-Max` | `QWEN_AI_COOKIE`, `QWEN_AI_BX_UMIDTOKEN` | `QWEN_AI_TOKEN`, `QWEN_AI_BX_UA`, `QWEN_AI_BX_UA_CREATE`, `QWEN_AI_BX_UA_CHAT`, `QWEN_AI_BX_V`, `QWEN_AI_TIMEZONE` | Logged-in `chat.qwen.ai` session | `scripts/get-provider-creds.py`, `scripts/get-qwen-creds.py` | Cookie + `bx-*` headers based. Most legacy model ids (`qwen3-max`, `qwen2.5-max`, `qwen3.6-max`, `qwen3.6-flash`, `qwen3.5-*`) are dead upstream and get remapped to the nearest live id (`qwen3.8-max` / `qwen3.6-plus`), so old names keep working. Short aliases such as `qwen` route to `qwen3.8-max`; `Qwen3.7-Max-Preview` spelling is still accepted as an alias. Upstream bx anti-bot may answer with a transient captcha punish (see [Qwen bx Anti-Bot (Transient)](#qwen-bx-anti-bot-transient)). |
 | Inception | `mercury-2`, `mercury-coder` | `INCEPTION_SESSION_TOKEN` | `INCEPTION_COOKIE` | Logged-in `chat.inceptionlabs.ai` session | `scripts/launch-inception-auth.ps1`, `scripts/get-inception-creds.py`, `scripts/redeploy-vercel.ps1 -SyncEnv` | Each request gets a fresh backend chat id, so sessions do not collapse into one shared conversation. When `INCEPTION_EDGE_URL` is set, Vercel forwards only this provider to the Cloudflare worker. |
@@ -72,6 +72,65 @@ On Vercel set `OPENAI_TURNSTILE_FILE=/tmp/openai_turnstile.json` and `OPENAI_TUR
 **Retry resilience.** `py/openai_web_proxy.py` retries an empty stream or a `403` prepare up to `OPENAI_WEB_MAX_RETRIES` times (default 3), refreshing the turnstile token and backing off `OPENAI_WEB_RETRY_DELAY` seconds (default 3) between attempts. This raises real-answer rate from ~75% (no token) toward ~100% once a valid turnstile token is supplied, and self-heals if the token expires mid-session.
 
 Check status at `GET /api/?route=openai-turnstile` (returns `openai_turnstile_file` freshness); push/update it at `POST /api/?route=openai-turnstile`. Note: like Z.ai, the turnstile token is IP/session-bound, so the grabber and the proxy must share the same egress IP (run locally; Vercel deploy still works but supply the token via the file/POST rather than the local grabber).
+
+## Grok Cloudflare cf_clearance
+
+`grok.com` sits behind Cloudflare. The `GROK_COOKIE` exported by the usual credential scripts (`sso`, `__cf_bm`, `sso-rw`, etc.) is **not enough**: a chat request with only that cookie is rejected with `403 {"code":7,"message":"Request rejected by anti-bot rules."}`. A valid Cloudflare `cf_clearance` cookie must be present in the request. The `cf_clearance` is short-lived and regenerated by the browser whenever Cloudflare re-challenges (after expiry or IP change), so it must be supplied externally — there is no pure-API endpoint that returns it.
+
+**Token source (priority order), in `py/grok_proxy.py`:**
+
+1. `grok_cf_clearance.json` — a JSON file written by your own browser extension (or a future grabber):
+   ```json
+   { "cf_clearance": "<cloudflare cf_clearance cookie value>", "captured_at": 1786392894667 }
+   ```
+   This is the **primary** source. The file path is configurable via `GROK_CF_CLEARANCE_FILE` (default `<project root>/grok_cf_clearance.json`); on read-only hosts (Vercel) point it at a writable path such as `/tmp/grok_cf_clearance.json`. The proxy merges the `cf_clearance` into the `GROK_COOKIE` request header (only if it is not already present), so you do **not** need to include it in `credentials.json`.
+2. `GROK_CF_CLEARANCE` env (static fallback, for manual paste from DevTools → Application → Cookies → `grok.com` → `cf_clearance`). Only used when the file is missing/empty.
+
+**Extension integration contract.** Your browser extension only needs to write `grok_cf_clearance.json` (or the path in `GROK_CF_CLEARANCE_FILE`) with the captured `cf_clearance` and a fresh `captured_at` (epoch ms). The server reads it automatically on every request and merges it into the cookie header; no code change is needed on the extension side beyond producing that file. Write it whenever Cloudflare re-issues a `cf_clearance` (e.g. on page load / after a challenge), and the proxy will pick it up on the next retry.
+
+**Bundled grabber (browser-solve on demand).** `scripts/fetch-grok-cf-clearance.mjs` launches **headed** Edge (so you can solve the Cloudflare challenge interactively), authenticates with `GROK_COOKIE` from `credentials.json`, opens `grok.com`, and polls for the `cf_clearance` cookie — the moment it is captured the browser closes and `grok_cf_clearance.json` is written. Run it manually with `node scripts/fetch-grok-cf-clearance.mjs` (or `--headless` to suppress the window, `--timeout <ms>` to override the 180 s default). Environment knobs: `GROK_CF_CLEARANCE_MODE` (`auto` spawns the grabber on a `403` anti-bot, `file`/`off` only uses the file and never spawns), `GROK_CF_CLEARANCE_TIMEOUT_SECONDS` (default 180), `GROK_CF_CLEARANCE_HEADLESS` (`1` to run without a window), `GROK_CF_CLEARANCE_PROXY` / `HTTPS_PROXY` (default `http://127.0.0.1:7897`), `GROK_CF_CLEARANCE_CHANNEL`, `GROK_NODE`. In `auto` mode the proxy itself spawns this grabber on a `403` (single in-flight run, see `py/grok_cf_clearance.py`), so a live request will pop a browser, wait for you to solve the challenge, and then continue with the fresh token. Like Z.ai, this is **local-only** — the grabber and the proxy must share the same egress IP (Cloudflare binds `cf_clearance` to the solving browser's IP), so it does not help on Vercel.
+
+**Retry resilience.** `py/grok_proxy.py` retries on a `403` anti-bot response up to `GROK_MAX_RETRIES` times (default 2), re-reading `grok_cf_clearance.json` and backing off `GROK_RETRY_DELAY` seconds (default 3) between attempts. In `auto` mode it also spawns the grabber before retrying, so if you solve a fresh challenge the in-flight request self-heals on the next attempt instead of failing the whole call.
+
+**Set the token via API (no env paste, works on Vercel).** `POST /api/?route=grok-cf-clearance` with body `{"cf_clearance": "..."}` writes the file at `GROK_CF_CLEARANCE_FILE`. This lets your extension (or a script) push the token to a deployed server without touching environment variables:
+```bash
+curl -X POST "https://<your-deploy>/api/?route=grok-cf-clearance" \
+  -H "Authorization: Bearer $PROXY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"cf_clearance":"<cf_clearance cookie value>"}'
+```
+On Vercel set `GROK_CF_CLEARANCE_FILE=/tmp/grok_cf_clearance.json` and POST the `cf_clearance` from the extension whenever it changes. Alternatively set `GROK_CF_CLEARANCE` directly as a Vercel env var for a static (but eventually-expiring) value.
+
+Check status at `GET /api/?route=grok-cf-clearance` (returns `grok_cf_clearance_file` freshness); push/update it at `POST /api/?route=grok-cf-clearance`. Note: `cf_clearance` is IP/session-bound to the Cloudflare challenge that issued it — if the server runs on a different egress IP than the browser that solved the challenge (e.g. Vercel), Cloudflare may still reject it; supply the `cf_clearance` from a browser session that shares the server's egress IP, or run the proxy on a host whose IP matches the solving browser.
+
+## Grok browser bridge
+
+Generation cannot run server-side: Cloudflare rejects both the REST chat endpoints (`POST /rest/app-chat/conversations/new`, `/responses` → `403` anti-bot) and any non-browser WebSocket upgrade to `wss://grok.com/ws/mgw`. The working path is the **xAI Realtime WebSocket** that the SPA uses (`session.create` → `conversation.item.create` → `response.create` → streamed `response.chunk` frames), opened from a real browser. `scripts/grok-ws-bridge.mjs` drives a logged-in **Edge** instance, opens that WebSocket inside the page (so Cloudflare's TLS/bot checks pass and cookies are sent automatically), and exposes a tiny local HTTP relay:
+
+- `GET  http://127.0.0.1:8771/health` → `{"ok":true,"logged_in":true,"clearance":true}`
+- `POST http://127.0.0.1:8771/chat` (JSON `{"prompt","model"}`) → SSE stream of `data: {"choices":[{"delta":{"content":"…"}}]}` ending with `data: [DONE]`
+
+`py/grok_proxy.py` consumes that relay and emits OpenAI-compatible SSE (streaming and non-streaming). The relay keeps one browser/WS session alive, re-logs-in and re-runs `scripts/fetch-grok-cf-clearance.mjs` when the `cf_clearance` is missing/expired, and serializes concurrent requests.
+
+Run it (needs Edge installed and `HTTPS_PROXY` reachable if your network requires it):
+
+```bash
+# from the project root
+node scripts/grok-ws-bridge.mjs
+# or with knobs:
+GROK_BRIDGE_PORT=8771 GROK_BRIDGE_HEADLESS=true node scripts/grok-ws-bridge.mjs
+```
+
+Then point the proxy at it (auto-enabled by default at `http://127.0.0.1:8771`):
+
+```bash
+GROK_BRIDGE_URL=http://127.0.0.1:8771   # already the default
+GROK_BRIDGE_MODE=auto                    # auto | on | off
+```
+
+Env knobs: `GROK_BRIDGE_URL` (relay base URL), `GROK_BRIDGE_PORT` (when launching the bundled relay), `GROK_BRIDGE_HEADLESS` (`true` runs Edge without a window — fine once `cf_clearance` is already valid), `GROK_CF_CLEARANCE_PROXY` / `HTTPS_PROXY` (egress for the bridge browser, default `http://127.0.0.1:7897`).
+
+> This is **local-only** by design: the bridge browser must share the egress IP that solved the Cloudflare challenge, so it does not help on Vercel. On a deployed server, Grok requests return a clear "Grok bridge unreachable" error.
 
 ## Qwen bx Anti-Bot (Transient)
 
