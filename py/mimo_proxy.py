@@ -2,6 +2,7 @@ import json
 import os
 import re
 import socket
+import ssl
 import sys
 import time
 import uuid
@@ -131,6 +132,87 @@ def _mimo_proxy_url() -> str:
     return os.environ.get("HTTPS_PROXY", "").strip() or os.environ.get("HTTP_PROXY", "").strip()
 
 
+_MIMO_HOST = "aistudio.xiaomimimo.com"
+_MIMO_DNS_CACHE = {"ips": [], "ts": 0}
+_MIMO_DNS_TTL = 300
+
+
+def _mimo_dns_resolve(hostname: str = _MIMO_HOST) -> list:
+    """Resolve a China-only host to its China edge IPs via a China DNS
+    (Smart-DNS equivalent). A China DNS returns the China A record regardless of
+    where the query originates, so pinning that IP lands the request on the
+    China edge and the region guard passes. `MIMO_RESOLVE_IPS` overrides;
+    `MIMO_DNS` selects the DoH resolver (default AliDNS)."""
+    override = _configured_resolve_ips()
+    if override:
+        return override
+
+    now = time.time()
+    if _MIMO_DNS_CACHE["ips"] and now - _MIMO_DNS_CACHE["ts"] < _MIMO_DNS_TTL:
+        return _MIMO_DNS_CACHE["ips"]
+
+    dns_url = os.environ.get("MIMO_DNS", "").strip() or "https://223.5.5.5/dns-query"
+    ips: list = []
+    last_err = None
+    for method, body in (("POST", {"name": hostname, "type": "A"}), ("GET", None)):
+        try:
+            if method == "POST":
+                req = urllib.request.Request(
+                    dns_url,
+                    data=json.dumps(body).encode(),
+                    headers={"accept": "application/dns-json", "content-type": "application/dns-json"},
+                )
+            else:
+                req = urllib.request.Request(
+                    f"{dns_url}?name={hostname}&type=A",
+                    headers={"accept": "application/dns-json"},
+                )
+            data = None
+            for ctx in (ssl.create_default_context(), None):
+                try:
+                    if ctx is None:
+                        c = ssl.create_default_context()
+                        c.check_hostname = False
+                        c.verify_mode = ssl.CERT_NONE
+                        ctx = c
+                    with urlopen(req, timeout=10, context=ctx) as resp:
+                        data = json.load(resp)
+                    break
+                except ssl.SSLError:
+                    continue
+                except Exception as e:
+                    last_err = e
+                    break
+            if not data:
+                continue
+            for a in data.get("Answer", []) or []:
+                if a.get("type") == 1 and a.get("data"):
+                    ip = str(a["data"]).strip()
+                    if not ip.startswith("127.") and ip != "0.0.0.0":
+                        ips.append(ip)
+            if ips:
+                break
+        except Exception as e:
+            last_err = e
+            continue
+
+    if ips:
+        _MIMO_DNS_CACHE.update(ips=ips, ts=now)
+        debug_log("mimo_dns_resolve", dns=dns_url, ips=ips)
+    elif last_err:
+        debug_log("mimo_dns_resolve_failed", dns=dns_url, error=str(last_err)[:200])
+    return ips
+
+
+def _mimo_curl_resolve():
+    if curl_requests is None or CurlOpt is None:
+        return None
+    ips = _mimo_dns_resolve()
+    if not ips:
+        return None
+    return {CurlOpt.RESOLVE: [f"{_MIMO_HOST}:443:{ip}" for ip in ips]}
+
+
 def _text_from_content(content) -> str:
     if isinstance(content, str):
         return content
@@ -255,7 +337,7 @@ def chat_completion(credentials: dict, payload: dict):
         }
         if proxies:
             request_kwargs["proxies"] = proxies
-        curl_options = _curl_options_for_host("aistudio.xiaomimimo.com")
+        curl_options = _mimo_curl_resolve()
         if curl_options:
             request_kwargs["curl_options"] = curl_options
         response = curl_requests.post(url, **request_kwargs)
