@@ -120,6 +120,17 @@ def _curl_options_for_host(hostname: str):
     return {CurlOpt.RESOLVE: [f"{hostname}:443:{ip}" for ip in ips]}
 
 
+def _mimo_proxy_url() -> str:
+    """Egress proxy for Mimo. Mimo (aistudio.xiaomimimo.com) is a China-only
+    service and returns `?????` / `服务器繁忙` (server busy) from non-China IPs,
+    so route it through a China egress proxy. `MIMO_PROXY` overrides the global
+    `HTTPS_PROXY`/`HTTP_PROXY` (which other providers may also use)."""
+    raw = os.environ.get("MIMO_PROXY", "").strip()
+    if raw:
+        return raw
+    return os.environ.get("HTTPS_PROXY", "").strip() or os.environ.get("HTTP_PROXY", "").strip()
+
+
 def _text_from_content(content) -> str:
     if isinstance(content, str):
         return content
@@ -230,6 +241,8 @@ def chat_completion(credentials: dict, payload: dict):
     url = f"{MIMO_BASE}/open-apis/bot/chat?xiaomichatbot_ph={quote(credentials['ph_token'], safe='')}"
     headers = _request_headers(credentials)
     verify = _tls_verify()
+    proxy_url = _mimo_proxy_url()
+    proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else None
 
     if curl_requests is not None:
         request_kwargs = {
@@ -240,6 +253,8 @@ def chat_completion(credentials: dict, payload: dict):
             "timeout": 120,
             "verify": verify,
         }
+        if proxies:
+            request_kwargs["proxies"] = proxies
         curl_options = _curl_options_for_host("aistudio.xiaomimimo.com")
         if curl_options:
             request_kwargs["curl_options"] = curl_options
@@ -253,8 +268,12 @@ def chat_completion(credentials: dict, payload: dict):
             timeout=120,
             stream=True,
             verify=verify,
+            proxies=proxies,
         )
         transport = "requests"
+
+    if proxy_url:
+        debug_log("mimo_egress_proxy", proxy=proxy_url)
 
     _raise_for_status(response, "Mimo")
     debug_log(

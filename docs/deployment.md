@@ -101,7 +101,7 @@ Use the exact env names expected by the adapters:
 | Mistral | `MISTRAL_COOKIE`, optional `MISTRAL_CSRF_TOKEN` |
 | Perplexity | `PERPLEXITY_COOKIE`, `PERPLEXITY_SESSION_TOKEN` |
 | Phind | `PHIND_COOKIE`, `PHIND_NONCE` |
-| Mimo | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN`, `MIMO_COOKIE` |
+| Mimo | `MIMO_SERVICE_TOKEN`, `MIMO_USER_ID`, `MIMO_PH_TOKEN`, `MIMO_COOKIE`, `MIMO_PROXY` (China egress; `?????`/server-busy from non-China IPs), `MIMO_RESOLVE_IPS`, `MIMO_SKIP_TLS_VERIFY`, `MIMO_IMPERSONATE` |
 | Kimi | `KIMI_TOKEN` |
 | Inflection / Pi API | `INFLECTION_API_KEY`, `PI_INFLECTION_API_KEY`, optional `INFLECTION_API_BASE` |
 | Inception Cloudflare edge | `INCEPTION_EDGE_URL` |

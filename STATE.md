@@ -24,11 +24,19 @@
 
 ### Blocked / deferred
 - Grok on Vercel: impossible (Cloudflare IP-binding). Documented.
-- P4 Mimo not started.
+
+### Blocked / deferred
+- P4 Mimo: mechanism implemented, cannot verify from this machine.
+
+## Mimo (P4) — mechanism done, needs China egress to verify
+- Symptom on Vercel: response comes back as `?????` / `服务器繁忙` (server busy) — a **region guard**, not a decode bug. `aistudio.xiaomimimo.com` is China-only and rejects non-China egress IPs. `MIMO_RESOLVE_IPS` only overrides DNS and does NOT change the egress IP, so it cannot beat the geo-block.
+- Fix: `py/mimo_proxy.py` now routes Mimo through a China egress proxy via `MIMO_PROXY` (falls back to global `HTTPS_PROXY`/`HTTP_PROXY`), wired into both curl_cffi and requests transports. `_mimo_proxy_url()` resolves the URL; `chat_completion` passes `proxies=` and logs `mimo_egress_proxy`. Decode already tries utf-8 → gbk/gb18030 → big5.
+- Cannot test locally: direct egress from RU is geo-blocked (connect fails), and curl_cffi over Clash hits a TLS error (curl:35, Clash MITM quirk) — both are environment limits, not code bugs. Need a China egress proxy URL (set `MIMO_PROXY` on Vercel) to confirm real Chinese text returns.
+- Updated `docs/providers.md` (Mimo row) + `docs/deployment.md` (Mimo env) to document `MIMO_PROXY` and the China-only nature.
 
 ## Next Move
 1. (Optional) Add `npm`/`package.json` script or a launcher for the Grok bridge; consider auto-starting it with the proxy.
-2. Move to P4 Mimo when user wants.
+2. P4 Mimo: set `MIMO_PROXY` (China egress) on Vercel + locally, then verify `complete_non_stream`/`stream_chunks` return real Chinese text (not `?????`).
 
 ## Arcee (P2) — DONE
 - Root cause: `ARCEE_ACCESS_TOKEN` JWT expired (~2.4 d). The token is NOT in cookies/localStorage — it lives in the SPA memory and is minted by `POST /app/v1/oauth/google` on login (auth is Google OAuth). The old `ARCEE_COOKIE` (AWSALB/__cf_bm/ph_/g_state) is only LB/cloudflare stickiness, not auth.
