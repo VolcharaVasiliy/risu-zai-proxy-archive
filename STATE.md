@@ -3,9 +3,9 @@
 
 ## Important Details
 - User rule: always ask on choice; picks most reliable.
-- Repo `C:\Users\gamer\Documents\Default Project\risu-zai-proxy-repo`; GitHub `VolcharaVasiliy/risu-zai-proxy-archive`; OpenAI Web work pushed `faab25f` earlier (that task complete).
+- Repo `<repo-root>`; GitHub `VolcharaVasiliy/risu-zai-proxy-archive`; OpenAI Web work pushed `faab25f` earlier (that task complete).
 - Vercel team `xlebs-projects`, project `risu-zai-proxy-archive`, alias `https://risu-zai-proxy-archive-eight.vercel.app`; open auth; `DEBUG_LOGGING=1`. Grok is **local-only** (Cloudflare `cf_clearance` IP-bound) → does NOT work on Vercel (proxy returns clear "bridge unreachable" error).
-- Edge at `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`. `playwright-core` + `curl_cffi`(0.13) + `websockets`(17) in `pydeps`.
+- Edge at `<edge-exe>`. `playwright-core` + `curl_cffi`(0.13) + `websockets`(17) in `pydeps`.
 - Proxy `http://127.0.0.1:7897` (Clash). `curl_cffi` REST reaches grok.com fine (cookies valid); Python `websockets` WS upgrade is blocked by Cloudflare (403).
 - `credentials.json` `GROK_COOKIE` (no cf_clearance). `grok_cf_clearance.json` holds `{cf_clearance, cookie, captured_at}` — full grok.com cookie set captured by grabber.
 - xAI Realtime WS protocol (verified): `wss://grok.com/ws/mgw/?uid=<x-userid>` → `session.create` (model) → `conversation.attached` → `conversation.item.create` (input_chunks) → `response.create` (NO `castle_request_token` needed for in-page WS) → streamed `response.chunk` with `chunk.text.text`. `uid` = `x-userid` cookie.
@@ -54,4 +54,4 @@
 - `docs/providers.md` — Grok row + "Grok browser bridge" section.
 - `grok_cf_clearance.json`, `grok-ws-frames.json` — captured data.
 - `api/index.py` / `py/provider_registry.py` — call `grok_proxy.complete_non_stream`/`stream_chunks` (unchanged signatures).
-- `F:\downloads\сессия-2026-08-11-вечер.md` — P1–P5 tasks.
+- `<session-notes>` — P1–P5 tasks.

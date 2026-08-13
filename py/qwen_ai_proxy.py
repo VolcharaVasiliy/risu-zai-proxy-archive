@@ -317,12 +317,38 @@ def chat_completion(credentials: dict, payload: dict):
     return response, chat_id, request_model
 
 
+def _raise_if_qwen_error(raw):
+    if "RGV587" in raw:
+        raise RuntimeError(
+            "Qwen returned RGV587_ERROR: the bx-* / cookie tokens are stale or "
+            "IP-bound to a different network than this proxy. The bx-* headers are "
+            "captured by your browser and tied to its IP/session, so Qwen rejects "
+            "them when the proxy runs elsewhere (e.g. Vercel's fixed server IP). "
+            "Re-capture cookies and bx-* headers from chat.qwen.ai while connected "
+            "through the SAME egress the proxy uses — local machine for local runs, "
+            "or the Vercel region's IP for deploys."
+        )
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return
+    if isinstance(obj, dict):
+        err = obj.get("error") or obj.get("msg") or obj.get("message")
+        if err:
+            raise RuntimeError(f"Qwen error: {err}")
+
+
 def _iter_sse_data(response):
     for raw in response.iter_lines(decode_unicode=True):
-        if not raw or not raw.startswith("data:"):
+        if not raw:
+            continue
+        if "RGV587" in raw:
+            _raise_if_qwen_error(raw)
+        if not raw.startswith("data:"):
             continue
         data = raw[5:].strip()
         if data:
+            _raise_if_qwen_error(data)
             yield data
 
 

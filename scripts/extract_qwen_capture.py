@@ -1,20 +1,34 @@
 #!/usr/bin/env python3
-"""Extract Qwen bx-* + cookies from DevTools exports (сеть.txt/куки.txt) into credentials.json."""
+"""Extract Qwen bx-* + cookies from DevTools exports (сеть.txt/куки.txt) into credentials.json.
 
+The export file paths are configurable: pass them as positional arguments, or set the
+QWEN_NET_FILE / QWEN_COOKIES_FILE environment variables. Without either, the script
+looks for the files on the current user's Desktop (cross-user safe).
+"""
+
+import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
-NET = Path(r"C:\Users\gamer\Desktop\сеть.txt")
-COOKIES = Path(r"C:\Users\gamer\Desktop\куки.txt")
 CREDS = Path(__file__).resolve().parents[1] / "credentials.json"
 
 
-def load_net() -> str:
-    if not NET.exists():
+def _resolve_export(arg_value: str, env_key: str, default_name: str) -> Path:
+    if arg_value:
+        return Path(arg_value)
+    env_value = os.environ.get(env_key, "").strip()
+    if env_value:
+        return Path(env_value)
+    return Path.home() / "Desktop" / default_name
+
+
+def load_net(path: Path) -> str:
+    if not path.exists():
         return ""
-    return NET.read_text(encoding="utf-8", errors="replace")
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def extract_bx_ua(text: str) -> dict:
@@ -51,10 +65,10 @@ def extract_bx_ua(text: str) -> dict:
     return out
 
 
-def extract_cookies() -> dict:
-    if not COOKIES.exists():
+def extract_cookies(path: Path) -> dict:
+    if not path.exists():
         return {}
-    data = json.loads(COOKIES.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     out = {"header": "", "token": ""}
     pairs = []
     for c in data:
@@ -70,7 +84,17 @@ def extract_cookies() -> dict:
 
 
 def main() -> int:
-    text = load_net()
+    parser = argparse.ArgumentParser(
+        description="Extract Qwen bx-* + cookies from DevTools exports into credentials.json"
+    )
+    parser.add_argument("net_file", nargs="?", help="DevTools network export (e.g. сеть.txt)")
+    parser.add_argument("cookies_file", nargs="?", help="DevTools cookies export (e.g. куки.txt)")
+    args = parser.parse_args()
+
+    net_path = _resolve_export(args.net_file, "QWEN_NET_FILE", "сеть.txt")
+    cookies_path = _resolve_export(args.cookies_file, "QWEN_COOKIES_FILE", "куки.txt")
+
+    text = load_net(net_path)
     creds = json.loads(CREDS.read_text(encoding="utf-8"))
     updated = []
 
@@ -99,7 +123,7 @@ def main() -> int:
         if "bx_v" in rec and "timezone" in rec:
             break
 
-    cookies = extract_cookies()
+    cookies = extract_cookies(cookies_path)
     if cookies.get("header"):
         creds["QWEN_AI_COOKIE"] = cookies["header"]
         updated.append("QWEN_AI_COOKIE")

@@ -150,7 +150,7 @@ The full provider matrix lives in [docs/providers.md](docs/providers.md). Common
 | --- | --- |
 | Qwen web coding/agent tests | `Qwen3.7-Max` |
 | Stable Mistral smoke test | `mistral-small-2603` |
-| Mistral coding | `devstral-2512` or `codestral-2508` |
+| Mistral coding | `codestral-2508` |
 | Gemini Web | `gemini-3-pro` or `gemini-3-flash-thinking` |
 | GLM Web | `chatglm-web` or `chatglm-web-thinking` |
 | Native-tool Gemini API | `google-ai-studio` |

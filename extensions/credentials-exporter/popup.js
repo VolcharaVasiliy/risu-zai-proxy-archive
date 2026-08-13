@@ -1,37 +1,85 @@
 /* popup.js — RisuAI Proxy Credentials Exporter
-   Собирает куки и localStorage-токены провайдеров и собирает credentials.json. */
+   Collects provider cookies and localStorage tokens and assembles credentials.json. */
 
 const $ = (id) => document.getElementById(id);
 
-/* Порядок ключей — как в credentials.json репозитория.
-   OPENAI_WEB_COOKIE добавлен в конец (читается proxy для openai-web). */
+/* ---------- i18n (bundled + runtime-switchable) ----------
+   Strings live in i18n-bundle.js (generated from _locales). This lets the
+   popup switch language live, independent of the browser UI locale. */
+const SUPPORTED_LANGS = ["en", "ru", "zh"];
+let LANG = "en";
+
+function detectLang() {
+  try {
+    const ui = (chrome.i18n && chrome.i18n.getUILanguage && chrome.i18n.getUILanguage()) || "en";
+    const base = String(ui).split("-")[0];
+    if (SUPPORTED_LANGS.includes(base)) return base;
+  } catch (e) {}
+  return "en";
+}
+function t(key, fallback) {
+  const all = window.I18N || {};
+  const dict = all[LANG] || all.en || {};
+  const en = all.en || {};
+  const v = dict[key] != null ? dict[key] : en[key] != null ? en[key] : fallback != null ? fallback : key;
+  return v;
+}
+function tf(key, vars, fallback) {
+  let s = t(key, fallback);
+  if (vars) s = s.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : "{" + k + "}"));
+  return s;
+}
+
+/* Key order matches credentials.json in the repo.
+   Grouped by provider; empty keys are not written to the file (see cleanCreds). */
 const REPO_KEYS = [
+  // Z.ai (GLM, local-only) — localStorage/cookie 'token'
   "ZAI_TOKEN",
+  // DeepSeek — localStorage 'userToken'
   "DEEPSEEK_TOKEN",
+  // Arcee — cookies from api.arcee.ai
   "ARCEE_ACCESS_TOKEN",
   "ARCEE_REFRESH_TOKEN",
+  // Gemini Web — cookies from gemini.google.com
   "GEMINI_WEB_COOKIE",
   "GEMINI_WEB_SECURE_1PSID",
   "GEMINI_WEB_SECURE_1PSIDTS",
+  // Google AI Studio (official API key, manual)
   "GOOGLE_AI_STUDIO_API_KEY",
+  // Google AI Studio Web (private RPC) — cookies + captured GenerateContent template
+  "GOOGLE_AI_STUDIO_WEB_COOKIE",
+  "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE",
+  // Grok (local-only) — cookies from grok.com
   "GROK_COOKIE",
+  // Kimi — cookie/localStorage 'access_token'
   "KIMI_TOKEN",
   "KIMI_REFRESH_TOKEN",
+  // Inception — cookie 'session'
   "INCEPTION_SESSION_TOKEN",
   "INCEPTION_COOKIE",
+  // LongCat — cookies from longcat.chat
   "LONGCAT_COOKIE",
+  // Mistral — cookies from console.mistral.ai
   "MISTRAL_COOKIE",
   "MISTRAL_CSRF_TOKEN",
+  // MiMo — cookies from xiaomimimo.com
   "MIMO_SERVICE_TOKEN",
   "MIMO_USER_ID",
   "MIMO_PH_TOKEN",
   "MIMO_COOKIE",
+  // OpenAI Web — cookies + accessToken from /api/auth/session + sentinel turnstile
   "OPENAI_WEB_ACCESS_TOKEN",
+  "OPENAI_WEB_COOKIE",
+  "OPENAI_WEB_SENTINEL_TURNSTILE",
+  // Perplexity — cookies + session-token
   "PERPLEXITY_COOKIE",
+  "PERPLEXITY_SESSION_TOKEN",
+  // Phind — cookies + nonce
   "PHIND_COOKIE",
   "PHIND_NONCE",
+  // Inflection (official API key, manual)
   "INFLECTION_API_KEY",
-  "PI_LOCAL_TOKEN",
+  // Qwen — cookies from chat.qwen.ai + bx-* headers (session/IP-bound)
   "QWEN_AI_COOKIE",
   "QWEN_AI_TOKEN",
   "QWEN_AI_BX_UA",
@@ -40,11 +88,8 @@ const REPO_KEYS = [
   "QWEN_AI_BX_UMIDTOKEN",
   "QWEN_AI_BX_V",
   "QWEN_AI_TIMEZONE",
-  "UNCLOSEAI_TOKEN",
-  "UNCLOSEAI_COOKIE",
-  "PERPLEXITY_SESSION_TOKEN",
+  // ChatGLM — refresh_token
   "GLM_REFRESH_TOKEN",
-  "OPENAI_WEB_COOKIE",
 ];
 
 const LS_READER = (wanted) => {
@@ -66,7 +111,7 @@ const LS_READER = (wanted) => {
             else value = JSON.stringify(parsed);
           }
         } catch (e) {
-          /* оставить сырое значение */
+          /* keep raw value */
         }
       }
       out[w.key] = value;
@@ -99,8 +144,8 @@ async function readLsOnActiveTab(pageMatch, wanted) {
   }
 }
 
-/* Ищет в localStorage активной вкладки ключи, похожие на токены, и
-   возвращает {имя: значение}. См. readLsProbe. */
+/* Scans the active tab's localStorage for keys that look like tokens and
+   returns {name: value}. See readLsProbe. */
 const LS_PROBE = () => {
   const out = {};
   try {
@@ -109,7 +154,7 @@ const LS_PROBE = () => {
       if (k && /token|user|auth/i.test(k)) out[k] = window.localStorage.getItem(k);
     }
   } catch (e) {
-    /* нет доступа */
+    /* no access */
   }
   return out;
 };
@@ -158,14 +203,14 @@ async function findCookie(url, name) {
   return (hit && hit.value) || "";
 }
 
-/* Снимает обёртку из кавычек с значений кук ("value" -> value) */
+/* Strips surrounding quotes from cookie values ("value" -> value) */
 function unquote(v) {
   let s = String(v == null ? "" : v).trim();
   if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') s = s.slice(1, -1);
   return s;
 }
 
-/* ---------- сетевой перехват (background.js) ---------- */
+/* ---------- network interception (background.js) ---------- */
 
 function readHeaderCapture(host) {
   return new Promise((resolve) => {
@@ -176,10 +221,10 @@ function readHeaderCapture(host) {
   });
 }
 
-/* ---------- CDP-фолбэк ----------
-   cookies API видит только непартиционированные куки текущего cookie store.
-   Через CDP (chrome.debugger) читаем куки активной вкладки напрямую —
-   видны httpOnly и партиционированные. */
+/* ---------- CDP fallback ----------
+   The cookies API only sees unpartitioned cookies of the current cookie store.
+   Via CDP (chrome.debugger) we read the active tab's cookies directly —
+   httpOnly and partitioned cookies become visible. */
 function cdpSend(tabId, method, params) {
   return new Promise((resolve) => {
     try {
@@ -215,7 +260,7 @@ async function readCookiesViaCdp(hostMatch) {
           try {
             chrome.debugger.detach({ tabId });
           } catch (e) {
-            /* уже отцеплен */
+            /* already detached */
           }
           if (!res || !Array.isArray(res.cookies)) return null;
           const out = res.cookies.map((c) => ({
@@ -237,7 +282,7 @@ async function readCookiesViaCdp(hostMatch) {
       try {
         chrome.debugger.detach({ tabId });
       } catch (e) {
-        /* не прикреплялись */
+        /* was not attached */
       }
     }
     return result;
@@ -246,7 +291,7 @@ async function readCookiesViaCdp(hostMatch) {
   }
 }
 
-/* ---------- провайдеры ---------- */
+/* ---------- providers ---------- */
 
 const PROVIDERS = [
   {
@@ -260,7 +305,7 @@ const PROVIDERS = [
       if (ls) token = String(ls.token || "").trim();
       if (!token) token = await findCookie("https://chat.z.ai/", "access_token");
       setCred("ZAI_TOKEN", token);
-      return { ok: !!token, detail: token ? "токен есть" : "нет токена" };
+      return { ok: !!token, detail: token ? t("detailTokenOk", "token present") : t("detailNoToken", "no token") };
     },
   },
   {
@@ -280,7 +325,7 @@ const PROVIDERS = [
       }
       if (!token) token = await findCookie("https://chat.deepseek.com/", "token");
       setCred("DEEPSEEK_TOKEN", token);
-      return { ok: !!token, detail: token ? "токен есть" : "нет токена" };
+      return { ok: !!token, detail: token ? t("detailTokenOk", "token present") : t("detailNoToken", "no token") };
     },
   },
   {
@@ -291,14 +336,14 @@ const PROVIDERS = [
     async run() {
       const token = await findCookie("https://api.arcee.ai/", "access_token");
       setCred("ARCEE_ACCESS_TOKEN", token);
-      /* refresh_token — httpOnly-кука (~30 дней); даёт прокси вечно
-         обновлять access_token через POST /app/v1/refresh (как браузер). */
+      /* refresh_token — httpOnly cookie (~30 days); lets the proxy refresh
+         access_token forever via POST /app/v1/refresh (like the browser). */
       const refresh = await findCookie("https://api.arcee.ai/", "refresh_token");
       setCred("ARCEE_REFRESH_TOKEN", refresh);
       const ok = !!token;
       const detail = token
-        ? `access_token есть${refresh ? ", refresh_token есть" : ", refresh_token НЕТ"}`
-        : "нет куки access_token";
+        ? t("detailAccessTokenOk", "access_token present") + (refresh ? t("detailRefreshOk", ", refresh_token present") : t("detailRefreshNo", ", refresh_token missing"))
+        : t("detailNoAccessTokenCookie", "no access_token cookie");
       return { ok, detail };
     },
   },
@@ -334,7 +379,7 @@ const PROVIDERS = [
       setCred("GEMINI_WEB_COOKIE", cookie);
       setCred("GEMINI_WEB_SECURE_1PSID", s1psid);
       setCred("GEMINI_WEB_SECURE_1PSIDTS", s1psidts);
-      const detail = s1psid ? "SID есть" : cookie ? "SID нет" : "нет кук";
+      const detail = s1psid ? t("detailSidOk", "SID present") : cookie ? t("detailSidNo", "SID missing") : t("detailNoCookies", "no cookies");
       return { ok: !!(cookie && s1psid), detail };
     },
   },
@@ -346,7 +391,25 @@ const PROVIDERS = [
     async run() {
       const key = $("studioKey").value.trim();
       setCred("GOOGLE_AI_STUDIO_API_KEY", key);
-      return { ok: !!key, detail: key ? "ключ задан" : "введите ключ ниже" };
+      return { ok: !!key, detail: key ? t("detailKeySet", "key provided") : t("detailEnterKey", "enter key below") };
+    },
+  },
+  {
+    id: "ai-studio-web",
+    name: "AI Studio Web",
+    url: "https://aistudio.google.com/",
+    keys: ["GOOGLE_AI_STUDIO_WEB_COOKIE", "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE"],
+    async run() {
+      const cookie = await cookieHeader("https://aistudio.google.com/");
+      setCred("GOOGLE_AI_STUDIO_WEB_COOKIE", cookie);
+      /* The GenerateContent template — a browser-captured RPC body from DevTools
+         ("Copy as fetch" -> request body). Pasted manually in the popup. */
+      const tpl = ($("studioWebTemplate") && $("studioWebTemplate").value.trim()) || "";
+      setCred("GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE", tpl);
+      const detail = cookie
+        ? t("detailCookiesOk", "cookies present") + (tpl ? t("detailTemplateOk", ", template present") : t("detailTemplateNo", ", template missing"))
+        : t("detailNoCookiesGoToAistudio", "no cookies — open aistudio.google.com");
+      return { ok: !!cookie, detail };
     },
   },
   {
@@ -357,7 +420,7 @@ const PROVIDERS = [
     async run() {
       const key = $("inflectionKey").value.trim();
       setCred("INFLECTION_API_KEY", key);
-      return { ok: !!key, detail: key ? "ключ задан" : "введите ключ ниже" };
+      return { ok: !!key, detail: key ? t("detailKeySet", "key provided") : t("detailEnterKey", "enter key below") };
     },
   },
   {
@@ -368,7 +431,7 @@ const PROVIDERS = [
     async run() {
       const cookie = await cookieHeader("https://grok.com/");
       setCred("GROK_COOKIE", cookie);
-      return { ok: cookie.includes("sso"), detail: cookie ? `${cookie.split("; ").length} кук` : "нет кук" };
+      return { ok: cookie.includes("sso"), detail: cookie ? t("detailCookiesCount", "$1 cookies").replace("$1", cookie.split("; ").length) : t("detailNoCookies", "no cookies") };
     },
   },
   {
@@ -395,7 +458,7 @@ const PROVIDERS = [
         }
       }
       if (!token || !refresh) {
-        /* ищем любые токеноподобные ключи, чтобы обнаружить refresh-механизм */
+        /* look for any token-like keys to discover the refresh mechanism */
         const probe = await readLsProbe("kimi.com");
         if (probe) {
           for (const k of Object.keys(probe)) {
@@ -410,7 +473,7 @@ const PROVIDERS = [
       const keys = found.length ? `; ls keys: ${found.join(", ")}` : "";
       return {
         ok: !!token,
-        detail: `access ${token ? "есть" : "НЕТ"}, refresh ${refresh ? "есть" : "НЕТ"}${keys}`,
+        detail: "access " + (token ? t("detailYes", "present") : t("detailNo", "missing")) + ", refresh " + (refresh ? t("detailYes", "present") : t("detailNo", "missing")) + keys,
       };
     },
   },
@@ -424,7 +487,7 @@ const PROVIDERS = [
       const session = await findCookie("https://chat.inceptionlabs.ai/", "session");
       setCred("INCEPTION_COOKIE", cookie);
       setCred("INCEPTION_SESSION_TOKEN", session);
-      return { ok: !!session, detail: session ? "сессия есть" : "нет сессии" };
+      return { ok: !!session, detail: session ? t("detailSessionOk", "session present") : t("detailNoSession", "no session") };
     },
   },
   {
@@ -435,7 +498,7 @@ const PROVIDERS = [
     async run() {
       const cookie = await cookieHeader("https://longcat.chat/");
       setCred("LONGCAT_COOKIE", cookie);
-      return { ok: !!cookie, detail: cookie ? `${cookie.split("; ").length} кук` : "нет кук" };
+      return { ok: !!cookie, detail: cookie ? t("detailCookiesCount", "$1 cookies").replace("$1", cookie.split("; ").length) : t("detailNoCookies", "no cookies") };
     },
   },
   {
@@ -449,7 +512,7 @@ const PROVIDERS = [
       let csrf = list.find((c) => c.name === "csrftoken" || c.name.startsWith("csrf_token_"));
       let cdpUsed = false;
       if (!/session/i.test(cookie)) {
-        /* сессионная кука может быть партиционированной — cookies API её не видит (как у mimo) */
+        /* the session cookie may be partitioned — the cookies API can't see it (like mimo) */
         const cdp = await readCookiesViaCdp("mistral");
         if (cdp && cdp.length) {
           const hostCookies = cdp.filter((c) => c.domain.includes("mistral.ai"));
@@ -471,11 +534,11 @@ const PROVIDERS = [
       setCred("MISTRAL_CSRF_TOKEN", csrf && csrf.value);
       let detail;
       if (csrf) {
-        detail = "csrf есть";
+        detail = t("detailCsrfOk", "csrf present");
         if (cdpUsed) detail += " (CDP)";
       } else {
-        detail = "нет csrf_token";
-        if (cdpUsed) detail = "нет csrf_token (CDP)";
+        detail = t("detailNoCsrf", "no csrf_token");
+        if (cdpUsed) detail = t("detailNoCsrf", "no csrf_token") + " (CDP)";
       }
       return { ok: !!csrf, detail };
     },
@@ -491,12 +554,12 @@ const PROVIDERS = [
       try {
         all = await chrome.cookies.getAll({});
       } catch (e) {
-        /* без доступа */
+        /* no access */
       }
       let list = all.filter(
         (c) => c.domain === "xiaomimimo.com" || c.domain.endsWith(".xiaomimimo.com")
       );
-      /* cookies API не видит (партиционирование/инкогнито) — пробуем CDP */
+      /* the cookies API can't see them (partitioning/incognito) — try CDP */
       let cdpUsed = false;
       if (!list.length) {
         const cdp = await readCookiesViaCdp("xiaomimimo");
@@ -525,11 +588,11 @@ const PROVIDERS = [
       if (!ph) missing.push("ph");
       let detail;
       if (st && uid && ph) {
-        detail = "все три токена есть";
+        detail = t("detailAllThreeTokens", "all three tokens present");
       } else if (!list.length && !cdpUsed) {
-        detail = "0 кук на xiaomimimo — откройте сайт во вкладке этого браузера или включите расширению доступ в инкогнито";
+        detail = t("detailMimoNoCookies", "0 cookies on xiaomimimo — open the site in this browser's tab or enable incognito access for the extension");
       } else {
-        detail = `нет: ${missing.join(", ")} (${list.length} кук на xiaomimimo${cdpUsed ? ", CDP" : ""})`;
+        detail = t("detailMimoMissingPrefix", "missing: ") + missing.join(", ") + " (" + list.length + " " + t("detailMimoCookiesWord", "cookies") + t("detailMimoOnXiaomimimo", " on xiaomimimo") + (cdpUsed ? ", CDP" : "") + ")";
       }
       return { ok: !!(st && uid && ph), detail };
     },
@@ -538,7 +601,7 @@ const PROVIDERS = [
     id: "chatgpt",
     name: "ChatGPT",
     url: "https://chatgpt.com/",
-    keys: ["OPENAI_WEB_COOKIE", "OPENAI_WEB_ACCESS_TOKEN"],
+    keys: ["OPENAI_WEB_COOKIE", "OPENAI_WEB_ACCESS_TOKEN", "OPENAI_WEB_SENTINEL_TURNSTILE"],
     async run() {
       const cookie = await cookieHeader("https://chatgpt.com/");
       let accessToken = "";
@@ -552,11 +615,23 @@ const PROVIDERS = [
           }
         }
       } catch (e) {
-        /* без доступа */
+        /* no access */
+      }
+      /* the sentinel turnstile token is captured by background.js from the
+         request headers of chatgpt.com (openai-sentinel-turnstile-token). */
+      const cap = await readHeaderCapture("chatgpt.com");
+      let turnstile = "";
+      if (cap && cap.headers) {
+        const rec = (name) => cap.headers[name];
+        const val = (name) => (rec(name) && rec(name).value) || "";
+        turnstile = val("openai-sentinel-turnstile-token");
       }
       setCred("OPENAI_WEB_ACCESS_TOKEN", accessToken);
       setCred("OPENAI_WEB_COOKIE", cookie);
-      return { ok: !!(accessToken || cookie), detail: accessToken ? "accessToken есть" : cookie ? `${cookie.split("; ").length} кук` : "нет кук" };
+      setCred("OPENAI_WEB_SENTINEL_TURNSTILE", turnstile);
+      let detail = accessToken ? t("detailChatgptAccessTokenOk", "accessToken present") : cookie ? t("detailCookiesCount", "$1 cookies").replace("$1", cookie.split("; ").length) : t("detailNoCookies", "no cookies");
+      if (turnstile) detail += " + turnstile";
+      return { ok: !!(accessToken || cookie), detail };
     },
   },
   {
@@ -569,7 +644,7 @@ const PROVIDERS = [
       const session = await findCookie("https://www.perplexity.ai/", "__Secure-next-auth.session-token");
       setCred("PERPLEXITY_COOKIE", cookie);
       setCred("PERPLEXITY_SESSION_TOKEN", session);
-      return { ok: !!session, detail: session ? "session-token есть" : cookie ? "нет session-token" : "нет кук" };
+      return { ok: !!session, detail: session ? t("detailSessionTokenOk", "session-token present") : cookie ? t("detailNoSessionToken", "no session-token") : t("detailNoCookies", "no cookies") };
     },
   },
   {
@@ -578,8 +653,8 @@ const PROVIDERS = [
     url: "https://phindai.org/phind-chat/",
     keys: ["PHIND_COOKIE", "PHIND_NONCE"],
     async run() {
-      /* Прокси ходит на phindai.org (WordPress AJAX) — куки нужны именно оттуда,
-         nonce вытаскиваем из HTML страницы /phind-chat/ */
+      /* The proxy talks to phindai.org (WordPress AJAX) — cookies are needed from
+         there specifically; the nonce is extracted from the /phind-chat/ HTML page */
       let cookie = await cookieHeader("https://phindai.org/");
       if (!cookie) cookie = await cookieHeader("https://www.phind.com/");
       let cdpUsed = false;
@@ -617,7 +692,7 @@ const PROVIDERS = [
           }
         }
       } catch (e) {
-        /* сеть недоступна из попапа */
+        /* network unavailable from popup */
       }
       if (!nonce) {
         const list = await cookieList("https://www.phind.com/");
@@ -628,12 +703,12 @@ const PROVIDERS = [
       setCred("PHIND_NONCE", nonce);
       let detail;
       if (cookie) {
-        detail = `${cookie.split("; ").length} кук` + (nonce ? " + nonce" : ", nonce не найден");
+        detail = t("detailCookiesCount", "$1 cookies").replace("$1", cookie.split("; ").length) + (nonce ? t("detailNonceOk", " + nonce") : t("detailNonceNotFound", ", nonce not found"));
         if (cdpUsed) detail += " (CDP)";
       } else {
         detail = cdpUsed
-          ? "0 кук на phind даже через CDP — зайдите на phindai.org в этом браузере"
-          : "нет кук — откройте phindai.org во вкладке этого браузера";
+          ? t("detailPhindNoCookiesCdp", "0 cookies on phind even via CDP — open phindai.org in this browser")
+          : t("detailPhindOpenSite", "no cookies — open phindai.org in this browser's tab");
       }
       return { ok: !!cookie, detail };
     },
@@ -645,8 +720,8 @@ const PROVIDERS = [
     keys: ["QWEN_AI_COOKIE", "QWEN_AI_TOKEN"],
     async run() {
       const url = "https://chat.qwen.ai/";
-      /* CDP видит httpOnly и партиционированные куки (ssxmod_*, acw_tc и др.),
-         chrome.cookies API их пропускает — вкладка должна быть на chat.qwen.ai */
+      /* CDP sees httpOnly and partitioned cookies (ssxmod_*, acw_tc, etc.);
+         chrome.cookies API misses them — the tab must be on chat.qwen.ai */
       const cdp = await readCookiesViaCdp("qwen.ai");
       let cookie = await cookieHeader(url);
       if (!cookie) cookie = await cookieHeader("https://qwen.ai/");
@@ -674,7 +749,7 @@ const PROVIDERS = [
         if (ls) token = String(ls["Qwen-Max-User-Info"] || "").trim();
       }
       if (!token) {
-        /* имя ключа могло поменяться — ищем похожие ключи в localStorage */
+        /* the key name may have changed — look for similar keys in localStorage */
         const probe = await readLsProbe("chat.qwen.ai");
         if (probe) {
           for (const [k, v] of Object.entries(probe)) {
@@ -688,7 +763,7 @@ const PROVIDERS = [
                   cand = parsed.access_token;
               }
             } catch (e) {
-              /* сырое значение */
+              /* raw value */
             }
             if (cand.length > 40) {
               token = cand;
@@ -697,7 +772,12 @@ const PROVIDERS = [
           }
         }
       }
+      /* bx-* headers are captured passively by background.js. They are
+         session/IP-bound: Qwen rejects them (RGV587_ERROR) if the proxy runs on a
+         different network than the one that captured them (e.g. Vercel's fixed IP). */
       const cap = await readHeaderCapture("chat.qwen.ai");
+      let bxInfo = "";
+      let qwenBx = null;
       if (cap && cap.headers) {
         const rec = (name) => cap.headers[name];
         const val = (name) => (rec(name) && rec(name).value) || "";
@@ -709,19 +789,24 @@ const PROVIDERS = [
         setCred("QWEN_AI_BX_UMIDTOKEN", val("bx-umidtoken"));
         setCred("QWEN_AI_BX_V", val("bx-v"));
         setCred("QWEN_AI_TIMEZONE", val("timezone"));
+        const hasBx = !!(cap.headers["bx-ua"] || cap.headers["bx-umidtoken"]);
+        if (hasBx) {
+          const updatedAt = cap.updatedAt || Date.now();
+          const ageMin = Math.max(0, Math.round((Date.now() - updatedAt) / 60000));
+          bxInfo = "; " + tf("qwenBxFresh", { m: String(ageMin) });
+          qwenBx = { updatedAt, hasBx: true };
+        }
       }
+      lastQwenBx = qwenBx;
       setCred("QWEN_AI_COOKIE", cookie);
       setCred("QWEN_AI_TOKEN", token);
-      const bxInfo = cap && cap.headers && (cap.headers["bx-ua"] || cap.headers["bx-umidtoken"])
-        ? "; bx-* перехвачены"
-        : "";
       const nCookies = cookie ? cookie.split("; ").filter(Boolean).length : 0;
       const cdpNote = cdp && Array.isArray(cdp) ? " (CDP)" : "";
       return {
         ok: !!cookie,
         detail: cookie
-          ? `${nCookies} кук${cdpNote}, токен ${token ? "есть" : "нет"}${bxInfo}`
-          : "нет кук — зайдите на chat.qwen.ai" + bxInfo,
+          ? `${nCookies} ` + t("detailMimoCookiesWord", "cookies") + cdpNote + ", token " + (token ? t("detailYes", "present") : t("detailNo", "missing")) + bxInfo
+          : t("detailQwenNoCookies", "no cookies — open chat.qwen.ai") + bxInfo,
       };
     },
   },
@@ -737,7 +822,7 @@ const PROVIDERS = [
         if (ls) rt = String(ls.chatglm_refresh_token || "").trim();
       }
       setCred("GLM_REFRESH_TOKEN", rt);
-      return { ok: !!rt, detail: rt ? "refresh_token есть" : "нет refresh_token" };
+      return { ok: !!rt, detail: rt ? t("detailRefreshTokenOk", "refresh_token present") : t("detailNoRefreshToken", "no refresh_token") };
     },
   },
 ];
@@ -748,9 +833,11 @@ const STORE_KEY = "rzaiCreds";
 
 let creds = null;
 const chipStates = {};
+let lastQwenBx = null;
+let lastScanTime = null;
 
-/* Записывает значение только если оно непустое — пустые результаты
-   сканирования не затирают ранее собранные токены. */
+/* Writes the value only if it is non-empty — empty scan results do not
+   overwrite previously collected tokens. */
 function setCred(key, value) {
   const v = String(value == null ? "" : value).trim();
   if (v) creds[key] = v;
@@ -761,76 +848,126 @@ function saveState() {
 }
 
 function refreshClearBtn() {
-  const hasData = Object.keys(chipStates).some((id) => chipStates[id].state === "ok");
+  const hasData = Object.keys(chipStates).some((id) => chipStates[id] && chipStates[id].state === "ok");
   $("clearBtn").classList.toggle("hidden", !hasData);
 }
 
+/* Returns only the filled keys — empty "junk" never makes it into credentials.json. */
+function cleanCreds() {
+  const out = {};
+  for (const k of REPO_KEYS) {
+    const v = String(creds[k] == null ? "" : creds[k]).trim();
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
 function refreshPreview() {
-  const json = JSON.stringify(creds, null, 2);
-  $("jsonOut").value = json;
-  const hasData = Object.keys(creds).some((k) => String(creds[k] || "").trim());
+  const data = cleanCreds();
+  $("jsonOut").value = JSON.stringify(data, null, 2);
+  const hasData = Object.keys(data).length > 0;
   $("dlBtn").disabled = !hasData;
   if (hasData) {
-    $("jsonToggle").classList.add("open");
-    $("jsonBody").classList.remove("hidden");
+    $("jsonPanel").classList.add("open");
+    $("jsonToggle").setAttribute("aria-expanded", "true");
   }
 }
 
-function makeChips() {
-  const grid = $("grid");
-  grid.innerHTML = "";
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function makeProviders() {
+  const root = $("providers");
+  root.innerHTML = "";
   for (const p of PROVIDERS) {
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.id = `chip-${p.id}`;
-    chip.title = p.name;
-    chip.innerHTML = `<span class="dot"></span><span class="name">${p.name}</span><span class="count"></span>`;
-    if (p.url) {
-      chip.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
-    }
-    grid.appendChild(chip);
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "prov";
+    row.id = `prov-${p.id}`;
+    if (p.url) row.setAttribute("data-url", p.url);
+    row.title = p.url || "";
+    row.innerHTML =
+      '<span class="pdot"></span>' +
+      '<span class="pinfo"><span class="pname">' + escapeHtml(p.name) + '</span><span class="pdetail"></span></span>' +
+      '<span class="popen">↗</span>';
+    if (p.url) row.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
+    root.appendChild(row);
   }
 }
 
-function setChip(id, state, detail) {
-  const chip = $(`chip-${id}`);
-  if (!chip) return;
-  chip.classList.remove("scanning", "ok", "err");
-  if (state) chip.classList.add(state);
-  if (detail) {
-    chip.title = detail;
-    chip.querySelector(".count").textContent = detail;
-  }
+function setProvider(id, state, detail) {
+  const row = $(`prov-${id}`);
+  if (!row) return;
+  row.classList.remove("pending", "scanning", "ok", "err");
+  if (state) row.classList.add(state);
+  if (detail != null) row.querySelector(".pdetail").textContent = detail;
 }
 
 function showHint(text) {
   const hint = $("hint");
-  hint.textContent = text;
-  hint.classList.toggle("hidden", !text);
+  if (text) {
+    hint.textContent = text;
+    hint.classList.remove("hidden");
+  } else {
+    hint.classList.add("hidden");
+    hint.textContent = "";
+  }
+}
+
+function renderQwenWarn(info) {
+  const warn = $("warn");
+  if (!info || !info.hasBx) {
+    warn.classList.add("hidden");
+    warn.textContent = "";
+    return;
+  }
+  const ageMin = Math.max(0, Math.round((Date.now() - (info.updatedAt || Date.now())) / 60000));
+  if (ageMin <= 30) {
+    warn.classList.add("hidden");
+    warn.textContent = "";
+    return;
+  }
+  warn.textContent = tf("qwenBxStaleWarn", { m: String(ageMin) });
+  warn.classList.remove("hidden");
+}
+
+function fmtTime(d) {
+  try {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    return "";
+  }
+}
+
+function updateLastScan() {
+  const el = $("lastScan");
+  if (lastScanTime) el.textContent = tf("lastScan", { t: fmtTime(lastScanTime) });
+  else el.textContent = "";
 }
 
 async function scan() {
   const btn = $("scanBtn");
   const sweep = document.createElement("div");
   sweep.className = "sweep";
-  $("grid").parentElement.appendChild(sweep);
+  $("providers").parentElement.appendChild(sweep);
   btn.disabled = true;
   btn.classList.add("scanning");
-  btn.querySelector(".scan-btn-label").textContent = "Сканирование…";
+  btn.querySelector(".scan-btn-label").textContent = t("scanBtnScanning", "Scanning…");
   showHint("");
 
   try {
-    for (const p of PROVIDERS) setChip(p.id, "pending", "");
+    for (const p of PROVIDERS) setProvider(p.id, "pending", "");
 
     for (const p of PROVIDERS) {
-      setChip(p.id, "scanning", "…");
+      setProvider(p.id, "scanning", "…");
       let result;
       try {
         result = await p.run();
       } catch (e) {
         result = {
           ok: false,
-          detail: e && e.message ? "ошибка: " + e.message : "ошибка: " + String(e),
+          detail: e && e.message ? t("errorDetail", "error: ") + e.message : t("errorDetail", "error: ") + String(e),
         };
       }
       const kept = p.keys.some((k) => String(creds[k] || "").trim());
@@ -840,9 +977,9 @@ async function scan() {
         state = "ok";
       } else if (kept) {
         state = "ok";
-        detail = detail ? `${detail} — оставлен прежний` : "оставлен прежний";
+        detail = detail ? `${detail} — ${t("detailKeptPrev", "previous kept")}` : t("detailKeptPrev", "previous kept");
       }
-      setChip(p.id, state, detail);
+      setProvider(p.id, state, detail);
       chipStates[p.id] = { state, detail };
       saveState();
       await new Promise((r) => setTimeout(r, 120));
@@ -850,31 +987,35 @@ async function scan() {
 
     refreshPreview();
     refreshClearBtn();
+    lastScanTime = new Date();
+    updateLastScan();
+    renderQwenWarn(lastQwenBx);
 
     const activeHost = await activeTabHost();
     const lsProviders = ["chat.z.ai", "chat.deepseek.com", "chat.qwen.ai", "chatglm.cn", "kimi.com"];
     const missing = lsProviders.filter((h) => !(activeHost && activeHost.includes(h)));
+    const anyOk = Object.values(chipStates).some((s) => s && s.state === "ok");
     if (missing.length) {
-      showHint(
-        "Совет: для Z.ai, DeepSeek, Qwen, ChatGLM и Kimi откройте сайт во вкладке и нажмите «Сканировать» ещё раз — так подхватятся localStorage-токены."
-      );
+      showHint(t("hintLocalStorage", "Tip: for Z.ai, DeepSeek, Qwen, ChatGLM and Kimi, open the site in a tab and click \"Scan\" again — this picks up localStorage tokens."));
+    } else if (anyOk) {
+      showHint(t("hintAllOk", "Scanned providers with open tabs. Open a provider site and scan again to collect more."));
     }
   } catch (e) {
-    showHint("Ошибка расширения: " + (e && e.message ? e.message : String(e)));
+    showHint(t("extError", "Extension error: ") + (e && e.message ? e.message : String(e)));
   } finally {
     sweep.remove();
     btn.disabled = false;
     btn.classList.remove("scanning");
-    btn.querySelector(".scan-btn-label").textContent = "Сканировать";
+    btn.querySelector(".scan-btn-label").textContent = t("scanBtn", "Scan");
   }
 }
 
 window.addEventListener("error", (e) => {
-  showHint("Ошибка расширения: " + (e.message || "неизвестная"));
+  showHint(t("extError", "Extension error: ") + (e.message || "unknown"));
 });
 window.addEventListener("unhandledrejection", (e) => {
   const reason = e.reason;
-  showHint("Ошибка расширения: " + (reason && reason.message ? reason.message : String(reason)));
+  showHint(t("extError", "Extension error: ") + (reason && reason.message ? reason.message : String(reason)));
 });
 
 async function activeTabHost() {
@@ -886,17 +1027,17 @@ async function activeTabHost() {
   }
 }
 
+function togglePanel(panelId, toggleId) {
+  const panel = $(panelId);
+  const open = panel.classList.toggle("open");
+  const tog = $(toggleId);
+  if (tog) tog.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 $("scanBtn").addEventListener("click", scan);
 
-$("apiToggle").addEventListener("click", () => {
-  $("apiToggle").classList.toggle("open");
-  $("apiBody").classList.toggle("hidden");
-});
-
-$("jsonToggle").addEventListener("click", () => {
-  $("jsonToggle").classList.toggle("open");
-  $("jsonBody").classList.toggle("hidden");
-});
+$("apiToggle").addEventListener("click", () => togglePanel("apiPanel", "apiToggle"));
+$("jsonToggle").addEventListener("click", () => togglePanel("jsonPanel", "jsonToggle"));
 
 $("debugBtn").addEventListener("click", async () => {
   try {
@@ -935,7 +1076,7 @@ $("debugBtn").addEventListener("click", async () => {
         xiaomimimoViaCdp: mimoViaCdp.map((c) => c.name),
       };
     } else {
-      out.cdp = "недоступно — активируйте вкладку с сайтом или CDP не прикрепился";
+      out.cdp = t("debugCdpUnavailable", "unavailable — activate a tab with the site or CDP did not attach");
     }
     const headerCapture = await new Promise((resolve) => {
       chrome.storage.local.get({ rzaiHeaderCapture: {} }, (data) =>
@@ -943,11 +1084,11 @@ $("debugBtn").addEventListener("click", async () => {
       );
     });
     out.headerCapture = headerCapture;
-    $("jsonToggle").classList.add("open");
-    $("jsonBody").classList.remove("hidden");
+    $("jsonPanel").classList.add("open");
+    $("jsonToggle").setAttribute("aria-expanded", "true");
     $("jsonOut").value = JSON.stringify(out, null, 2);
   } catch (e) {
-    showHint("Ошибка расширения: " + (e && e.message ? e.message : String(e)));
+    showHint(t("extError", "Extension error: ") + (e && e.message ? e.message : String(e)));
   }
 });
 
@@ -958,10 +1099,10 @@ $("copyBtn").addEventListener("click", async () => {
     await navigator.clipboard.writeText(text);
     const btn = $("copyBtn");
     btn.classList.add("copy-flash");
-    btn.textContent = "Скопировано";
+    btn.textContent = t("copyCopied", "Copied");
     setTimeout(() => {
       btn.classList.remove("copy-flash");
-      btn.textContent = "Копировать";
+      btn.textContent = t("copyBtn", "Copy");
     }, 1200);
   } catch (e) {
     $("jsonOut").select();
@@ -981,42 +1122,111 @@ $("dlBtn").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
+/* ---------- i18n application + language switch ---------- */
+
+function applyI18n() {
+  const setText = (id, key, fb) => {
+    const el = $(id);
+    if (el) el.textContent = t(key, fb);
+  };
+  setText("headerSubtitle", "headerSubtitle", "Collecting tokens and cookies for risu-zai-proxy");
+  setText("scanBtnLabel", "scanBtn", "Scan");
+  setText("clearBtn", "clearBtn", "Clear collected");
+  setText("apiToggleLabel", "apiPanelTitle", "Manual API keys");
+  setText("studioKeyLabel", "studioKeyLabel", "Google AI Studio (GOOGLE_AI_STUDIO_API_KEY)");
+  setText("studioWebTemplateLabel", "studioWebTemplateLabel", "AI Studio Web — GenerateContent template (JSON)");
+  setText("inflectionKeyLabel", "inflectionKeyLabel", "Inflection (INFLECTION_API_KEY)");
+  setText("jsonToggleLabel", "jsonPanelTitle", "credentials.json preview");
+  setText("debugBtn", "debugBtn", "Diagnostics");
+  setText("copyBtn", "copyBtn", "Copy");
+  setText("dlBtn", "dlBtn", "Download credentials.json");
+  setText("footer", "footer", "Install: chrome://extensions → Developer mode → Load unpacked. For Z.ai and DeepSeek, open the site in a tab before scanning.");
+  setText("providersTitle", "providersTitle", "Providers");
+  const swt = $("studioWebTemplate");
+  if (swt) swt.placeholder = t("studioWebTemplatePlaceholder", "from DevTools \"Copy as fetch\" on a GenerateContent request (RPC body). Needed only for generation, not for CountTokens.");
+  const ik = $("inflectionKey");
+  if (ik) ik.placeholder = t("inflectionKeyPlaceholder", "key from developers.inflection.ai/keys");
+  const sk = $("studioKey");
+  if (sk) sk.placeholder = t("studioKeyPlaceholder", "AIza...");
+  updateLastScan();
+  renderQwenWarn(lastQwenBx);
+}
+
+function setLang(lang, animate) {
+  if (!SUPPORTED_LANGS.includes(lang)) lang = "en";
+  LANG = lang;
+  try {
+    chrome.storage.local.set({ rzaiLang: lang });
+  } catch (e) {}
+  document.documentElement.lang = lang;
+  document.querySelectorAll("#langSwitch button").forEach((b) =>
+    b.classList.toggle("active", b.getAttribute("data-lang") === lang)
+  );
+  applyI18n();
+  if (animate) {
+    const app = $("app");
+    app.classList.remove("lang-fade");
+    void app.offsetWidth;
+    app.classList.add("lang-fade");
+  }
+}
+
 /* ---------- init ---------- */
 
 creds = {};
 for (const key of REPO_KEYS) creds[key] = "";
 
-makeChips();
+makeProviders();
+applyI18n();
 
-chrome.storage.local.get({ [STORE_KEY]: null, studioKey: "", inflectionKey: "" }, (data) => {
-  const saved = data[STORE_KEY];
-  if (saved && saved.creds) {
-    for (const key of REPO_KEYS) {
-      if (typeof saved.creds[key] === "string") creds[key] = saved.creds[key];
+chrome.storage.local.get(
+  { rzaiLang: null, [STORE_KEY]: null, studioKey: "", inflectionKey: "", studioWebTemplate: "" },
+  (data) => {
+    if (data.rzaiLang && SUPPORTED_LANGS.includes(data.rzaiLang)) {
+      LANG = data.rzaiLang;
+    } else {
+      LANG = detectLang();
     }
-    for (const p of PROVIDERS) {
-      const st = saved.chips && saved.chips[p.id];
-      if (st && st.state && st.state !== "scanning" && st.state !== "pending") {
-        chipStates[p.id] = st;
-        setChip(p.id, st.state, st.detail);
+    document.documentElement.lang = LANG;
+    document.querySelectorAll("#langSwitch button").forEach((b) =>
+      b.classList.toggle("active", b.getAttribute("data-lang") === LANG)
+    );
+    applyI18n();
+
+    const saved = data[STORE_KEY];
+    if (saved && saved.creds) {
+      for (const key of REPO_KEYS) {
+        if (typeof saved.creds[key] === "string") creds[key] = saved.creds[key];
       }
+      for (const p of PROVIDERS) {
+        const st = saved.chips && saved.chips[p.id];
+        if (st && st.state && st.state !== "scanning" && st.state !== "pending") {
+          chipStates[p.id] = st;
+          setProvider(p.id, st.state, st.detail);
+        }
+      }
+      refreshPreview();
+      refreshClearBtn();
     }
-    refreshPreview();
-    refreshClearBtn();
+    if (data.studioKey) $("studioKey").value = data.studioKey;
+    if (data.studioWebTemplate) $("studioWebTemplate").value = data.studioWebTemplate;
+    if (data.inflectionKey) $("inflectionKey").value = data.inflectionKey;
   }
-  if (data.studioKey) $("studioKey").value = data.studioKey;
-  if (data.inflectionKey) $("inflectionKey").value = data.inflectionKey;
-});
+);
 
 $("clearBtn").addEventListener("click", () => {
   creds = {};
   for (const key of REPO_KEYS) creds[key] = "";
   for (const id of Object.keys(chipStates)) delete chipStates[id];
-  for (const p of PROVIDERS) setChip(p.id, "pending", "");
+  for (const p of PROVIDERS) setProvider(p.id, "pending", "");
   $("jsonOut").value = "";
   $("dlBtn").disabled = true;
-  $("jsonToggle").classList.remove("open");
-  $("jsonBody").classList.add("hidden");
+  $("jsonPanel").classList.remove("open");
+  $("jsonToggle").setAttribute("aria-expanded", "false");
+  lastQwenBx = null;
+  lastScanTime = null;
+  updateLastScan();
+  renderQwenWarn(null);
   showHint("");
   chrome.storage.local.remove(STORE_KEY);
   refreshClearBtn();
@@ -1026,6 +1236,14 @@ $("studioKey").addEventListener("input", (e) => {
   chrome.storage.local.set({ studioKey: e.target.value.trim() });
 });
 
+$("studioWebTemplate").addEventListener("input", (e) => {
+  chrome.storage.local.set({ studioWebTemplate: e.target.value.trim() });
+});
+
 $("inflectionKey").addEventListener("input", (e) => {
   chrome.storage.local.set({ inflectionKey: e.target.value.trim() });
+});
+
+document.querySelectorAll("#langSwitch button").forEach((b) => {
+  b.addEventListener("click", () => setLang(b.getAttribute("data-lang"), true));
 });

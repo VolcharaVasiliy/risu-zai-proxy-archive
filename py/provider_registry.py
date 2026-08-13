@@ -698,6 +698,14 @@ def resolve_credentials(handler, provider_id: str):
         )
         if not access_token and not cookie:
             return None
+        # Sentinel turnstile token may arrive via credentials.json (exported by the
+        # browser extension) or a request header; surface it as the env fallback that
+        # py/openai_turnstile.py already consults.
+        turnstile = env_or_kv_token("OPENAI_WEB_SENTINEL_TURNSTILE") or header_token(
+            handler, "x-openai-web-sentinel-turnstile"
+        )
+        if turnstile:
+            os.environ["OPENAI_WEB_SENTINEL_TURNSTILE"] = turnstile
         return {
             "access_token": access_token,
             "cookie": cookie,

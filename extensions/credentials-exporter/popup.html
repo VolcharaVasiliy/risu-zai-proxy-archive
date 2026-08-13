@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="app">
     <header class="header">
       <div class="logo" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="22" height="22">
@@ -14,59 +14,72 @@
         </svg>
       </div>
       <div class="header-text">
-        <h1>Credentials Exporter</h1>
-        <p>Сбор токенов и кук для risu-zai-proxy</p>
+        <h1 id="extName">Credentials Exporter</h1>
+        <p id="headerSubtitle"></p>
       </div>
-      <span id="ver" class="ver">1.0</span>
+      <div class="lang-switch" id="langSwitch" role="group" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="ru">РУ</button>
+        <button type="button" data-lang="zh">中文</button>
+      </div>
     </header>
 
-    <div class="stage">
+    <section class="stage">
       <button id="scanBtn" class="scan-btn" type="button">
-        <span class="scan-btn-label">Сканировать</span>
+        <span class="scan-btn-label" id="scanBtnLabel">Scan</span>
       </button>
-      <button id="clearBtn" class="clear-link hidden" type="button">Очистить собранное</button>
-      <p id="hint" class="hint hidden"></p>
-    </div>
+      <div class="stage-row">
+        <span id="lastScan" class="last-scan"></span>
+        <button id="clearBtn" class="clear-link hidden" type="button"></button>
+      </div>
+      <div id="hint" class="hint hidden"></div>
+      <div id="warn" class="warn hidden"></div>
+    </section>
 
-    <div class="grid-wrap">
-      <div id="grid" class="grid"></div>
-    </div>
+    <section class="block">
+      <div class="block-head">
+        <span class="block-title" id="providersTitle"></span>
+      </div>
+      <div class="providers-wrap">
+        <div id="providers" class="providers"></div>
+      </div>
+    </section>
 
     <div class="panel" id="apiPanel">
-      <button id="apiToggle" class="panel-toggle" type="button">
-        API-ключи вручную
+      <button id="apiToggle" class="panel-toggle" type="button" aria-expanded="false">
+        <span id="apiToggleLabel" class="toggle-label"></span>
         <span class="chevron"></span>
       </button>
-      <div id="apiBody" class="panel-body hidden">
-        <label class="field-label" for="studioKey">Google AI Studio (GOOGLE_AI_STUDIO_API_KEY)</label>
+      <div id="apiBody" class="panel-body">
+        <label id="studioKeyLabel" class="field-label" for="studioKey"></label>
         <input id="studioKey" class="field" type="text" spellcheck="false" autocomplete="off"
                placeholder="AIza..." />
-        <label class="field-label" for="inflectionKey">Inflection (INFLECTION_API_KEY)</label>
-        <input id="inflectionKey" class="field" type="text" spellcheck="false" autocomplete="off"
-               placeholder="ключ с developers.inflection.ai/keys" />
+        <label id="studioWebTemplateLabel" class="field-label" for="studioWebTemplate"></label>
+        <textarea id="studioWebTemplate" class="field field-area" spellcheck="false" autocomplete="off"></textarea>
+        <label id="inflectionKeyLabel" class="field-label" for="inflectionKey"></label>
+        <input id="inflectionKey" class="field" type="text" spellcheck="false" autocomplete="off" />
       </div>
     </div>
 
     <div class="panel" id="jsonPanel">
-      <button id="jsonToggle" class="panel-toggle" type="button">
-        Предпросмотр credentials.json
+      <button id="jsonToggle" class="panel-toggle" type="button" aria-expanded="false">
+        <span id="jsonToggleLabel" class="toggle-label"></span>
         <span class="chevron"></span>
       </button>
-      <div id="jsonBody" class="panel-body hidden">
+      <div id="jsonBody" class="panel-body">
         <textarea id="jsonOut" class="json-out" readonly spellcheck="false"></textarea>
         <div class="actions">
-          <button id="debugBtn" class="btn ghost" type="button">Диагностика</button>
-          <button id="copyBtn" class="btn ghost" type="button">Копировать</button>
-          <button id="dlBtn" class="btn solid" type="button" disabled>Скачать credentials.json</button>
+          <button id="debugBtn" class="btn ghost" type="button"></button>
+          <button id="copyBtn" class="btn ghost" type="button"></button>
+          <button id="dlBtn" class="btn solid" type="button" disabled></button>
         </div>
       </div>
     </div>
 
-    <footer class="footer">
-      Установка: chrome://extensions → Режим разработчика → Загрузить распакованное.
-      Для Z.ai и DeepSeek откройте сайт во вкладке перед сканированием.
-    </footer>
+    <footer id="footer" class="footer"></footer>
   </div>
+
+  <script src="i18n-bundle.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

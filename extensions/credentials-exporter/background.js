@@ -1,12 +1,12 @@
-/* background.js — пассивный перехват заголовков запросов провайдеров.
-   Куки и localStorage попап уже умеет собирать, а сетевые заголовки (bx-* у
-   Qwen и т.п.) расширению не были видны — теперь перехватываем их здесь.
-   MV3: webRequest наблюдательный (не блокирующий). Подписка активна только
-   для хостов из host_permissions — события на чужих хостах не приходят. */
+/* background.js — passive interception of provider request headers.
+   The popup already collects cookies and localStorage; network headers (bx-* for
+   Qwen, etc.) were invisible to the extension — now we capture them here.
+   MV3: webRequest is observer-only (non-blocking). The listener is active only
+   for hosts from host_permissions — events from other hosts never arrive. */
 
 const STORAGE_KEY = "rzaiHeaderCapture";
 
-/* Заголовки-кандидаты, похожие на токены/ключи, для любых провайдеров */
+/* Candidate headers that look like tokens/keys, for any provider */
 const UNIVERSAL_HEADERS = [
   "authorization",
   "x-api-key",
@@ -24,19 +24,21 @@ const UNIVERSAL_HEADERS = [
   "x-msh-user-id",
   "x-token",
   "x-user-id",
+  "openai-sentinel-turnstile-token",
+  "openai-sentinel-proof-token",
 ];
 
-/* Специфичные заголовки по хостам (bx-* у Qwen и др. по мере обнаружения) */
+/* Host-specific headers (bx-* for Qwen and others as discovered) */
 const HOST_HEADERS = {
   "chat.qwen.ai": ["bx-ua", "bx-umidtoken", "bx-v", "timezone"],
 };
 
-/* Хосты, где для диагностики/полноты ловим ВСЕ заголовки запросов к API */
+/* Hosts where, for diagnostics/completeness, we capture ALL request headers to the API */
 const HOST_FULL_HEADERS = {
   "chat.qwen.ai": /(chat\/completions|chats\/new)/,
 };
 
-/* bx-ua различается для фаз create (/api/v2/chats/new) и chat (/chat/completions) */
+/* bx-ua differs between the create phase (/api/v2/chats/new) and the chat phase (/chat/completions) */
 function phaseOf(url) {
   if (/\/api\/v2\/chats\/new/.test(url)) return "create";
   if (/\/chat\/completions/.test(url)) return "chat";
@@ -66,7 +68,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
       };
       if (captureFull || wanted.has(name)) {
         picked[name] = rec;
-        /* bx-ua разный для create/chat — храним оба варианта отдельно */
+        /* bx-ua differs for create/chat — store both variants separately */
         if (name === "bx-ua" && rec.phase) picked[`bx-ua-${rec.phase}`] = rec;
       }
     }
