@@ -241,7 +241,7 @@ For MCP/tool use, configure MCP in the client. The proxy receives OpenAI-compati
 
 ## More Docs
 
-- [Installation guide (step-by-step, copy-paste commands)](docs/installation.md)
+- [Installation guide (step-by-step, copy-paste commands)](INSTALLATION.md)
 - [Provider reference](docs/providers.md)
 - [Deployment and environment guide](docs/deployment.md)
 - [Repeat deploy notes](REDEPLOY.md)
