@@ -12,6 +12,8 @@ npm run dev       # local proxy on http://127.0.0.1:3001/v1
 npm run check     # run checks
 ```
 
+For the full step-by-step installation guide with copy-paste commands (prerequisites, first request, LM Arena quick start, Vercel deploy), see [INSTALLATION.md](../INSTALLATION.md).
+
 ## Before you open a PR
 
 - Run `npm run check`.
@@ -26,3 +28,4 @@ npm run check     # run checks
 - `scripts/` — credential helpers and launchers.
 - `extensions/credentials-exporter/` — the browser extension.
 - `docs/` — provider and deployment reference.
+- `INSTALLATION.md` — full step-by-step install guide (the canonical setup doc).
