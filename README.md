@@ -1,8 +1,25 @@
 # risu-zai-proxy
 
+[English](README.md) · [Русский](README.ru.md) · [中文](README.zh.md)
+
 OpenAI-compatible proxy for RisuAI, Codex, Zed, and other OpenAI-style clients. It exposes many browser-session and API-backed providers behind one `/v1` endpoint, including `/v1/chat/completions` and `/v1/responses`.
 
-[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/VolcharaVasiliy/risu-zai-proxy-archive)
+One `/v1` endpoint routes each model through a provider registry to the right backend — a captured browser session, an API key, or a fallback.
+
+[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/VolcharaVasiliy/risu-zai-proxy-archive) ![License](https://img.shields.io/github/license/VolcharaVasiliy/risu-zai-proxy-archive)
+
+## Contents
+
+- [What You Get](#what-you-get)
+- [Quick Start (Windows)](#quick-start-on-windows)
+- [Daily Commands](#daily-commands)
+- [Local Setup](#local-path-configuration)
+- [Credentials](#local-credentials)
+- [Deploy to Vercel](#deploy-to-vercel)
+- [Providers](#providers)
+- [Codex & Zed](#codex-notes)
+- [API Surface](#api-surface)
+- [Docs](#more-docs)
 
 ## What You Get
 

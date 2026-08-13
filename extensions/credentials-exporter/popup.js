@@ -881,27 +881,34 @@ function makeProviders() {
   const root = $("providers");
   root.innerHTML = "";
   for (const p of PROVIDERS) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "prov";
-    row.id = `prov-${p.id}`;
-    if (p.url) row.setAttribute("data-url", p.url);
-    row.title = p.url || "";
-    row.innerHTML =
-      '<span class="pdot"></span>' +
-      '<span class="pinfo"><span class="pname">' + escapeHtml(p.name) + '</span><span class="pdetail"></span></span>' +
-      '<span class="popen">↗</span>';
-    if (p.url) row.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
-    root.appendChild(row);
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.id = `prov-${p.id}`;
+    if (p.url) chip.setAttribute("data-url", p.url);
+    chip.title = p.name || "";
+    chip.innerHTML =
+      '<span class="dot"></span>' +
+      '<span class="name">' + escapeHtml(p.name) + '</span>' +
+      '<span class="count"></span>';
+    if (p.url) chip.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
+    root.appendChild(chip);
   }
 }
 
+function p_name(id) {
+  const p = PROVIDERS.find((x) => x.id === id);
+  return p ? p.name : "";
+}
+
 function setProvider(id, state, detail) {
-  const row = $(`prov-${id}`);
-  if (!row) return;
-  row.classList.remove("pending", "scanning", "ok", "err");
-  if (state) row.classList.add(state);
-  if (detail != null) row.querySelector(".pdetail").textContent = detail;
+  const chip = $(`prov-${id}`);
+  if (!chip) return;
+  chip.classList.remove("pending", "scanning", "ok", "err");
+  if (state) chip.classList.add(state);
+  if (detail != null) {
+    chip.querySelector(".count").textContent = detail;
+    chip.title = detail ? detail : p_name(id);
+  }
 }
 
 function showHint(text) {
