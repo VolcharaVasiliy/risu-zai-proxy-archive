@@ -2,8 +2,6 @@
 
 [English](README.md) · [Русский](README.ru.md) · [中文](README.zh.md)
 
-**Docs:** [README](README.md) · [Installation](docs/installation.md) · [Providers](docs/providers.md) · [Deployment](docs/deployment.md) · [Contributing](CONTRIBUTING.md)
-
 OpenAI-compatible proxy for RisuAI, Codex, Zed, and other OpenAI-style clients. It exposes many browser-session and API-backed providers behind one `/v1` endpoint, including `/v1/chat/completions` and `/v1/responses`.
 
 One `/v1` endpoint routes each model through a provider registry to the right backend — a captured browser session, an API key, or a fallback.
