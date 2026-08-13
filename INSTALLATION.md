@@ -130,8 +130,20 @@ token. It is set up so you do the minimum: the proxy opens a single browser
 window (bridge), fetches the token, and closes it on exit.
 
 1. Log in to https://arena.ai in your browser.
-2. Export the cookie (e.g. via the credentials-exporter extension) to a file,
+2. Export the cookie (e.g. via the [credentials-exporter extension](extensions/credentials-exporter/)) to a file,
    e.g. `C:\Users\gamer\Desktop\lmarena-cookie.txt`.
+
+<details>
+<summary>How to install the credentials-exporter extension</summary>
+
+1. Open `chrome://extensions` (Firefox: `about:debugging#/runtime/this-firefox`).
+2. Enable **Developer mode** (top-right toggle).
+3. Click **Load unpacked** and select the `extensions/credentials-exporter` folder from this repo.
+4. Log in to https://arena.ai in that browser.
+5. Open the extension popup and click **Сканировать** (Scan), then save the LM Arena cookie to `lmarena-cookie.txt`.
+
+</details>
+
 3. Point the proxy at the cookie (bridge mode defaults to `auto`):
 
 ```powershell
