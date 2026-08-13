@@ -20,7 +20,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  width: 384px;
+  width: 400px;
   background:
     radial-gradient(1200px 400px at 10% -10%, rgba(124, 92, 255, 0.10), transparent 60%),
     radial-gradient(1000px 400px at 110% 0%, rgba(33, 212, 253, 0.08), transparent 55%),
@@ -120,12 +120,13 @@ body {
 .block-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px; }
 .block-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
 .providers-wrap { position: relative; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--border-soft); background: var(--panel); }
-.providers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; }
+.providers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 9px; }
 
 .chip {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 10px; padding: 7px 9px; cursor: default;
+  min-width: 0; overflow: hidden;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 .chip[data-url] { cursor: pointer; }
@@ -138,8 +139,8 @@ body {
 .chip.err .dot { background: var(--bad); box-shadow: 0 0 6px rgba(255, 93, 115, 0.7); }
 .chip.scanning .dot { background: var(--scan); animation: pulse 0.85s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 2px rgba(255, 180, 84, 0.5); } 50% { box-shadow: 0 0 10px rgba(255, 180, 84, 1); } }
-.chip .name { flex: 1; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chip .count { font-size: 10px; color: var(--muted); max-width: 92px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.chip .name { flex: 1; min-width: 0; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .count { font-size: 10px; color: var(--muted); max-width: 84px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .chip.ok .count { color: #9fe8c3; }
 .chip.err .count { color: #ffb3bd; }
 
