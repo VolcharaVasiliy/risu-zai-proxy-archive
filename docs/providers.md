@@ -26,6 +26,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Inflection / Pi API | `pi-api`, `pi-3.1`, aliases `inflection-pi`, `inflection_3_pi`, `pi-3-1` | `INFLECTION_API_KEY` or `PI_INFLECTION_API_KEY` | `INFLECTION_API_BASE` | `https://developers.inflection.ai/keys` | Manual only | Official API path, works on Vercel. |
 | Pi Web Local | `pi-web-local` | none | `PI_LOCAL_*` | Local `pi.ai` browser profile | `scripts/launch-pi-auth.ps1`, `scripts/pi-browser-bridge.mjs` | Local-only browser automation path. |
 | UncloseAI | `uncloseai-hermes`, `uncloseai-hermes-8b`, `uncloseai-qwen-vl`, `uncloseai-gpt-oss`, `uncloseai-r1-distill` | none | none | Public endpoint | none | Intentionally credential-free. |
+| LM Arena | 965 models from `arena.ai/text/direct` (e.g. `gpt-5`, `claude-3.7-sonnet`, `gemini-3-pro`, `llama-3.1-8b-instruct`, `qwen3-max`), exposed as a large catalog via `py/lmarena_models.json` | `LM_ARENA_COOKIE` | `x-lmarena-cookie` header | Logged-in `arena.ai` cookie session | `scripts/get-provider-creds.py`, supply cookie via `LM_ARENA_COOKIE` | **Local-only**: each `POST /nextjs-api/stream/create-evaluation` needs a Google reCAPTCHA Enterprise v3 token (`recaptchaV3Token`), minted by `scripts/fetch-lmarena-recaptcha.mjs` against siteKey `6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0`, action `chat_submit`. The token is score-gated and IP/fingerprint-bound to the solving browser, so the grabber and proxy must share the egress IP — it does not work on Vercel. See [LM Arena reCAPTCHA (Local-Only)](#lm-arena-recaptcha-local-only). |
 
 ## Z.ai Captcha (Local-Only)
 
@@ -40,6 +41,36 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 - The Z.ai provider is **local-only**: run `py/server.py`, or any host that keeps a stable public IP and can run the grabber (e.g. a VPS with Chromium). Vercel / GitHub Actions runners have different egress IPs and cannot substitute.
 - Keep `ZAI_CAPTCHA_MODE=file` on hosts without the grabber, and a generous `ZAI_CAPTCHA_TTL_SECONDS`.
 - `captcha_param.json` and `captcha-grabber.log` are runtime artifacts; `captcha-grabber-debug.png` is written on grabber failures.
+
+## LM Arena reCAPTCHA (Local-Only)
+
+`arena.ai` (the LMArena chat-direct frontend) gates every `POST /nextjs-api/stream/create-evaluation` call behind a Google **reCAPTCHA Enterprise v3** token (`recaptchaV3Token` in the request body). The proxy solves this automatically:
+
+1. `scripts/fetch-lmarena-recaptcha.mjs` launches **headed** Edge (pass `--headless` to override, but reCAPTCHA Enterprise v3 withholds tokens from headless browsers, so headed is the default and the reliable path), loads `arena.ai/text/direct` with the logged-in `LM_ARENA_COOKIE`, waits for `grecaptcha.enterprise` to be ready, and calls `grecaptcha.enterprise.execute(siteKey, { action: 'chat_submit' })`. The resulting token is written to `lmarena-recaptcha.json` as `{ "token": "<jwt>", "captured_at": <epoch ms> }`. The grabber retries internally until a non-empty token is obtained, then exits. Because arena's reCAPTCHA validation is risk-score gated, a minted token is occasionally rejected with `403 recaptcha validation failed`; the proxy automatically re-grabs a fresh token and retries (up to `LM_ARENA_MAX_RETRIES`, default 6).
+2. `py/lmarena_captcha.py` caches the token with a TTL (`LM_ARENA_CAPTCHA_TTL_SECONDS`, default 120) and obtains it from a **persistent browser bridge** when `LM_ARENA_BRIDGE_MODE` is `auto`/`on` (the default), falling back to the one-shot grabber (point 1) or the file. It also validates the cached token before use and force-refreshes on a server `403` reCAPTCHA rejection.
+3. `py/lmarena_proxy.py` sends the token in the stream body and refreshes + retries automatically when the upstream answers `403 recaptcha validation failed` (up to `LM_ARENA_MAX_RETRIES`, default 6).
+
+**IP / fingerprint binding (why Vercel does not work).** The reCAPTCHA Enterprise v3 token is risk-scored and bound to the browser session that solved it — including the egress IP. Requests from a different IP (e.g. a Vercel function) are rejected with `recaptcha validation failed`. Consequently the LM Arena provider is **local-only**: run `py/server.py` on the same machine (and same network egress) that runs the grabber, or supply a token captured from such a machine via the file. The token is **not** bound to the browser fingerprint in a way that breaks a plain `requests` client on the same machine — the same cached token works fine from the proxy as long as the egress IP matches.
+
+**Token source (priority order), in `py/lmarena_captcha.py`:**
+
+1. **Persistent browser bridge (recommended for minimal interaction).** `scripts/lmarena-recaptcha-bridge.mjs` launches **one** headed Edge with your `LM_ARENA_COOKIE`, opens `arena.ai/text/direct`, and keeps the window open, minting tokens on demand over a local HTTP endpoint (`GET http://127.0.0.1:8772/mint`). `py/lmarena_captcha.py` talks to this bridge automatically when `LM_ARENA_BRIDGE_MODE` is `auto` (default) or `on` — it spawns the bridge on the first request if it is not already running, then mints silently with **no extra browser windows**. This is the "launch and just chat" setup: run the proxy, talk to any `arena/*` model, close when done. Knobs: `LM_ARENA_BRIDGE_URL` (default `http://127.0.0.1:8772`), `LM_ARENA_BRIDGE_PORT`, `LM_ARENA_BRIDGE_MODE` (`auto`/`on`/`off`).
+2. `lmarena-recaptcha.json` — primary source. Path configurable via `LM_ARENA_CAPTCHA_FILE` (default `<project root>/lmarena-recaptcha.json`); on read-only hosts point it at a writable path such as `/tmp/lmarena-recaptcha.json`.
+3. `LM_ARENA_CAPTCHA` env — static fallback for manual paste (the raw token string) when the file is missing/empty.
+4. On-demand grabber — spawned automatically when the file is missing/expired, bridge is disabled, and `LM_ARENA_CAPTCHA_MODE != off`.
+
+**Extension / manual integration.** Any external process may write `lmarena-recaptcha.json` (or `LM_ARENA_CAPTCHA_FILE`) with `{ "token": "<enterprise v3 token>", "captured_at": <epoch ms> }` and the proxy will pick it up on the next request. With `LM_ARENA_CAPTCHA_MODE=file` the grabber never spawns and the file is the only source.
+
+**Set the token via API (works on Vercel too).** `POST /api/?route=lmarena-recaptcha` with body `{"token": "..."}` writes the file:
+```bash
+curl -X POST "https://<your-deploy>/api/?route=lmarena-recaptcha" \
+  -H "Authorization: Bearer $PROXY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<enterprise v3 token>"}'
+```
+Set `LM_ARENA_CAPTCHA_FILE=/tmp/lmarena-recaptcha.json` and `LM_ARENA_CAPTCHA_MODE=file` on Vercel, then push the token from a browser session whose egress IP matches the deployed server.
+
+**Model catalog.** The 965 selectable models (and their `019…` UUIDv7 ids) are scraped from the RSC payload of `/text/direct` and bundled into `py/lmarena_models.json` (`{ "<model name>": "<uuidv7>", ... }`). The proxy lowercases and matches names with a graceful fallback to substring search, so either the exact `arena.ai` display name or the upstream model slug both resolve to the correct UUID. Re-run `scripts/extract-arena-models.mjs` (reads `%TMP%/arena-direct.html` or `--html <file>`) to refresh the catalog after arena updates its model list.
 
 ## OpenAI Web Sentinel Turnstile
 
@@ -185,6 +216,7 @@ Use these single-model picks for routine traffic when you want the lighter optio
 | Kimi | `kimi` |
 | Pi Web Local | `pi-web-local` |
 | UncloseAI | `uncloseai-hermes` |
+| LM Arena | `qwen3-max` (or any `arena/*` model you want to test) |
 
 `OpenAI Web`, `Google AI Studio Web`, and `Inflection / Pi API` are currently not included in the routine recommended picks because the live deployment is known to be unreliable or experimental for those paths.
 
@@ -210,6 +242,7 @@ These providers depend on logged-in browser sessions or cookies:
 - `Mimo`
 - `Kimi`
 - `DeepSeek`
+- `LM Arena`
 
 For these providers, the manual source is usually the logged-in website session, cookie export, or local browser profile storage. The exact extraction path depends on the provider.
 
@@ -296,6 +329,7 @@ Manual sources by provider:
 - `Inflection / Pi API` - developer key from Inflection
 - `Pi Web Local` - local browser profile only
 - `UncloseAI` - no credentials
+- `LM Arena` - `arena.ai` cookie session (14-cookie export including `arena-auth-prod-v1.1`)
 
 ## Agent Picks
 

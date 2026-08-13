@@ -217,6 +217,41 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 200, {"ok": True, "grok_cf_clearance_file": status})
             return
 
+        if route == "lmarena-recaptcha":
+            import time as _time
+
+            from py.lmarena_captcha import RECAPTCHA_FILE, fresh_token, ttl_seconds
+
+            status = {"exists": False}
+            if os.path.exists(RECAPTCHA_FILE):
+                try:
+                    with open(RECAPTCHA_FILE, "r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    captured_at = int(payload.get("captured_at") or 0)
+                    age_seconds = (
+                        round(_time.time() - captured_at / 1000.0, 1)
+                        if captured_at
+                        else None
+                    )
+                    status = {
+                        "exists": True,
+                        "captured_at": captured_at,
+                        "age_seconds": age_seconds,
+                        "ttl_seconds": ttl_seconds(),
+                        "expired": bool(
+                            captured_at
+                            and ttl_seconds() > 0
+                            and age_seconds is not None
+                            and age_seconds > ttl_seconds()
+                        ),
+                        "token_length": len(str(payload.get("token") or "")),
+                        "fresh": bool(fresh_token()),
+                    }
+                except Exception as exc:
+                    status = {"exists": True, "read_error": str(exc)}
+            send_json(self, 200, {"ok": True, "lmarena_recaptcha_file": status})
+            return
+
         if route == "models":
             if not proxy_authorized(self):
                 send_json(self, 401, proxy_auth_error())
@@ -262,7 +297,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         route = self._route()
-        if route not in {"chat", "responses", "responses-chat", "java-chat", "openai-turnstile", "grok-cf-clearance"}:
+        if route not in {"chat", "responses", "responses-chat", "java-chat", "openai-turnstile", "grok-cf-clearance", "lmarena-recaptcha"}:
             send_json(self, 404, {"error": {"message": "Not found"}})
             return
 
@@ -328,6 +363,36 @@ class handler(BaseHTTPRequestHandler):
                     self,
                     200,
                     {"ok": True, "written": CLEARANCE_FILE, "token_length": len(token)},
+                )
+            except Exception as exc:
+                send_json(self, 500, {"ok": False, "error": str(exc)})
+            return
+
+        if route == "lmarena-recaptcha":
+            import time as _time
+
+            from py.lmarena_captcha import RECAPTCHA_FILE
+
+            try:
+                body = read_json_body(self)
+            except Exception:
+                send_json(self, 400, {"error": {"message": "Invalid JSON body"}})
+                return
+            token = str((body or {}).get("token") or "").strip()
+            if not token:
+                send_json(self, 400, {"error": {"message": "token is required"}})
+                return
+            payload = {
+                "token": token,
+                "captured_at": int((body or {}).get("captured_at") or _time.time() * 1000),
+            }
+            try:
+                with open(RECAPTCHA_FILE, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle)
+                send_json(
+                    self,
+                    200,
+                    {"ok": True, "written": RECAPTCHA_FILE, "token_length": len(token)},
                 )
             except Exception as exc:
                 send_json(self, 500, {"ok": False, "error": str(exc)})

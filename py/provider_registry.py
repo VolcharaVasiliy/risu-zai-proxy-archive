@@ -10,6 +10,7 @@ try:
         inception_proxy,
         inflection_proxy,
         kimi_proxy,
+        lmarena_proxy,
         longcat_proxy,
         mimo_proxy,
         mistral_proxy,
@@ -51,6 +52,7 @@ except ImportError:
     import inception_proxy
     import inflection_proxy
     import kimi_proxy
+    import lmarena_proxy
     import longcat_proxy
     import mimo_proxy
     import mistral_proxy
@@ -264,6 +266,12 @@ _add_models(
     ["GLM_REFRESH_TOKEN"],
 )
 _add_models("uncloseai", uncloseai_proxy.OWNED_BY, uncloseai_proxy.SUPPORTED_MODELS, [])
+_add_models(
+    "lmarena",
+    lmarena_proxy.OWNED_BY,
+    lmarena_proxy.SUPPORTED_MODELS,
+    ["LM_ARENA_COOKIE"],
+)
 
 
 def models_payload():
@@ -311,6 +319,8 @@ def resolve_provider_id(model: str) -> str:
         return "glm-web"
     if uncloseai_proxy.supports_model(model):
         return "uncloseai"
+    if lmarena_proxy.supports_model(model):
+        return "lmarena"
     return ""
 
 
@@ -355,6 +365,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "Configure GLM_REFRESH_TOKEN in server env or pass the GLM refresh token as Bearer token / x-glm-refresh-token header"
     if provider_id == "uncloseai":
         return "UncloseAI public endpoints do not require credentials"
+    if provider_id == "lmarena":
+        return "Configure LM_ARENA_COOKIE in server env or pass x-lmarena-cookie header (export a live arena.ai session cookie jar, including arena-auth-prod-v1.1)"
     return "Provider credentials are not configured"
 
 
@@ -788,6 +800,12 @@ def resolve_credentials(handler, provider_id: str):
         )
         return {"refresh_token": token} if token else None
 
+    if provider_id == "lmarena":
+        cookie = env_or_kv_token("LM_ARENA_COOKIE") or header_token(
+            handler, "x-lmarena-cookie"
+        )
+        return {"cookie": cookie} if cookie else None
+
     return None
 
 
@@ -922,6 +940,9 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     if provider_id == "uncloseai":
         result, meta = uncloseai_proxy.complete_non_stream(credentials, payload)
         return normalize_tool_result(result, request_config)[0], meta
+    if provider_id == "lmarena":
+        result, meta = lmarena_proxy.complete_non_stream(credentials["cookie"], payload)
+        return result, meta
     raise RuntimeError(f"Unsupported provider: {provider_id}")
 
 
@@ -1032,6 +1053,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "uncloseai":
         for chunk in uncloseai_proxy.stream_chunks(credentials, payload):
+            yield chunk
+        return
+
+    if provider_id == "lmarena":
+        for chunk in lmarena_proxy.stream_chunks(credentials["cookie"], payload):
             yield chunk
         return
 

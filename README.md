@@ -172,6 +172,7 @@ The full provider matrix lives in [docs/providers.md](docs/providers.md). Common
 | GLM Web | `chatglm-web` or `chatglm-web-thinking` |
 | Native-tool Gemini API | `google-ai-studio` |
 | Native-tool public fallback | `uncloseai-hermes` |
+| LM Arena chat-direct | `qwen3-max` (any `arena/*` catalog model) |
 
 Browser/session providers usually need cookies or tokens from a logged-in browser session. API providers need ordinary API keys.
 
@@ -240,6 +241,7 @@ For MCP/tool use, configure MCP in the client. The proxy receives OpenAI-compati
 
 ## More Docs
 
+- [Installation guide (step-by-step, copy-paste commands)](docs/installation.md)
 - [Provider reference](docs/providers.md)
 - [Deployment and environment guide](docs/deployment.md)
 - [Repeat deploy notes](REDEPLOY.md)
