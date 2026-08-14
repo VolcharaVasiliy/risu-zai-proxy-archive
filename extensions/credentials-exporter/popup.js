@@ -90,6 +90,8 @@ const REPO_KEYS = [
   "QWEN_AI_TIMEZONE",
   // ChatGLM — refresh_token
   "GLM_REFRESH_TOKEN",
+  // LM Arena — cookies from arena.ai (incl. arena-auth-prod-v1.1)
+  "LM_ARENA_COOKIE",
 ];
 
 const LS_READER = (wanted) => {
@@ -246,8 +248,12 @@ async function readCookiesViaCdp(hostMatch) {
   } catch (e) {
     return null;
   }
-  if (!tab || !tab.url || !tab.url.includes(hostMatch)) return null;
+  if (!tab) return null;
   const tabId = tab.id;
+  /* Attach to whatever tab is active and read ALL cookies via CDP — this
+     surfaces partitioned/httpOnly cookies (e.g. arena-auth-prod-v1.1) that the
+     cookies API misses. The caller filters by hostMatch domain, so it does not
+     matter whether this tab is actually on the target host. */
   try {
     const result = await Promise.race([
       (async () => {
@@ -381,6 +387,30 @@ const PROVIDERS = [
       setCred("GEMINI_WEB_SECURE_1PSIDTS", s1psidts);
       const detail = s1psid ? t("detailSidOk", "SID present") : cookie ? t("detailSidNo", "SID missing") : t("detailNoCookies", "no cookies");
       return { ok: !!(cookie && s1psid), detail };
+    },
+  },
+  {
+    id: "lmarena",
+    name: "LM Arena",
+    url: "https://arena.ai/",
+    keys: ["LM_ARENA_COOKIE"],
+    async run() {
+      let cookie = await cookieHeader("https://arena.ai/");
+      const cdp = await readCookiesViaCdp("arena.ai");
+      if (cdp) {
+        for (const c of cdp) {
+          const d = String(c.domain || "").toLowerCase();
+          if (!d.includes("arena.ai")) continue;
+          if (cookie.indexOf(` ${c.name}=`) < 0 && cookie.indexOf(`${c.name}=`) !== 0) {
+            cookie += `${cookie ? "; " : ""}${c.name}=${c.value}`;
+          }
+        }
+      }
+      setCred("LM_ARENA_COOKIE", cookie);
+      const detail = cookie
+        ? t("detailCookiesOk", "cookies present")
+        : t("detailNoCookies", "no cookies — open arena.ai and log in");
+      return { ok: !!cookie, detail };
     },
   },
   {
@@ -603,7 +633,27 @@ const PROVIDERS = [
     url: "https://chatgpt.com/",
     keys: ["OPENAI_WEB_COOKIE", "OPENAI_WEB_ACCESS_TOKEN", "OPENAI_WEB_SENTINEL_TURNSTILE"],
     async run() {
-      const cookie = await cookieHeader("https://chatgpt.com/");
+      let cookie = await cookieHeader("https://chatgpt.com/");
+      let cdpUsed = false;
+      /* Partitioned / HTTP-only session cookies (e.g. __Secure-next-auth.session-token.*)
+         are frequently invisible to chrome.cookies.getAll — surface them via CDP,
+         exactly like the gemini/mistral/mimo providers do. */
+      const cdp = await readCookiesViaCdp("chatgpt.com");
+      if (cdp && Array.isArray(cdp)) {
+        const hostCookies = cdp.filter(
+          (c) =>
+            String(c.domain || "").includes("chatgpt.com") ||
+            String(c.domain || "").includes("openai.com")
+        );
+        for (const c of hostCookies) {
+          if (!c.value) continue;
+          const needle = `${c.name}=`;
+          if (cookie.indexOf(` ${needle}`) < 0 && cookie.indexOf(needle) !== 0) {
+            cookie = (cookie ? cookie + "; " : "") + `${c.name}=${c.value}`;
+          }
+        }
+        if (hostCookies.length) cdpUsed = true;
+      }
       let accessToken = "";
       try {
         const r = await fetch("https://chatgpt.com/api/auth/session", { credentials: "include" });
@@ -615,7 +665,7 @@ const PROVIDERS = [
           }
         }
       } catch (e) {
-        /* no access */
+        /* no access — CORS may block the extension origin; cookie still works */
       }
       /* the sentinel turnstile token is captured by background.js from the
          request headers of chatgpt.com (openai-sentinel-turnstile-token). */
@@ -631,6 +681,7 @@ const PROVIDERS = [
       setCred("OPENAI_WEB_SENTINEL_TURNSTILE", turnstile);
       let detail = accessToken ? t("detailChatgptAccessTokenOk", "accessToken present") : cookie ? t("detailCookiesCount", "$1 cookies").replace("$1", cookie.split("; ").length) : t("detailNoCookies", "no cookies");
       if (turnstile) detail += " + turnstile";
+      if (cdpUsed) detail += " (CDP)";
       return { ok: !!(accessToken || cookie), detail };
     },
   },
@@ -852,12 +903,12 @@ function refreshClearBtn() {
   $("clearBtn").classList.toggle("hidden", !hasData);
 }
 
-/* Returns only the filled keys — empty "junk" never makes it into credentials.json. */
+/* Emits the full REPO_KEYS template — filled keys keep their value,
+   empty ones are written as "" (full credentials.json layout). */
 function cleanCreds() {
   const out = {};
   for (const k of REPO_KEYS) {
-    const v = String(creds[k] == null ? "" : creds[k]).trim();
-    if (v) out[k] = v;
+    out[k] = String(creds[k] == null ? "" : creds[k]).trim();
   }
   return out;
 }

@@ -29,7 +29,8 @@
     "https://phindai.org/*",
     "https://chat.qwen.ai/*",
     "https://qwen.ai/*",
-    "https://chatglm.cn/*"
+    "https://chatglm.cn/*",
+    "https://arena.ai/*"
   ],
   "action": {
     "default_title": "Credentials Exporter",
