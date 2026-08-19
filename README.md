@@ -166,6 +166,7 @@ The full provider matrix lives in [docs/providers.md](docs/providers.md). Common
 | Use case | Model |
 | --- | --- |
 | Qwen web coding/agent tests | `Qwen3.7-Max` |
+| OpenCode Zen (`hy3-free`) | a keyless Codex model set wrapped from the OpenCode Zen gateway |
 | Stable Mistral smoke test | `mistral-small-2603` |
 | Mistral coding | `codestral-2508` |
 | Gemini Web | `gemini-3-pro` or `gemini-3-flash-thinking` |

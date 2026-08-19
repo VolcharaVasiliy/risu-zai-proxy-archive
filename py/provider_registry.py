@@ -22,6 +22,7 @@ try:
         qwen_ai_proxy,
         uncloseai_proxy,
         zai_proxy,
+        zen_proxy,
     )
     from py.agent_tools import (
         normalize_tool_result,
@@ -64,6 +65,7 @@ except ImportError:
     import qwen_ai_proxy
     import uncloseai_proxy
     import zai_proxy
+    import zen_proxy
     from agent_tools import (
         normalize_tool_result,
         prepare_prompt_tool_payload,
@@ -273,6 +275,13 @@ _add_models(
     ["LM_ARENA_COOKIE"],
 )
 
+_add_models(
+    "opencode-zen",
+    zen_proxy.OWNED_BY,
+    zen_proxy.SUPPORTED_MODELS,
+    [],
+)
+
 
 def models_payload():
     return {"object": "list", "data": MODEL_SPECS}
@@ -321,6 +330,8 @@ def resolve_provider_id(model: str) -> str:
         return "uncloseai"
     if lmarena_proxy.supports_model(model):
         return "lmarena"
+    if zen_proxy.supports_model(model):
+        return "opencode-zen"
     return ""
 
 
@@ -367,6 +378,8 @@ def provider_error_hint(provider_id: str) -> str:
         return "UncloseAI public endpoints do not require credentials"
     if provider_id == "lmarena":
         return "Configure LM_ARENA_COOKIE in server env or pass x-lmarena-cookie header (export a live arena.ai session cookie jar, including arena-auth-prod-v1.1)"
+    if provider_id == "opencode-zen":
+        return "OpenCode Zen does not require credentials; use models like hy3-free, big-pickle, nemotron-3.5-lightning-free"
     return "Provider credentials are not configured"
 
 
@@ -806,6 +819,9 @@ def resolve_credentials(handler, provider_id: str):
         )
         return {"cookie": cookie} if cookie else None
 
+    if provider_id == "opencode-zen":
+        return {"public": True}
+
     return None
 
 
@@ -943,6 +959,9 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     if provider_id == "lmarena":
         result, meta = lmarena_proxy.complete_non_stream(credentials["cookie"], payload)
         return result, meta
+    if provider_id == "opencode-zen":
+        result, meta = zen_proxy.complete_non_stream(credentials, payload)
+        return normalize_tool_result(result, request_config)[0], meta
     raise RuntimeError(f"Unsupported provider: {provider_id}")
 
 
@@ -1058,6 +1077,11 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
 
     if provider_id == "lmarena":
         for chunk in lmarena_proxy.stream_chunks(credentials["cookie"], payload):
+            yield chunk
+        return
+
+    if provider_id == "opencode-zen":
+        for chunk in zen_proxy.stream_chunks(credentials, payload):
             yield chunk
         return
 
