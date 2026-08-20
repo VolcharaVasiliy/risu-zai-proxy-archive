@@ -8,6 +8,12 @@ OpenAI-совместимый прокси для RisuAI, Codex, Zed и друг
 
 [![Развернуть на Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/VolcharaVasiliy/risu-zai-proxy-archive) ![Лицензия](https://img.shields.io/github/license/VolcharaVasiliy/risu-zai-proxy-archive)
 
+## Содержание
+
+- [Что внутри](#что-внутри)
+- [Портативная сборка](#портативная-сборка-без-установки-windows-x64)
+- [Быстрый старт в Windows](#быстрый-старт-в-windows)
+
 ## Что внутри
 
 - OpenAI-совместимые маршруты: `/v1/models`, `/v1/chat/completions`, `/v1/responses`, `/health`
@@ -58,6 +64,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1 
   -BaseUrl "https://your-project.vercel.app/v1" `
   -Model "Qwen3.7-Max"
 ```
+
+
+## Портативная сборка (без установки, Windows x64)
+
+Хотите просто скачать и запустить без всякой настройки? Возьмите самодостаточный архив на [странице релизов](https://github.com/VolcharaVasiliy/risu-zai-proxy-archive/releases) (файл `risu-zai-proxy-portable-*.zip`). Внутри — портативный Python 3.11 со всеми зависимостями и портативный Node.js: ничего устанавливать не нужно, без `pip` и без изменения PATH, работает с любого диска на чистой Windows.
+
+1. Скачайте и распакуйте архив в любое место (например `D:\risu-zai-proxy`).
+2. Дважды кликните `start.bat` (или запустите `start.ps1` в PowerShell).
+3. Прокси поднимется на `http://127.0.0.1:3001/v1`.
+
+Всё. Подробности, включая как включить ключ прокси и поменять хост/порт, — в `README.portable.md` внутри архива.
 
 ## Ежедневные команды
 

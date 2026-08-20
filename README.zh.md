@@ -8,6 +8,12 @@
 
 [![部署到 Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/VolcharaVasiliy/risu-zai-proxy-archive) ![许可证](https://img.shields.io/github/license/VolcharaVasiliy/risu-zai-proxy-archive)
 
+## 目录
+
+- [功能概览](#功能概览)
+- [便携版](#便携版免安装windows-x64)
+- [Windows 快速开始](#windows-快速开始)
+
 ## 功能概览
 
 - OpenAI 兼容路由：`/v1/models`、`/v1/chat/completions`、`/v1/responses`、`/health`
@@ -58,6 +64,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1 
   -BaseUrl "https://your-project.vercel.app/v1" `
   -Model "Qwen3.7-Max"
 ```
+
+
+## 便携版（免安装，Windows x64）
+
+想要下载即用、零配置？请到 [Releases 页面](https://github.com/VolcharaVasiliy/risu-zai-proxy-archive/releases) 下载独立压缩包（文件名 `risu-zai-proxy-portable-*.zip`）。它内置便携版 Python 3.11（预装全部依赖）和便携版 Node.js——无需安装、无需 `pip`、无需修改 PATH，可在干净 Windows 上任意盘符运行。
+
+1. 下载并解压到任意位置（例如 `D:\risu-zai-proxy`）。
+2. 双击 `start.bat`（或在 PowerShell 运行 `start.ps1`）。
+3. 代理随即运行在 `http://127.0.0.1:3001/v1`。
+
+就这么简单。更多说明（如何启用代理 API Key、修改 host/port）见压缩包内的 `README.portable.md`。
 
 ## 日常命令
 

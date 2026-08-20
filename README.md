@@ -12,6 +12,7 @@ One `/v1` endpoint routes each model through a provider registry to the right ba
 
 - [What You Get](#what-you-get)
 - [Quick Start (Windows)](#quick-start-on-windows)
+- [Portable Build](#portable-build-no-install-windows-x64)
 - [Daily Commands](#daily-commands)
 - [Local Setup](#local-path-configuration)
 - [Credentials](#local-credentials)
@@ -71,6 +72,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1 
   -BaseUrl "https://your-project.vercel.app/v1" `
   -Model "Qwen3.7-Max"
 ```
+
+
+## Portable Build (no install, Windows x64)
+
+Prefer to just download and run with zero setup? Grab the standalone archive from the [releases page](https://github.com/VolcharaVasiliy/risu-zai-proxy-archive/releases) (asset `risu-zai-proxy-portable-*.zip`). It bundles a portable Python 3.11 with all dependencies already installed and a portable Node.js: nothing to install, no `pip`, no PATH changes, works from any drive on a clean Windows machine.
+
+1. Download and unzip the archive anywhere (for example `D:\risu-zai-proxy`).
+2. Double-click `start.bat` (or run `start.ps1` in PowerShell).
+3. The proxy is live at `http://127.0.0.1:3001/v1`.
+
+That is it. More details, including how to enable a proxy API key and override the host/port, are in `README.portable.md` inside the archive.
 
 ## Daily Commands
 
