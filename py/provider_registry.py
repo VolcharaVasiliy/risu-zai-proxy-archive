@@ -149,6 +149,118 @@ def _model_capabilities(provider_id: str, model: str = "") -> dict:
     }
 
 
+def _provider(provider_id, module, requires_env, **metadata):
+    credential_sets = metadata.pop("credential_sets", None)
+    if credential_sets is None:
+        required = tuple(
+            str(item).split(" ", 1)[0].strip()
+            for item in requires_env
+            if "(optional)" not in str(item).lower()
+        )
+        credential_sets = (required,) if required else ()
+    return {
+        "id": provider_id,
+        "module": module,
+        "owned_by": getattr(module, "OWNED_BY", provider_id),
+        "models": tuple(getattr(module, "SUPPORTED_MODELS", ())),
+        "requires_env": tuple(requires_env),
+        "runtimes": tuple(metadata.pop("runtimes", ("local", "vercel"))),
+        "auth_mode": metadata.pop("auth_mode", "browser_session"),
+        "credential_sets": tuple(tuple(group) for group in credential_sets),
+        **metadata,
+    }
+
+
+PROVIDER_MANIFEST = [
+    _provider("zai", zai_proxy, ["ZAI_TOKEN"], runtimes=("local",), credential_sets=(("ZAI_TOKEN",),)),
+    _provider("deepseek", deepseek_proxy, ["DEEPSEEK_TOKEN"]),
+    _provider("arcee", arcee_proxy, ["ARCEE_ACCESS_TOKEN"], credential_sets=(("ARCEE_ACCESS_TOKEN",),)),
+    _provider(
+        "gemini-web",
+        gemini_web_proxy,
+        [
+            "GEMINI_WEB_SECURE_1PSID",
+            "GEMINI_WEB_SECURE_1PSIDTS (optional)",
+            "GEMINI_WEB_COOKIE (optional)",
+        ],
+        credential_sets=(("GEMINI_WEB_SECURE_1PSID",), ("GEMINI_WEB_COOKIE",)),
+    ),
+    _provider(
+        "google-ai-studio",
+        google_ai_studio_proxy,
+        ["GOOGLE_AI_STUDIO_API_KEY"],
+        auth_mode="api_key",
+        resolve_priority=6,
+        credential_sets=(("GOOGLE_AI_STUDIO_API_KEY",), ("GEMINI_API_KEY",), ("GOOGLE_API_KEY",)),
+    ),
+    _provider(
+        "google-ai-studio-web",
+        google_ai_studio_web_proxy,
+        [
+            "GOOGLE_AI_STUDIO_WEB_COOKIE",
+            "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE (required for GenerateContent)",
+            "GOOGLE_AI_STUDIO_WEB_HEADERS (optional)",
+        ],
+        credential_sets=(("GOOGLE_AI_STUDIO_WEB_COOKIE",), ("GOOGLE_AI_STUDIO_WEB_SAPISID",)),
+        resolve_priority=5,
+    ),
+    _provider("grok", grok_proxy, ["GROK_COOKIE"], runtimes=("local",), credential_sets=(("GROK_COOKIE",), ("GROK_SSO",))),
+    _provider("kimi", kimi_proxy, ["KIMI_TOKEN"], credential_sets=(("KIMI_TOKEN",),)),
+    _provider(
+        "inception",
+        inception_proxy,
+        ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"],
+        runtimes=("local", "vercel", "cloudflare"),
+        credential_sets=(("INCEPTION_SESSION_TOKEN",), ("INCEPTION_COOKIE",)),
+    ),
+    _provider("longcat", longcat_proxy, ["LONGCAT_COOKIE"], credential_sets=(("LONGCAT_COOKIE",),)),
+    _provider(
+        "mistral",
+        mistral_proxy,
+        ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"],
+        credential_sets=(("MISTRAL_COOKIE",),),
+    ),
+    _provider(
+        "mimo",
+        mimo_proxy,
+        ["MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN", "MIMO_COOKIE (optional)"],
+        credential_sets=(("MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN"), ("MIMO_COOKIE",)),
+    ),
+    _provider("openai-web", openai_web_proxy, ["OPENAI_WEB_ACCESS_TOKEN"], credential_sets=(("OPENAI_WEB_ACCESS_TOKEN",), ("OPENAI_WEB_COOKIE",))),
+    _provider("perplexity", perplexity_proxy, ["PERPLEXITY_COOKIE"], credential_sets=(("PERPLEXITY_COOKIE",), ("PERPLEXITY_SESSION_TOKEN",))),
+    _provider(
+        "phind", phind_proxy, ["PHIND_COOKIE", "PHIND_NONCE (optional)"],
+        credential_sets=(("PHIND_COOKIE",),),
+    ),
+    _provider(
+        "inflection",
+        inflection_proxy,
+        ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"],
+        auth_mode="api_key",
+        credential_sets=(("INFLECTION_API_KEY",), ("PI_INFLECTION_API_KEY",)),
+    ),
+    _provider(
+        "pi-local",
+        pi_local_proxy,
+        [],
+        runtimes=("local",),
+        auth_mode="local_bridge",
+    ),
+    _provider("qwen-ai", qwen_ai_proxy, ["QWEN_AI_COOKIE"], credential_sets=(("QWEN_AI_COOKIE",),)),
+    _provider("glm-web", glm_web_proxy, ["GLM_REFRESH_TOKEN"], credential_sets=(("GLM_REFRESH_TOKEN",),)),
+    _provider("uncloseai", uncloseai_proxy, [], auth_mode="public"),
+    _provider(
+        "lmarena",
+        lmarena_proxy,
+        ["LM_ARENA_COOKIE"],
+        runtimes=("local",),
+        credential_sets=(("LM_ARENA_COOKIE",),),
+    ),
+    _provider("opencode-zen", zen_proxy, [], auth_mode="public"),
+]
+PROVIDERS_BY_ID = {entry["id"]: entry for entry in PROVIDER_MANIFEST}
+
+
 def _add_models(provider_id: str, owned_by: str, models, requires_env):
     for model in models:
         public_ids = PUBLIC_MODEL_IDS_BY_PROVIDER.get(provider_id)
@@ -168,170 +280,109 @@ def _add_models(provider_id: str, owned_by: str, models, requires_env):
         )
 
 
-_add_models("zai", "z.ai", zai_proxy.SUPPORTED_MODELS, ["ZAI_TOKEN"])
-_add_models(
-    "deepseek",
-    deepseek_proxy.OWNED_BY,
-    deepseek_proxy.SUPPORTED_MODELS,
-    ["DEEPSEEK_TOKEN"],
-)
-_add_models(
-    "arcee", arcee_proxy.OWNED_BY, arcee_proxy.SUPPORTED_MODELS, ["ARCEE_ACCESS_TOKEN"]
-)
-_add_models(
-    "gemini-web",
-    gemini_web_proxy.OWNED_BY,
-    gemini_web_proxy.SUPPORTED_MODELS,
-    [
-        "GEMINI_WEB_SECURE_1PSID",
-        "GEMINI_WEB_SECURE_1PSIDTS (optional)",
-        "GEMINI_WEB_COOKIE (optional)",
-    ],
-)
-_add_models(
-    "google-ai-studio",
-    google_ai_studio_proxy.OWNED_BY,
-    google_ai_studio_proxy.SUPPORTED_MODELS,
-    ["GOOGLE_AI_STUDIO_API_KEY"],
-)
-_add_models(
-    "google-ai-studio-web",
-    google_ai_studio_web_proxy.OWNED_BY,
-    google_ai_studio_web_proxy.SUPPORTED_MODELS,
-    [
-        "GOOGLE_AI_STUDIO_WEB_COOKIE",
-        "GOOGLE_AI_STUDIO_WEB_GENERATE_TEMPLATE (required for GenerateContent)",
-        "GOOGLE_AI_STUDIO_WEB_HEADERS (optional)",
-    ],
-)
-_add_models("grok", grok_proxy.OWNED_BY, grok_proxy.SUPPORTED_MODELS, ["GROK_COOKIE"])
-_add_models("kimi", kimi_proxy.OWNED_BY, kimi_proxy.SUPPORTED_MODELS, ["KIMI_TOKEN"])
-_add_models(
-    "inception",
-    inception_proxy.OWNED_BY,
-    inception_proxy.SUPPORTED_MODELS,
-    ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"],
-)
-_add_models(
-    "longcat",
-    longcat_proxy.OWNED_BY,
-    longcat_proxy.SUPPORTED_MODELS,
-    ["LONGCAT_COOKIE"],
-)
-_add_models(
-    "mistral",
-    mistral_proxy.OWNED_BY,
-    mistral_proxy.SUPPORTED_MODELS,
-    ["MISTRAL_COOKIE", "MISTRAL_CSRF_TOKEN (optional)"],
-)
-_add_models(
-    "mimo",
-    mimo_proxy.OWNED_BY,
-    mimo_proxy.SUPPORTED_MODELS,
-    ["MIMO_SERVICE_TOKEN", "MIMO_USER_ID", "MIMO_PH_TOKEN", "MIMO_COOKIE (optional)"],
-)
-_add_models(
-    "openai-web",
-    openai_web_proxy.OWNED_BY,
-    openai_web_proxy.SUPPORTED_MODELS,
-    ["OPENAI_WEB_ACCESS_TOKEN"],
-)
-_add_models(
-    "perplexity",
-    perplexity_proxy.OWNED_BY,
-    perplexity_proxy.SUPPORTED_MODELS,
-    ["PERPLEXITY_COOKIE"],
-)
-_add_models(
-    "phind",
-    phind_proxy.OWNED_BY,
-    phind_proxy.SUPPORTED_MODELS,
-    ["PHIND_COOKIE", "PHIND_NONCE (optional)"],
-)
-_add_models(
-    "inflection",
-    inflection_proxy.OWNED_BY,
-    inflection_proxy.SUPPORTED_MODELS,
-    ["INFLECTION_API_KEY", "PI_INFLECTION_API_KEY"],
-)
-_add_models("pi-local", pi_local_proxy.OWNED_BY, pi_local_proxy.SUPPORTED_MODELS, [])
-_add_models(
-    "qwen-ai",
-    qwen_ai_proxy.OWNED_BY,
-    qwen_ai_proxy.SUPPORTED_MODELS,
-    ["QWEN_AI_COOKIE"],
-)
-_add_models(
-    "glm-web",
-    glm_web_proxy.OWNED_BY,
-    glm_web_proxy.SUPPORTED_MODELS,
-    ["GLM_REFRESH_TOKEN"],
-)
-_add_models("uncloseai", uncloseai_proxy.OWNED_BY, uncloseai_proxy.SUPPORTED_MODELS, [])
-_add_models(
-    "lmarena",
-    lmarena_proxy.OWNED_BY,
-    lmarena_proxy.SUPPORTED_MODELS,
-    ["LM_ARENA_COOKIE"],
-)
-
-_add_models(
-    "opencode-zen",
-    zen_proxy.OWNED_BY,
-    zen_proxy.SUPPORTED_MODELS,
-    [],
-)
+for _entry in PROVIDER_MANIFEST:
+    _add_models(
+        _entry["id"],
+        _entry["owned_by"],
+        _entry["models"],
+        _entry["requires_env"],
+    )
 
 
 def models_payload():
     return {"object": "list", "data": MODEL_SPECS}
 
 
+def _env_name(requirement: str) -> str:
+    return str(requirement or "").split(" ", 1)[0].strip()
+
+
+def provider_status_payload(runtime: str = "") -> dict:
+    runtime = str(runtime or "").strip().lower()
+    supported_runtimes = sorted({item for entry in PROVIDER_MANIFEST for item in entry["runtimes"]})
+    runtime_valid = not runtime or runtime in supported_runtimes
+    data = []
+    for entry in PROVIDER_MANIFEST:
+        if runtime and runtime not in entry["runtimes"]:
+            continue
+        requirements = list(entry["requires_env"])
+        credential_sets = entry.get("credential_sets") or ()
+        names = list(dict.fromkeys(
+            [_env_name(item) for item in requirements]
+            + [name for group in credential_sets for name in group]
+        ))
+        configured = [name for name in names if env_or_kv_token(name)]
+        public = entry["auth_mode"] == "public"
+        ready = public or not credential_sets or any(
+            all(env_or_kv_token(name) for name in group)
+            for group in credential_sets
+        )
+        missing = [] if ready else [" or ".join(" + ".join(group) for group in credential_sets)]
+        data.append(
+            {
+                "id": entry["id"],
+                "owned_by": entry["owned_by"],
+                "models": list(entry["models"]),
+                "runtimes": list(entry["runtimes"]),
+                "auth_mode": entry["auth_mode"],
+                "requires_env": requirements,
+                "credential_sets": [list(group) for group in credential_sets],
+                "configured_env": configured,
+                "missing_env": [] if public else missing,
+                "ready": ready,
+            }
+        )
+    return {
+        "object": "list",
+        "runtime": runtime or None,
+        "runtime_valid": runtime_valid,
+        "supported_runtimes": supported_runtimes,
+        "data": data,
+    }
+
+
+def doctor_payload(runtime: str = "") -> dict:
+    runtime = str(runtime or "").strip().lower()
+    status = provider_status_payload(runtime)
+    providers = status["data"]
+    runtime_valid = status["runtime_valid"]
+    missing = [item["id"] for item in providers if not item["ready"]]
+    runtimes = sorted({runtime for item in providers for runtime in item["runtimes"]})
+    return {
+        "ok": runtime_valid and not missing,
+        "runtime": runtime or None,
+        "runtime_valid": runtime_valid,
+        "supported_runtimes": status["supported_runtimes"],
+        "providers_total": len(providers),
+        "providers_ready": len(providers) - len(missing),
+        "providers_missing_credentials": len(missing),
+        "missing_credentials": missing,
+        "runtimes": runtimes,
+        "checks": {
+            "manifest": True,
+            "credentials": not bool(missing),
+            "runtime": runtime_valid,
+        },
+        "providers": [
+            {
+                "id": item["id"],
+                "ready": item["ready"],
+                "missing_env": item["missing_env"],
+                "runtimes": item["runtimes"],
+            }
+            for item in providers
+        ],
+    }
+
+
 def resolve_provider_id(model: str) -> str:
-    if zai_proxy.supports_model(model):
-        return "zai"
-    if deepseek_proxy.supports_model(model):
-        return "deepseek"
-    if arcee_proxy.supports_model(model):
-        return "arcee"
-    if gemini_web_proxy.supports_model(model):
-        return "gemini-web"
-    if google_ai_studio_web_proxy.supports_model(model):
-        return "google-ai-studio-web"
-    if google_ai_studio_proxy.supports_model(model):
-        return "google-ai-studio"
-    if grok_proxy.supports_model(model):
-        return "grok"
-    if kimi_proxy.supports_model(model):
-        return "kimi"
-    if inception_proxy.supports_model(model):
-        return "inception"
-    if longcat_proxy.supports_model(model):
-        return "longcat"
-    if mistral_proxy.supports_model(model):
-        return "mistral"
-    if mimo_proxy.supports_model(model):
-        return "mimo"
-    if openai_web_proxy.supports_model(model):
-        return "openai-web"
-    if perplexity_proxy.supports_model(model):
-        return "perplexity"
-    if phind_proxy.supports_model(model):
-        return "phind"
-    if inflection_proxy.supports_model(model):
-        return "inflection"
-    if pi_local_proxy.supports_model(model):
-        return "pi-local"
-    if qwen_ai_proxy.supports_model(model):
-        return "qwen-ai"
-    if glm_web_proxy.supports_model(model):
-        return "glm-web"
-    if uncloseai_proxy.supports_model(model):
-        return "uncloseai"
-    if lmarena_proxy.supports_model(model):
-        return "lmarena"
-    if zen_proxy.supports_model(model):
-        return "opencode-zen"
+    ordered = sorted(
+        enumerate(PROVIDER_MANIFEST),
+        key=lambda item: item[1].get("resolve_priority", item[0] * 10),
+    )
+    for _index, entry in ordered:
+        if entry["module"].supports_model(model):
+            return entry["id"]
     return ""
 
 
@@ -868,6 +919,67 @@ def _buffered_stream_chunks(result):
     yield builder.finish(finish_reason=finish_reason)
 
 
+def _complete_with_credentials(module, credentials, payload):
+    return module.complete_non_stream(credentials, payload)
+
+
+def _complete_with_token(module, credentials, payload, key="token"):
+    return module.complete_non_stream(credentials[key], payload)
+
+
+def _complete_kimi(credentials, payload):
+    return kimi_proxy.complete_non_stream(
+        credentials["token"], payload, credentials.get("refresh_token", "")
+    )
+
+
+def _stream_with_credentials(module, credentials, payload):
+    return module.stream_chunks(credentials, payload)
+
+
+def _stream_with_token(module, credentials, payload, key="token"):
+    return module.stream_chunks(credentials[key], payload)
+
+
+def _stream_kimi(credentials, payload):
+    return kimi_proxy.stream_chunks(
+        credentials["token"], payload, credentials.get("refresh_token", "")
+    )
+
+
+PROVIDER_ADAPTERS = {
+    "zai": {
+        "complete": lambda credentials, payload: _complete_with_token(zai_proxy, credentials, payload),
+        "stream": lambda credentials, payload: zai_proxy.stream_chunks_with_captcha_retry(credentials["token"], payload),
+        "continuation_state": True,
+    },
+    "deepseek": {
+        "complete": lambda credentials, payload: _complete_with_token(deepseek_proxy, credentials, payload),
+        "stream": lambda credentials, payload: _stream_with_token(deepseek_proxy, credentials, payload),
+    },
+    "arcee": {"complete": lambda c, p: _complete_with_credentials(arcee_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(arcee_proxy, c, p)},
+    "gemini-web": {"complete": lambda c, p: _complete_with_credentials(gemini_web_proxy, c, p)},
+    "google-ai-studio": {"complete": lambda c, p: _complete_with_credentials(google_ai_studio_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(google_ai_studio_proxy, c, p)},
+    "google-ai-studio-web": {"complete": lambda c, p: _complete_with_credentials(google_ai_studio_web_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(google_ai_studio_web_proxy, c, p)},
+    "grok": {"complete": lambda c, p: _complete_with_token(grok_proxy, c, p, "cookie"), "stream": lambda c, p: _stream_with_token(grok_proxy, c, p, "cookie")},
+    "kimi": {"complete": _complete_kimi, "stream": _stream_kimi},
+    "inception": {"complete": lambda c, p: _complete_with_credentials(inception_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(inception_proxy, c, p)},
+    "longcat": {"complete": lambda c, p: _complete_with_credentials(longcat_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(longcat_proxy, c, p)},
+    "mistral": {"complete": lambda c, p: _complete_with_credentials(mistral_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(mistral_proxy, c, p)},
+    "mimo": {"complete": lambda c, p: _complete_with_credentials(mimo_proxy, c, p)},
+    "openai-web": {"complete": lambda c, p: _complete_with_credentials(openai_web_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(openai_web_proxy, c, p)},
+    "perplexity": {"complete": lambda c, p: _complete_with_token(perplexity_proxy, c, p, "cookie"), "stream": lambda c, p: _stream_with_token(perplexity_proxy, c, p, "cookie")},
+    "phind": {"complete": lambda c, p: _complete_with_credentials(phind_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(phind_proxy, c, p)},
+    "inflection": {"complete": lambda c, p: _complete_with_credentials(inflection_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(inflection_proxy, c, p)},
+    "pi-local": {"complete": lambda c, p: _complete_with_credentials(pi_local_proxy, c, p)},
+    "qwen-ai": {"complete": lambda c, p: _complete_with_credentials(qwen_ai_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(qwen_ai_proxy, c, p)},
+    "glm-web": {"complete": lambda c, p: _complete_with_token(glm_web_proxy, c, p, "refresh_token"), "stream": lambda c, p: _stream_with_token(glm_web_proxy, c, p, "refresh_token")},
+    "uncloseai": {"complete": lambda c, p: _complete_with_credentials(uncloseai_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(uncloseai_proxy, c, p)},
+    "lmarena": {"complete": lambda c, p: _complete_with_token(lmarena_proxy, c, p, "cookie"), "stream": lambda c, p: _stream_with_token(lmarena_proxy, c, p, "cookie"), "normalize": False},
+    "opencode-zen": {"complete": lambda c, p: _complete_with_credentials(zen_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(zen_proxy, c, p)},
+}
+
+
 def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     payload = multimodal.prepare_payload_for_provider(provider_id, credentials, payload)
     request_config = request_config_from_payload(payload)
@@ -888,81 +1000,13 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
             )
             return result, meta
 
-    if provider_id == "zai":
-        result, meta = zai_proxy.complete_non_stream(credentials["token"], payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "deepseek":
-        result, meta = deepseek_proxy.complete_non_stream(credentials["token"], payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "arcee":
-        result, meta = arcee_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "gemini-web":
-        result, meta = gemini_web_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "google-ai-studio":
-        result, meta = google_ai_studio_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "google-ai-studio-web":
-        result, meta = google_ai_studio_web_proxy.complete_non_stream(
-            credentials, payload
-        )
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "grok":
-        result, meta = grok_proxy.complete_non_stream(credentials["cookie"], payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "kimi":
-        result, meta = kimi_proxy.complete_non_stream(
-            credentials["token"], payload, credentials.get("refresh_token", "")
-        )
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "inception":
-        result, meta = inception_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "longcat":
-        result, meta = longcat_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "mistral":
-        result, meta = mistral_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "mimo":
-        result, meta = mimo_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "openai-web":
-        result, meta = openai_web_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "perplexity":
-        result, meta = perplexity_proxy.complete_non_stream(
-            credentials["cookie"], payload
-        )
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "phind":
-        result, meta = phind_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "inflection":
-        result, meta = inflection_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "pi-local":
-        result, meta = pi_local_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "qwen-ai":
-        result, meta = qwen_ai_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "glm-web":
-        result, meta = glm_web_proxy.complete_non_stream(
-            credentials["refresh_token"], payload
-        )
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "uncloseai":
-        result, meta = uncloseai_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    if provider_id == "lmarena":
-        result, meta = lmarena_proxy.complete_non_stream(credentials["cookie"], payload)
-        return result, meta
-    if provider_id == "opencode-zen":
-        result, meta = zen_proxy.complete_non_stream(credentials, payload)
-        return normalize_tool_result(result, request_config)[0], meta
-    raise RuntimeError(f"Unsupported provider: {provider_id}")
+    adapter = PROVIDER_ADAPTERS.get(provider_id)
+    if not adapter or not adapter.get("complete"):
+        raise RuntimeError(f"Unsupported provider: {provider_id}")
+    result, meta = adapter["complete"](credentials, payload)
+    if adapter.get("normalize", True):
+        result = normalize_tool_result(result, request_config)[0]
+    return result, meta
 
 
 def stream_chunks(provider_id: str, credentials: dict, payload: dict):
@@ -978,111 +1022,14 @@ def stream_chunks(provider_id: str, credentials: dict, payload: dict):
                 yield chunk
             return
 
-    if provider_id == "zai":
+    adapter = PROVIDER_ADAPTERS.get(provider_id)
+    stream = adapter.get("stream") if adapter else None
+    if stream:
         try:
-            for chunk in zai_proxy.stream_chunks_with_captcha_retry(
-                credentials["token"], payload
-            ):
-                yield chunk
+            yield from stream(credentials, payload)
         finally:
-            if original_payload is not payload and payload.get(
-                "_zai_continuation_state"
-            ):
-                original_payload["_zai_continuation_state"] = payload.get(
-                    "_zai_continuation_state"
-                )
-        return
-
-    if provider_id == "deepseek":
-        for chunk in deepseek_proxy.stream_chunks(credentials["token"], payload):
-            yield chunk
-        return
-
-    if provider_id == "arcee":
-        for chunk in arcee_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "google-ai-studio":
-        for chunk in google_ai_studio_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "google-ai-studio-web":
-        for chunk in google_ai_studio_web_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "grok":
-        for chunk in grok_proxy.stream_chunks(credentials["cookie"], payload):
-            yield chunk
-        return
-
-    if provider_id == "kimi":
-        for chunk in kimi_proxy.stream_chunks(
-            credentials["token"], payload, credentials.get("refresh_token", "")
-        ):
-            yield chunk
-        return
-
-    if provider_id == "inception":
-        for chunk in inception_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "longcat":
-        for chunk in longcat_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "mistral":
-        for chunk in mistral_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "openai-web":
-        for chunk in openai_web_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "perplexity":
-        for chunk in perplexity_proxy.stream_chunks(credentials["cookie"], payload):
-            yield chunk
-        return
-
-    if provider_id == "phind":
-        for chunk in phind_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "inflection":
-        for chunk in inflection_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "qwen-ai":
-        for chunk in qwen_ai_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "glm-web":
-        for chunk in glm_web_proxy.stream_chunks(credentials["refresh_token"], payload):
-            yield chunk
-        return
-
-    if provider_id == "uncloseai":
-        for chunk in uncloseai_proxy.stream_chunks(credentials, payload):
-            yield chunk
-        return
-
-    if provider_id == "lmarena":
-        for chunk in lmarena_proxy.stream_chunks(credentials["cookie"], payload):
-            yield chunk
-        return
-
-    if provider_id == "opencode-zen":
-        for chunk in zen_proxy.stream_chunks(credentials, payload):
-            yield chunk
+            if adapter.get("continuation_state") and original_payload is not payload and payload.get("_zai_continuation_state"):
+                original_payload["_zai_continuation_state"] = payload.get("_zai_continuation_state")
         return
 
     result, _meta = complete_non_stream(provider_id, credentials, payload)

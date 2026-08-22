@@ -11,6 +11,7 @@ import base64
 import hashlib
 import hmac
 import json
+import time
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -23,6 +24,8 @@ from py.http_helpers import (
 from py.provider_registry import (
     complete_non_stream,
     models_payload,
+    provider_status_payload,
+    doctor_payload,
     ProviderAuthError,
     ProviderRateLimitError,
     provider_error_hint,
@@ -39,6 +42,14 @@ from py.responses_api import (
     stream_response_events,
 )
 from py.zai_proxy import debug_log
+from py.observability import (
+    elapsed_ms,
+    header_summary,
+    log_event,
+    log_exception,
+    request_context,
+    request_id,
+)
 
 ZAI_SESSION_SECRET = hashlib.sha256(
     (os.environ.get("ZAI_TOKEN") or "zai-session-secret").encode("utf-8")
@@ -51,6 +62,10 @@ def sse_frame(event, response_format: str = "chat") -> bytes:
         event_name = str(event.get("type") or "").strip()
     prefix = f"event: {event_name}\n" if event_name else ""
     return f"{prefix}data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+def sse_error_frame(message: str, error_type: str = "server_error") -> bytes:
+    return sse_frame({"error": {"message": message, "type": error_type, "request_id": request_id()}})
 
 
 def _zai_session_token(state):
@@ -96,6 +111,54 @@ def _decode_zai_session_token(value):
 
 
 class handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        self._request_started = time.perf_counter()
+        self._last_response_status = None
+        self._observability_fields = {}
+        self._stream_chunk_count = 0
+
+    def parse_request(self):
+        parsed = super().parse_request()
+        if parsed:
+            self._request_context = request_context(self.headers.get("X-Request-ID", ""))
+            self.request_id = self._request_context.__enter__()
+            log_event(
+                "http_request_started",
+                level="info",
+                method=self.command,
+                path=self.path.split("?", 1)[0],
+                route=self._route(),
+                headers=header_summary(self.headers),
+            )
+        return parsed
+
+    def _finish_log(self):
+        if not hasattr(self, "_request_context"):
+            return
+        log_event(
+            "http_request_finished",
+            level="info",
+            method=getattr(self, "command", ""),
+            path=getattr(self, "path", "").split("?", 1)[0],
+            route=self._route() if hasattr(self, "path") else "",
+            status=self._last_response_status,
+            duration_ms=elapsed_ms(self._request_started),
+            stream_chunks=self._stream_chunk_count,
+            **self._observability_fields,
+        )
+        self._request_context.__exit__(None, None, None)
+
+    def finish(self):
+        try:
+            self._finish_log()
+        finally:
+            super().finish()
+
+    def send_response(self, code, message=None):
+        self._last_response_status = int(code)
+        return super().send_response(code, message)
+
     def _route(self):
         parsed = urlparse(self.path)
         route_values = parse_qs(parsed.query).get("route", [])
@@ -257,6 +320,32 @@ class handler(BaseHTTPRequestHandler):
                 send_json(self, 401, proxy_auth_error())
                 return
             send_json(self, 200, models_payload())
+            return
+
+        if route == "doctor":
+            if not proxy_authorized(self):
+                send_json(self, 401, proxy_auth_error())
+                return
+            runtime_values = parse_qs(urlparse(self.path).query).get("runtime", [])
+            runtime = runtime_values[0] if runtime_values else ""
+            status = provider_status_payload(runtime)
+            if not status["runtime_valid"]:
+                send_json(self, 400, {"error": {"message": "Unsupported runtime", "runtime": runtime, "supported": status["supported_runtimes"]}})
+                return
+            send_json(self, 200, doctor_payload(runtime))
+            return
+
+        if route == "providers":
+            if not proxy_authorized(self):
+                send_json(self, 401, proxy_auth_error())
+                return
+            runtime_values = parse_qs(urlparse(self.path).query).get("runtime", [])
+            runtime = runtime_values[0] if runtime_values else ""
+            status = provider_status_payload(runtime)
+            if not status["runtime_valid"]:
+                send_json(self, 400, {"error": {"message": "Unsupported runtime", "runtime": runtime, "supported": status["supported_runtimes"]}})
+                return
+            send_json(self, 200, status)
             return
 
         if route == "responses":
@@ -424,7 +513,7 @@ class handler(BaseHTTPRequestHandler):
                 ]
                 if payload.get("messages")
                 else None,
-                headers=dict(self.headers),
+                headers=header_summary(self.headers),
             )
         except Exception:
             send_json(
@@ -512,6 +601,14 @@ class handler(BaseHTTPRequestHandler):
             )
             return
 
+        self._observability_fields.update(
+            {
+                "provider": provider_id,
+                "model": payload.get("model"),
+                "stream": payload.get("stream", True) is not False,
+            }
+        )
+
         if route == "java-chat":
             payload["stream"] = False
 
@@ -551,19 +648,23 @@ class handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                 self.send_header("Cache-Control", "no-cache, no-transform")
                 self.send_header("Connection", "close")
+                self.send_header("X-Request-ID", request_id())
                 self.end_headers()
                 stream_started = True
 
                 if first_event is not None:
                     self.wfile.write(sse_frame(first_event, response_format))
                     self.wfile.flush()
+                    self._stream_chunk_count += 1
 
                 for event in iterator:
                     self.wfile.write(sse_frame(event, response_format))
                     self.wfile.flush()
+                    self._stream_chunk_count += 1
 
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
+                self._observability_fields["stream_outcome"] = "complete"
                 self.close_connection = True
                 return
 
@@ -629,6 +730,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, no-transform")
             self.send_header("Connection", "close")
+            self.send_header("X-Request-ID", request_id())
             self.end_headers()
             stream_started = True
 
@@ -648,6 +750,7 @@ class handler(BaseHTTPRequestHandler):
                     )
                 )
                 self.wfile.flush()
+                self._stream_chunk_count += 1
 
             for chunk in iterator:
                 if provider_id == "zai":
@@ -661,11 +764,21 @@ class handler(BaseHTTPRequestHandler):
                     f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8")
                 )
                 self.wfile.flush()
+                self._stream_chunk_count += 1
 
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
+            self._observability_fields["stream_outcome"] = "complete"
             self.close_connection = True
         except BrokenPipeError as exc:
+            self._observability_fields["stream_outcome"] = "client_closed"
+            log_event(
+                "http_stream_aborted",
+                level="info",
+                route=route,
+                provider=self._observability_fields.get("provider", ""),
+                chunks=self._stream_chunk_count,
+            )
             debug_log(
                 "api_chat_stream_closed",
                 route=route,
@@ -673,6 +786,7 @@ class handler(BaseHTTPRequestHandler):
                 error_type=type(exc).__name__,
             )
         except ProviderAuthError as exc:
+            self._observability_fields["stream_outcome"] = "provider_auth_error"
             debug_log(
                 "api_chat_auth_error",
                 route=route,
@@ -681,6 +795,11 @@ class handler(BaseHTTPRequestHandler):
                 error=str(exc),
             )
             if stream_started:
+                try:
+                    self.wfile.write(sse_error_frame(str(exc), "authentication_error"))
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             send_json(
                 self,
@@ -688,6 +807,7 @@ class handler(BaseHTTPRequestHandler):
                 {"error": {"message": str(exc), "type": "authentication_error"}},
             )
         except ProviderRateLimitError as exc:
+            self._observability_fields["stream_outcome"] = "provider_rate_limit"
             debug_log(
                 "api_chat_rate_limit_error",
                 route=route,
@@ -696,6 +816,11 @@ class handler(BaseHTTPRequestHandler):
                 error=str(exc),
             )
             if stream_started:
+                try:
+                    self.wfile.write(sse_error_frame(str(exc), "rate_limit_error"))
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             send_json(
                 self,
@@ -703,13 +828,29 @@ class handler(BaseHTTPRequestHandler):
                 {"error": {"message": str(exc), "type": "rate_limit_error"}},
             )
         except Exception as exc:
+            log_exception(
+                "api_request_error",
+                exc,
+                route=route,
+                provider=locals().get("provider_id", ""),
+            )
             debug_log(
                 "api_chat_error",
                 route=route,
                 error_type=type(exc).__name__,
-                error=str(exc),
             )
             if stream_started:
+                self._observability_fields["stream_outcome"] = "error"
+                try:
+                    self.wfile.write(
+                        sse_error_frame(
+                            "Provider request failed; inspect server logs with the X-Request-ID",
+                            "server_error",
+                        )
+                    )
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             try:
                 raise_provider_rate_limit_if_needed(provider_id, exc)
@@ -742,5 +883,10 @@ class handler(BaseHTTPRequestHandler):
             send_json(
                 self,
                 502,
-                {"error": {"message": str(exc), "type": "invalid_request_error"}},
+                {
+                    "error": {
+                        "message": "Provider request failed; inspect server logs with the X-Request-ID",
+                        "type": "server_error",
+                    }
+                },
             )

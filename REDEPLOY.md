@@ -36,6 +36,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\redeploy-vercel.ps
 
 - `/v1/chat/completions` is the regular chat path.
 - `/v1/responses` and `/v1/responses/chat/completions` are the agent-facing paths.
+- `/doctor` and `/v1/providers` are read-only diagnostics endpoints; they report
+  readiness and missing credential names, never secret values.
+- Pass a stable `X-Request-ID` when troubleshooting a client request; it is
+  echoed in the response and structured logs.
 - Native function-tool loops are supported by `google-ai-studio`, `pi-api`, and `uncloseai-*`.
 - Other providers use the prompt tool shim by default with `AGENT_TOOL_MODE=auto`; set `AGENT_TOOL_MODE=off` if you want them to fail fast instead.
 

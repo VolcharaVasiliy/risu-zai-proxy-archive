@@ -6,6 +6,7 @@ import { pickPython } from "./path-config.mjs";
 const requiredFiles = [
   "package.json",
   "vercel.json",
+  "cloudflare/worker.mjs",
   "local-server.js",
   "api/index.py",
   "py/arcee_proxy.py",
@@ -14,6 +15,7 @@ const requiredFiles = [
   "py/google_ai_studio_proxy.py",
   "py/google_ai_studio_web_proxy.py",
   "py/http_helpers.py",
+  "py/observability.py",
   "py/credentials_bootstrap.py",
   "py/agent_tools.py",
   "py/inflection_proxy.py",
@@ -28,6 +30,7 @@ const requiredFiles = [
   "py/uncloseai_proxy.py",
   "py/zai_proxy.py",
   "README.md",
+  "docs/observability.md",
   "REDEPLOY.md",
   "path-config.example.json",
   "requirements.txt",
@@ -37,6 +40,8 @@ const requiredFiles = [
   "scripts/run-python.mjs",
   "scripts/setup-windows.ps1",
   "scripts/test_agent_tools.py",
+  "scripts/test_observability.py",
+  "scripts/test_docs.py",
   "scripts/generate-codex-catalog.py",
   "scripts/install-rzai.ps1",
   "scripts/rzai-launcher.ps1",
@@ -115,6 +120,36 @@ const agentToolsTest = spawnSync(python, ["scripts/test_agent_tools.py"], {
 if (agentToolsTest.status !== 0) {
   throw new Error(
     `Agent tool tests failed:\n${agentToolsTest.stdout || ""}${agentToolsTest.stderr || ""}`,
+  );
+}
+
+const cloudflareSyntax = spawnSync(process.execPath, ["--check", "cloudflare/worker.mjs"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+});
+if (cloudflareSyntax.status !== 0) {
+  throw new Error(
+    `Cloudflare Worker syntax check failed:\n${cloudflareSyntax.stdout || ""}${cloudflareSyntax.stderr || ""}`,
+  );
+}
+
+const observabilityTest = spawnSync(python, ["scripts/test_observability.py"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+});
+if (observabilityTest.status !== 0) {
+  throw new Error(
+    `Observability tests failed:\n${observabilityTest.stdout || ""}${observabilityTest.stderr || ""}`,
+  );
+}
+
+const docsTest = spawnSync(python, ["scripts/test_docs.py"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+});
+if (docsTest.status !== 0) {
+  throw new Error(
+    `Documentation tests failed:\n${docsTest.stdout || ""}${docsTest.stderr || ""}`,
   );
 }
 

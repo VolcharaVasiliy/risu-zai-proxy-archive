@@ -10,6 +10,14 @@
       "destination": "/api?route=models"
     },
     {
+      "source": "/v1/providers",
+      "destination": "/api?route=providers"
+    },
+    {
+      "source": "/doctor",
+      "destination": "/api?route=doctor"
+    },
+    {
       "source": "/v1/chat/completions",
       "destination": "/api?route=chat"
     },

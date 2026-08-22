@@ -13,10 +13,11 @@
 - [功能概览](#功能概览)
 - [便携版](#便携版免安装windows-x64)
 - [Windows 快速开始](#windows-快速开始)
+- [诊断与日志](#诊断与日志)
 
 ## 功能概览
 
-- OpenAI 兼容路由：`/v1/models`、`/v1/chat/completions`、`/v1/responses`、`/health`
+- OpenAI 兼容路由：`/v1/models`、`/v1/providers`、`/v1/chat/completions`、`/v1/responses`、`/health`、`/doctor`
 - 为 Codex 准备的 Responses API 支持，因此本代理无需 `api2codex`
 - `rzai` 启动器，用一条简短命令即可通过代理运行 Codex
 - 提供商注册表，带别名、模型目录生成，以及为 Codex 清理重复模型
@@ -101,6 +102,21 @@ npm run codex:catalog -- --output "$env:USERPROFILE\.codex\risu-zai-model-catalo
 ```powershell
 npm run check
 ```
+
+## 诊断与日志
+
+遇到异常上游响应时，可启用结构化 JSON 日志：
+
+```powershell
+$env:PROXY_LOG_LEVEL = "debug"
+npm run dev
+```
+
+每个请求都有 `request_id`。传入自己的 `X-Request-ID`，即可将客户端响应、请求生命周期、提供商日志和流式错误关联起来。凭据、Cookie 和令牌会自动脱敏；生命周期日志不会记录完整请求或响应正文。
+
+可用级别为 `debug`、`info`、`warning`、`error`、`off`。未设置 `PROXY_LOG_LEVEL` 时，旧的 `DEBUG_LOGGING=1` 仍等价于 `debug`。`PROXY_MAX_BODY_BYTES` 用于设置 JSON 请求体上限，默认 8 MiB。
+
+使用需要鉴权的 `GET /v1/providers` 查看提供商模型、runtime、鉴权方式和缺失的凭据名称；追加 `?runtime=local` 或 `?runtime=vercel` 可只检查一个部署目标。使用 `GET /doctor` 获取简要就绪状态。两个接口均不会返回凭据值。完整说明见 [docs/observability.md](docs/observability.md)。
 
 ## 本地配置
 
@@ -233,7 +249,9 @@ env_key = "CODEX_API_KEY"
 ## API 接口
 
 - `GET /health`
+- `GET /doctor`
 - `GET /v1/models`
+- `GET /v1/providers`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 - `GET /v1/responses/{response_id}`
@@ -244,6 +262,7 @@ env_key = "CODEX_API_KEY"
 
 ## 更多文档
 
+- [分步安装指南](INSTALLATION.md)
 - [提供商参考](docs/providers.md)
 - [部署与环境指南](docs/deployment.md)
 - [重复部署说明](REDEPLOY.md)

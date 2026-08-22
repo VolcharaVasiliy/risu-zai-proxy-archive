@@ -5,6 +5,11 @@ import sys
 import threading
 import time
 
+try:
+    from py.observability import log_event
+except ImportError:
+    from observability import log_event
+
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 CAPTCHA_FILE = os.path.join(PROJECT_ROOT, "captcha_param.json")
@@ -16,17 +21,7 @@ _active_grabber = None
 
 
 def debug_log(message: str, **fields):
-    if os.environ.get("DEBUG_LOGGING", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        payload = {"message": message, **fields}
-        print(
-            f"[zai-captcha] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}",
-            flush=True,
-        )
+    log_event(f"zai_captcha.{message}", level="debug", **fields)
 
 
 def captcha_mode() -> str:

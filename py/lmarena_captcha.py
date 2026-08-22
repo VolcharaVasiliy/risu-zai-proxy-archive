@@ -6,6 +6,11 @@ import time
 import urllib.request
 import urllib.error
 
+try:
+    from py.observability import log_event
+except ImportError:
+    from observability import log_event
+
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 RECAPTCHA_FILE = os.path.join(PROJECT_ROOT, "lmarena-recaptcha.json")
@@ -23,8 +28,7 @@ _bridge_spawned = False
 
 
 def debug_log(message: str, **fields):
-    if os.environ.get("DEBUG_LOGGING", "").strip().lower() in {"1", "true", "yes", "on"}:
-        print(f"[lmarena-captcha] {json.dumps({'message': message, **fields}, ensure_ascii=False)}", flush=True)
+    log_event(f"lmarena_captcha.{message}", level="debug", **fields)
 
 
 def ttl_seconds() -> float:

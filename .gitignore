@@ -19,6 +19,7 @@ run/
 auth/
 node_modules/
 pydeps/
+.analysis-pydeps/
 REPORT.md
 .env*.local
 .vercel

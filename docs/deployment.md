@@ -15,6 +15,12 @@ Use this button to create a Vercel project from the repository.
 - `DELETE /v1/responses/{response_id}`
 - `POST /v1/responses/chat/completions`
 - `GET /health`
+- `GET /v1/providers` (requires the proxy key when `PROXY_API_KEY`/`RISU_PROXY_API_KEY` is configured; returns provider readiness metadata without credential values)
+- `GET /doctor` (same authorization behavior; returns a compact readiness summary)
+
+Append `?runtime=local`, `?runtime=vercel`, or `?runtime=cloudflare` to the
+diagnostic endpoints when checking one deployment target. Cloudflare currently
+reports the Inception edge adapter through `/v1/providers`.
 
 `/v1/chat/completions` is the regular OpenAI-compatible chat path.
 `/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
@@ -266,7 +272,7 @@ The script:
 
 ## Repository Files Used By Deployment
 
-- `vercel.json` - route rewrites for `/health`, `/v1/models`, `/v1/chat/completions`, `/v1/responses`, `/v1/responses/{response_id}`, and `/v1/responses/chat/completions`
+- `vercel.json` - route rewrites for `/health`, `/doctor`, `/v1/models`, `/v1/providers`, `/v1/chat/completions`, `/v1/responses`, `/v1/responses/{response_id}`, and `/v1/responses/chat/completions`
 - `api/index.py` - Vercel function entrypoint
 - `py/credentials_bootstrap.py` - loads `credentials.json` into process env before provider imports
 - `py/agent_tools.py` - OpenAI-compatible prompt tool shim, tool-call extraction, and tool-call normalization

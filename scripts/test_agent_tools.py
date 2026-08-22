@@ -865,7 +865,93 @@ def test_qwen_37_models_are_supported():
     assert qwen_ai_proxy.map_model("Qwen3.7-Max") == "qwen3.7-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Max-Preview") == "qwen3.7-max"
     assert qwen_ai_proxy.map_model("Qwen3.7-Plus") == "qwen3.7-plus"
-    assert qwen_ai_proxy.map_model("Qwen3.6-Flash") == "qwen3.6-flash"
+    # Qwen currently rejects qwen3.6-flash upstream; the adapter intentionally
+    # falls back to the live qwen3.6-plus model.
+    assert qwen_ai_proxy.map_model("Qwen3.6-Flash") == "qwen3.6-plus"
+
+
+def test_provider_manifest_is_consistent_and_safe():
+    manifest = provider_registry.PROVIDER_MANIFEST
+    ids = [entry["id"] for entry in manifest]
+    assert ids == list(provider_registry.PROVIDERS_BY_ID)
+    assert len(ids) == len(set(ids))
+    assert all(entry["models"] for entry in manifest)
+    assert all(entry["runtimes"] for entry in manifest)
+    assert set(ids) == set(provider_registry.PROVIDER_ADAPTERS)
+    assert all(entry.get("credential_sets") is not None for entry in manifest)
+
+    status = provider_registry.provider_status_payload()
+    assert status["object"] == "list"
+    assert {entry["id"] for entry in status["data"]} == set(ids)
+    public = next(item for item in status["data"] if item["id"] == "uncloseai")
+    assert public["ready"] is True
+    serialized = json.dumps(status, ensure_ascii=False)
+    for secret in ("Bearer ", "cookie=", "api_key="):
+        assert secret not in serialized
+
+
+def test_provider_status_accepts_alternative_credentials(monkeypatch=None):
+    previous = dict(os.environ)
+    try:
+        for name in ("GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            os.environ.pop(name, None)
+        os.environ["GEMINI_API_KEY"] = "test-key"
+        status = provider_registry.provider_status_payload()["data"]
+        studio = next(item for item in status if item["id"] == "google-ai-studio")
+        assert studio["ready"] is True
+        assert studio["missing_env"] == []
+        assert "GEMINI_API_KEY" in studio["configured_env"]
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
+
+
+def test_manifest_resolution_preserves_provider_precedence():
+    assert provider_registry.resolve_provider_id("Qwen3.7-Max") == "qwen-ai"
+    assert provider_registry.resolve_provider_id("mistral-small-2603") == "mistral"
+    assert provider_registry.resolve_provider_id("definitely-unknown-model") == ""
+
+
+def test_doctor_summary_matches_manifest():
+    doctor = provider_registry.doctor_payload()
+    assert doctor["providers_total"] == len(provider_registry.PROVIDER_MANIFEST)
+    assert doctor["providers_ready"] + doctor["providers_missing_credentials"] == doctor["providers_total"]
+    assert set(doctor["runtimes"]) >= {"local", "vercel"}
+    assert doctor["checks"]["manifest"] is True
+
+
+def test_provider_runtime_filter_is_explicit():
+    local = provider_registry.provider_status_payload("local")
+    vercel = provider_registry.provider_status_payload("vercel")
+    assert local["runtime"] == "local"
+    assert vercel["runtime"] == "vercel"
+    assert all("local" in item["runtimes"] for item in local["data"])
+    assert all("vercel" in item["runtimes"] for item in vercel["data"])
+    assert len(vercel["data"]) < len(provider_registry.PROVIDER_MANIFEST)
+    invalid = provider_registry.doctor_payload("not-a-runtime")
+    assert invalid["runtime_valid"] is False
+    assert invalid["ok"] is False
+    assert "cloudflare" in invalid["supported_runtimes"]
+
+
+def test_provider_dispatch_table_calls_adapter_without_central_if_chain():
+    original = provider_registry.deepseek_proxy.complete_non_stream
+    try:
+        provider_registry.deepseek_proxy.complete_non_stream = lambda token, payload: (
+            {
+                "id": "test",
+                "model": payload["model"],
+                "choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            },
+            {"adapter": "fake"},
+        )
+        result, meta = provider_registry.complete_non_stream(
+            "deepseek", {"token": "redacted"}, {"model": "deepseek-chat", "messages": []}
+        )
+        assert result["choices"][0]["message"]["content"] == "ok"
+        assert meta == {"adapter": "fake"}
+    finally:
+        provider_registry.deepseek_proxy.complete_non_stream = original
 
 
 def main():
@@ -900,6 +986,12 @@ def main():
     test_catalog_disables_freeform_apply_patch_for_prompt_shim_models()
     test_public_model_catalog_hides_alias_duplicates()
     test_qwen_37_models_are_supported()
+    test_provider_manifest_is_consistent_and_safe()
+    test_provider_status_accepts_alternative_credentials()
+    test_manifest_resolution_preserves_provider_precedence()
+    test_doctor_summary_matches_manifest()
+    test_provider_runtime_filter_is_explicit()
+    test_provider_dispatch_table_calls_adapter_without_central_if_chain()
     print("agent_tools_test: ok")
 
 

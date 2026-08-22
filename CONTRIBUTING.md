@@ -12,13 +12,21 @@ npm run dev       # local proxy on http://127.0.0.1:3001/v1
 npm run check     # run checks
 ```
 
+`npm run check` covers Python compilation, Node and Cloudflare Worker syntax,
+provider/agent tests, observability tests, Codex catalog generation, and
+documentation consistency. For a live smoke test, query `/health`, `/doctor`,
+and `/v1/providers` while the local server is running.
+
 For the full step-by-step installation guide with copy-paste commands (prerequisites, first request, LM Arena quick start, Vercel deploy), see [INSTALLATION.md](INSTALLATION.md).
 
 ## Before you open a PR
 
 - Run `npm run check`.
 - Keep `credentials.json` and other secrets **out** of commits (they are git-ignored).
-- Repo docs are English; localized READMEs (`README.ru.md`, `README.zh.md`) mirror `README.md` — update all three when you change user-facing docs.
+- User-facing docs have three synchronized entry points (`README.md`,
+  `README.ru.md`, `README.zh.md`). Update all three when routes, setup,
+  diagnostics, or behavior changes. Keep detailed reference docs in `docs/` in
+  English unless a localized translation already exists.
 - Prefer small, descriptive commits (imperative summary, e.g. `qwen: clarify RGV587_ERROR`).
 
 ## Structure

@@ -44,10 +44,12 @@ pip install -r requirements.txt
 npm install
 ```
 
-## 3. Configure environment variables
+## 3. Configure credentials and environment variables
 
-Configuration is via environment variables only. A `.env` file is optional; you
-can export variables in your shell or set them system-wide.
+The proxy accepts configuration from (in this order) `credentials.json`, process
+environment variables, and provider-specific request headers. `credentials.json`
+is git-ignored and is the easiest local setup; environment variables are the
+usual choice for Vercel. Do not commit either file.
 
 Minimum to start — the key clients use to talk to the proxy:
 
@@ -55,12 +57,24 @@ Minimum to start — the key clients use to talk to the proxy:
 $env:PROXY_API_KEY = "pick-your-own-secret-key"
 ```
 
+For a local-only setup you can also create `credentials.json` in the repository
+root:
+
+```json
+{
+  "PROXY_API_KEY": "pick-your-own-secret-key",
+  "ZAI_TOKEN": "<token>"
+}
+```
+
 Locally on `127.0.0.1` the server also starts without a key (for testing), but a
 key is required for real use.
 
-Per-provider keys are set either via `<PROVIDER>_API_KEY` / `<PROVIDER>_TOKEN`
-variables, or passed in the request header `x-<provider>-api-key: ...`. See the
-provider reference (link below) for the full list.
+Per-provider credentials use the exact names in [the provider reference](docs/providers.md),
+for example `ZAI_TOKEN`, `MISTRAL_COOKIE`, or `GOOGLE_AI_STUDIO_API_KEY`. For
+one-off requests, supported provider headers such as `x-lmarena-cookie` can be
+used instead; `/v1/providers` shows the required credential *names* without
+revealing their values.
 
 ## 4. Start the server
 
@@ -95,6 +109,15 @@ curl http://127.0.0.1:3001/v1/models `
   -H "Authorization: Bearer $env:PROXY_API_KEY"
 ```
 
+Inspect readiness and provider configuration:
+
+```powershell
+curl http://127.0.0.1:3001/doctor `
+  -H "Authorization: Bearer $env:PROXY_API_KEY"
+curl http://127.0.0.1:3001/v1/providers `
+  -H "Authorization: Bearer $env:PROXY_API_KEY"
+```
+
 ## 7. Make your first request
 
 Via `curl` (Z.ai model):
@@ -103,7 +126,7 @@ Via `curl` (Z.ai model):
 curl http://127.0.0.1:3001/v1/chat/completions `
   -H "Authorization: Bearer $env:PROXY_API_KEY" `
   -H "Content-Type: application/json" `
-  -d '{"model":"zai:glm-4.5v","messages":[{"role":"user","content":"Hello, who are you?"}]}'
+  -d '{"model":"glm-4.7","messages":[{"role":"user","content":"Hello, who are you?"}]}'
 ```
 
 Same request from Python (openai SDK):
@@ -117,7 +140,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="zai:glm-4.5v",
+    model="glm-4.7",
     messages=[{"role": "user", "content": "Hello, who are you?"}],
 )
 print(resp.choices[0].message.content)
@@ -144,19 +167,31 @@ window (bridge), fetches the token, and closes it on exit.
 
 </details>
 
-3. Point the proxy at the cookie (bridge mode defaults to `auto`):
+3. The normal provider value is the complete `arena.ai` cookie header. Put it in
+   `credentials.json` as `LM_ARENA_COOKIE` or set it as an environment variable:
 
 ```powershell
-$env:LM_ARENA_COOKIE = "C:\Users\gamer\Desktop\lmarena-cookie.txt"
+$env:LM_ARENA_COOKIE = "arena-auth-prod-v1.1=<value>; other_cookie=<value>"
 ```
 
-4. Just send a request to a model with the `arena:` prefix:
+If you use the local browser bridge, the extension's JSON cookie export can be
+saved separately and selected with `LM_ARENA_COOKIE_FILE` (the bridge-only file
+input). `LM_ARENA_COOKIE` itself is not a filesystem path.
+
+4. Point the bridge at the cookie file when needed (bridge mode defaults to `auto`):
+
+```powershell
+$env:LM_ARENA_COOKIE_FILE = "C:\Users\you\Desktop\lmarena-cookie.json"
+```
+
+5. Send a request using any model id listed by `/v1/models` (the optional
+`lmarena:`/`arena:` aliases are accepted, but are not required):
 
 ```powershell
 curl http://127.0.0.1:3001/v1/chat/completions `
   -H "Authorization: Bearer $env:PROXY_API_KEY" `
   -H "Content-Type: application/json" `
-  -d '{"model":"arena:gpt-5.2","messages":[{"role":"user","content":"Tell me a joke"}]}'
+  -d '{"model":"gpt-5.2","messages":[{"role":"user","content":"Tell me a joke"}]}'
 ```
 
 Env switches and details are in the provider reference (link below).
@@ -186,6 +221,9 @@ vercel deploy --prod
 - `429` → provider rate limit; wait a moment and retry.
 - Server won't start → check `python --version` ≥ 3.11 and `node -v` ≥ 20, and
   that `npm install` finished cleanly.
+- Unexpected or empty output → set `PROXY_LOG_LEVEL=debug`, repeat the request,
+  and correlate the JSON events with the returned `X-Request-ID`. Secrets and
+  cookies are redacted automatically; see [observability.md](docs/observability.md).
 
 ## Links
 

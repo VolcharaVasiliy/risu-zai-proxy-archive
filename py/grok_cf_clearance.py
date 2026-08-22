@@ -5,6 +5,11 @@ import sys
 import threading
 import time
 
+try:
+    from py.observability import log_event
+except ImportError:
+    from observability import log_event
+
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 CLEARANCE_FILE = os.environ.get("GROK_CF_CLEARANCE_FILE") or os.path.join(
@@ -18,12 +23,7 @@ _active_grabber = None
 
 
 def debug_log(message: str, **fields):
-    if os.environ.get("DEBUG_LOGGING", "").strip().lower() in {"1", "true", "yes", "on"}:
-        payload = {"message": message, **fields}
-        print(
-            f"[grok-clearance] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}",
-            flush=True,
-        )
+    log_event(f"grok_clearance.{message}", level="debug", **fields)
 
 
 def clearance_mode() -> str:

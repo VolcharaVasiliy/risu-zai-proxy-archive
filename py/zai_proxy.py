@@ -10,6 +10,11 @@ import time
 import uuid
 from urllib.parse import urlencode
 
+try:
+    from py.observability import log_event
+except ImportError:
+    from observability import log_event
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "pydeps"))
 import requests
 
@@ -108,6 +113,9 @@ def supports_model(model: str) -> bool:
 
 
 def debug_enabled() -> bool:
+    configured_level = os.environ.get("PROXY_LOG_LEVEL", "").strip().lower()
+    if configured_level and configured_level not in {"off", "none", "0"}:
+        return True
     return os.environ.get("DEBUG_LOGGING", "").strip().lower() in {
         "1",
         "true",
@@ -117,14 +125,11 @@ def debug_enabled() -> bool:
 
 
 def debug_log(message: str, **fields):
+    # Keep this compatibility wrapper because every provider imports it.
+    # The shared logger adds request context and redacts sensitive fields.
     if not debug_enabled():
         return
-
-    payload = {"message": message, **fields}
-    print(
-        f"[zai-proxy] {json.dumps(payload, ensure_ascii=False, sort_keys=True)}",
-        flush=True,
-    )
+    log_event(message, level="debug", **fields)
 
 
 def env_int(name: str, default: int, minimum: int = 0, maximum: int = 10) -> int:

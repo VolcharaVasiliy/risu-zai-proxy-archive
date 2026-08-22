@@ -10,6 +10,68 @@ const MODEL_ALIASES = new Map([
   ["inception-chat", "mercury-2"],
 ]);
 
+const LOG_LEVELS = { debug: 10, info: 20, warning: 30, error: 40 };
+
+function requestId(request) {
+  const candidate = String(request.headers.get("x-request-id") || "").trim();
+  if (/^[A-Za-z0-9._:-]{1,128}$/.test(candidate)) {
+    return candidate;
+  }
+  return `req_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function logEnabled(env, level) {
+  let configured = String(env.PROXY_LOG_LEVEL || "").trim().toLowerCase();
+  if (!configured) {
+    configured = /^(1|true|yes|on)$/i.test(String(env.DEBUG_LOGGING || "")) ? "debug" : "off";
+  }
+  if (["", "off", "none", "0"].includes(configured)) {
+    return false;
+  }
+  return (LOG_LEVELS[level] || 20) >= (LOG_LEVELS[configured] || 10);
+}
+
+function logEvent(env, event, requestIdValue, fields = {}, level = "info") {
+  if (!logEnabled(env, level)) {
+    return;
+  }
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    level,
+    event,
+    request_id: requestIdValue,
+    ...fields,
+  }));
+}
+
+function headerSummary(headers) {
+  const names = [];
+  const sensitivePresent = {};
+  for (const [name, value] of headers.entries()) {
+    const lowered = name.toLowerCase();
+    names.push(lowered);
+    if (["authorization", "cookie", "x-api-key", "x-proxy-api-key"].includes(lowered)) {
+      sensitivePresent[lowered] = Boolean(String(value || "").trim());
+    }
+  }
+  return { names: [...new Set(names)].sort(), sensitive_present: sensitivePresent };
+}
+
+function upstreamPreview(env, value) {
+  if (!/^(1|true|yes|on)$/i.test(String(env.PROXY_LOG_UPSTREAM_PREVIEW || ""))) {
+    return undefined;
+  }
+  return String(value || "")
+    .slice(0, 500)
+    .replace(/(bearer\s+|(?:api[_-]?key|token|cookie|authorization|secret)\s*[=:]\s*)([^\s,;"']{8,})/gi, "$1<redacted>");
+}
+
+function withRequestId(response, requestIdValue) {
+  const headers = new Headers(response.headers);
+  headers.set("X-Request-ID", requestIdValue);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function envToken(value) {
   return String(value || "").trim();
 }
@@ -533,7 +595,7 @@ async function browserBackedRequest(env, baseUrl, cookie, sessionToken, body) {
   }
 }
 
-async function inceptionResponse(request, env, payload) {
+async function inceptionResponse(request, env, payload, requestIdValue) {
   const { cookie, sessionToken } = resolveCredentialsWithEnv(request.headers, env);
   if (!sessionToken) {
     return jsonResponse(
@@ -559,6 +621,13 @@ async function inceptionResponse(request, env, payload) {
     const browserResult = await browserBackedRequest(env, baseUrl, cookie, sessionToken, body);
     browserDebug = browserResult.debug || null;
     if (browserResult.session.status !== 200) {
+      logEvent(env, "upstream_response", requestIdValue, {
+        provider: "inception",
+        operation: "session_refresh",
+        status: browserResult.session.status,
+        body_bytes: new TextEncoder().encode(String(browserResult.session.text || "")).byteLength,
+        body_preview: upstreamPreview(env, browserResult.session.text),
+      }, "warning");
       return jsonResponse(
         {
           error: {
@@ -602,6 +671,15 @@ async function inceptionResponse(request, env, payload) {
     contentType = String(upstream.headers.get("content-type") || "");
 
     if (!upstream.ok && upstream.status !== 200) {
+      logEvent(env, "upstream_response", requestIdValue, {
+        provider: "inception",
+        operation: "chat_completion",
+        status: upstream.status,
+        content_type: contentType,
+        body_bytes: new TextEncoder().encode(rawText).byteLength,
+        body_preview: upstreamPreview(env, rawText),
+        browser_fallback: true,
+      }, "warning");
       return jsonResponse(
         {
           error: {
@@ -614,6 +692,16 @@ async function inceptionResponse(request, env, payload) {
       );
     }
   }
+
+  logEvent(env, "upstream_response", requestIdValue, {
+    provider: "inception",
+    operation: "chat_completion",
+    status: upstreamStatus,
+    content_type: contentType,
+    body_bytes: new TextEncoder().encode(rawText).byteLength,
+    body_preview: upstreamPreview(env, rawText),
+    browser_fallback: Boolean(browserErrorMessage),
+  }, upstreamStatus === 200 ? "debug" : "warning");
 
   if (upstreamStatus !== 200) {
     return jsonResponse(
@@ -696,16 +784,32 @@ function modelList() {
   };
 }
 
-export default {
-  async fetch(request, env) {
+async function handleRequest(request, env, requestIdValue) {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
       return jsonResponse({ ok: true, edge: "cloudflare", provider: "inception" });
     }
 
+    if (url.pathname === "/doctor") {
+      const ready = Boolean(env.INCEPTION_SESSION_TOKEN || env.INCEPTION_COOKIE);
+      return jsonResponse({
+        ok: ready,
+        runtime: "cloudflare",
+        providers_total: 1,
+        providers_ready: ready ? 1 : 0,
+        providers_missing_credentials: ready ? 0 : 1,
+        missing_credentials: ready ? [] : ["inception"],
+        runtimes: ["cloudflare"],
+      });
+    }
+
     if (url.pathname === "/v1/models") {
       return jsonResponse(modelList());
+    }
+
+    if (url.pathname === "/v1/providers") {
+      return jsonResponse(providerList(env));
     }
 
     if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
@@ -760,9 +864,98 @@ export default {
         );
       }
 
-      return inceptionResponse(request, env, payload);
+      return inceptionResponse(request, env, payload, requestIdValue);
     }
 
     return jsonResponse({ error: { message: "Not found" } }, 404);
+}
+
+function providerList(env) {
+  const ready = Boolean(env.INCEPTION_SESSION_TOKEN || env.INCEPTION_COOKIE);
+  return {
+    object: "list",
+    runtime: "cloudflare",
+    data: [{
+      id: "inception",
+      owned_by: "chat.inceptionlabs.ai",
+      models: [...SUPPORTED_MODELS],
+      runtimes: ["cloudflare"],
+      auth_mode: "browser_session",
+      requires_env: ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE (optional)"],
+      credential_sets: [["INCEPTION_SESSION_TOKEN"], ["INCEPTION_COOKIE"]],
+      configured_env: [
+        ...(env.INCEPTION_SESSION_TOKEN ? ["INCEPTION_SESSION_TOKEN"] : []),
+        ...(env.INCEPTION_COOKIE ? ["INCEPTION_COOKIE"] : []),
+      ],
+      missing_env: ready ? [] : ["INCEPTION_SESSION_TOKEN", "INCEPTION_COOKIE"],
+      ready,
+    }],
+  };
+}
+
+export default {
+  async fetch(request, env) {
+    const started = Date.now();
+    const rid = requestId(request);
+    const url = new URL(request.url);
+    let provider = "";
+    let model = "";
+    let stream = false;
+
+    if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
+      provider = "inception";
+      try {
+        const payload = await request.clone().json();
+        model = String(payload?.model || "");
+        stream = payload?.stream !== false;
+      } catch {
+        // The route handler returns the canonical invalid JSON response.
+      }
+    }
+
+    logEvent(env, "http_request_started", rid, {
+      runtime: "cloudflare",
+      method: request.method,
+      path: url.pathname,
+      headers: headerSummary(request.headers),
+      provider,
+      model,
+      stream,
+    });
+
+    try {
+      const response = await handleRequest(request, env, rid);
+      logEvent(env, "http_request_finished", rid, {
+        runtime: "cloudflare",
+        method: request.method,
+        path: url.pathname,
+        provider,
+        model,
+        stream,
+        status: response.status,
+        duration_ms: Date.now() - started,
+      });
+      return withRequestId(response, rid);
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error);
+      logEvent(env, "http_request_error", rid, {
+        runtime: "cloudflare",
+        method: request.method,
+        path: url.pathname,
+        provider,
+        model,
+        error_type: error?.name || "Error",
+        error_length: errorText.length,
+        error_preview: upstreamPreview(env, errorText),
+        duration_ms: Date.now() - started,
+      }, "error");
+      return withRequestId(jsonResponse({
+        error: {
+          message: "Provider request failed; inspect Cloudflare logs with the X-Request-ID",
+          type: "server_error",
+          request_id: rid,
+        },
+      }, 500), rid);
+    }
   },
 };

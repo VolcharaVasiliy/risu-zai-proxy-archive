@@ -13,10 +13,11 @@ OpenAI-совместимый прокси для RisuAI, Codex, Zed и друг
 - [Что внутри](#что-внутри)
 - [Портативная сборка](#портативная-сборка-без-установки-windows-x64)
 - [Быстрый старт в Windows](#быстрый-старт-в-windows)
+- [Диагностика и логи](#диагностика-и-логи)
 
 ## Что внутри
 
-- OpenAI-совместимые маршруты: `/v1/models`, `/v1/chat/completions`, `/v1/responses`, `/health`
+- OpenAI-совместимые маршруты: `/v1/models`, `/v1/providers`, `/v1/chat/completions`, `/v1/responses`, `/health`, `/doctor`
 - Поддержка Responses API, готовая для Codex, — `api2codex` для этого прокси не нужен
 - Лаунчер `rzai` для запуска Codex через прокси одной короткой командой
 - Реестр провайдеров с алиасами, генерацией каталога моделей и очисткой дубликатов для Codex
@@ -101,6 +102,21 @@ npm run codex:catalog -- --output "$env:USERPROFILE\.codex\risu-zai-model-catalo
 ```powershell
 npm run check
 ```
+
+## Диагностика и логи
+
+Для поиска странных ответов включите подробные структурированные JSON-логи:
+
+```powershell
+$env:PROXY_LOG_LEVEL = "debug"
+npm run dev
+```
+
+Каждый запрос получает `request_id`. Передайте свой `X-Request-ID`, и тот же идентификатор вернётся в ответе и появится в событиях начала/завершения запроса, провайдера и потоковой ошибки. Секреты, куки и токены автоматически заменяются безопасным отпечатком; полные промпты и ответы lifecycle-логгер не пишет.
+
+Доступны уровни `debug`, `info`, `warning`, `error` и `off`. Старый `DEBUG_LOGGING=1` по-прежнему означает `debug`, если `PROXY_LOG_LEVEL` не задан. Размер входного JSON ограничен 8 MiB и настраивается через `PROXY_MAX_BODY_BYTES`. Полная памятка: [docs/observability.md](docs/observability.md).
+
+Для проверки настройки провайдеров используйте авторизованные `GET /v1/providers` и `GET /doctor`. Добавьте `?runtime=local` или `?runtime=vercel`, чтобы проверить только нужный runtime. Первый показывает режим авторизации, модели и отсутствующие имена переменных, второй даёт короткий итог готовности. Ни один из них не возвращает сами токены или cookies.
 
 ## Локальная настройка
 
@@ -233,7 +249,9 @@ env_key = "CODEX_API_KEY"
 ## API-поверхность
 
 - `GET /health`
+- `GET /doctor`
 - `GET /v1/models`
+- `GET /v1/providers`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 - `GET /v1/responses/{response_id}`
@@ -244,6 +262,7 @@ env_key = "CODEX_API_KEY"
 
 ## Документация
 
+- [Пошаговая инструкция по установке](INSTALLATION.md)
 - [Справочник провайдеров](docs/providers.md)
 - [Руководство по развёртыванию и окружению](docs/deployment.md)
 - [Заметки по повторному развёртыванию](REDEPLOY.md)

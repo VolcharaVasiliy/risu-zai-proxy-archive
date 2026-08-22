@@ -2,6 +2,11 @@ import json
 import os
 from http import cookies
 
+try:
+    from py.observability import request_id
+except ImportError:
+    from observability import request_id
+
 
 def json_bytes(payload):
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -12,6 +17,9 @@ def send_json(handler, status, payload):
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    rid = request_id()
+    if rid:
+        handler.send_header("X-Request-ID", rid)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -32,7 +40,14 @@ def bearer_token(handler):
 
 
 def read_json_body(handler):
-    raw = handler.rfile.read(int(handler.headers.get("Content-Length", "0") or "0"))
+    try:
+        length = int(handler.headers.get("Content-Length", "0") or "0")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid Content-Length") from exc
+    max_bytes = int(os.environ.get("PROXY_MAX_BODY_BYTES", str(8 * 1024 * 1024)) or 0)
+    if length < 0 or (max_bytes > 0 and length > max_bytes):
+        raise ValueError(f"Request body exceeds {max_bytes} bytes")
+    raw = handler.rfile.read(length)
     return json.loads(raw.decode("utf-8") if raw else "{}")
 
 

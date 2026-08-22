@@ -16,6 +16,7 @@ One `/v1` endpoint routes each model through a provider registry to the right ba
 - [Daily Commands](#daily-commands)
 - [Local Setup](#local-path-configuration)
 - [Credentials](#local-credentials)
+- [Diagnostics and logs](#diagnostics-and-logs)
 - [Deploy to Vercel](#deploy-to-vercel)
 - [Providers](#providers)
 - [Codex & Zed](#codex-notes)
@@ -24,7 +25,7 @@ One `/v1` endpoint routes each model through a provider registry to the right ba
 
 ## What You Get
 
-- OpenAI-compatible routes: `/v1/models`, `/v1/chat/completions`, `/v1/responses`, `/health`
+- OpenAI-compatible routes: `/v1/models`, `/v1/providers`, `/v1/chat/completions`, `/v1/responses`, `/health`, `/doctor`
 - Codex-ready Responses API support, so `api2codex` is not needed for this proxy
 - `rzai` launcher for running Codex against the proxy with one short command
 - Provider registry with aliases, model catalog generation, and duplicate-model cleanup for Codex
@@ -109,6 +110,21 @@ Run checks:
 ```powershell
 npm run check
 ```
+
+## Diagnostics And Logs
+
+Use structured JSON logs when an upstream response looks wrong:
+
+```powershell
+$env:PROXY_LOG_LEVEL = "debug"
+npm run dev
+```
+
+Every request gets a `request_id`. Send your own `X-Request-ID` to correlate the client response, lifecycle events, provider logs, and streaming errors. Credentials, cookies, and tokens are redacted automatically; request and response bodies are not written by the lifecycle logger.
+
+Supported levels are `debug`, `info`, `warning`, `error`, and `off`. `DEBUG_LOGGING=1` is retained as a compatibility alias for `debug` when `PROXY_LOG_LEVEL` is unset. `PROXY_MAX_BODY_BYTES` sets the JSON body limit (8 MiB by default).
+
+Use authenticated `GET /v1/providers` for provider models, runtimes, auth mode, and missing credential names. Add `?runtime=local` or `?runtime=vercel` to focus the report. Use authenticated `GET /doctor` for a compact readiness summary. Neither endpoint returns credential values. Full details: [docs/observability.md](docs/observability.md).
 
 ## Local Path Configuration
 
@@ -243,7 +259,9 @@ For MCP/tool use, configure MCP in the client. The proxy receives OpenAI-compati
 ## API Surface
 
 - `GET /health`
+- `GET /doctor`
 - `GET /v1/models`
+- `GET /v1/providers`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 - `GET /v1/responses/{response_id}`

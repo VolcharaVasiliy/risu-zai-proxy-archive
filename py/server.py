@@ -7,11 +7,15 @@ load_credentials_env()
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import time
+from urllib.parse import parse_qs, urlparse
 
 from http_helpers import proxy_auth_error, proxy_authorized, read_json_body, send_json
 from provider_registry import (
     complete_non_stream,
     models_payload,
+    provider_status_payload,
+    doctor_payload,
     ProviderAuthError,
     ProviderRateLimitError,
     provider_error_hint,
@@ -28,6 +32,10 @@ from responses_api import (
     stream_response_events,
 )
 from zai_proxy import debug_log
+try:
+    from py.observability import elapsed_ms, header_summary, log_event, log_exception, request_context, request_id
+except ImportError:
+    from observability import elapsed_ms, header_summary, log_event, log_exception, request_context, request_id
 
 
 def sse_frame(event, response_format: str = "chat") -> bytes:
@@ -38,18 +46,88 @@ def sse_frame(event, response_format: str = "chat") -> bytes:
     return f"{prefix}data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
 
 
+def sse_error_frame(message: str, error_type: str = "server_error") -> bytes:
+    return sse_frame({"error": {"message": message, "type": error_type, "request_id": request_id()}})
+
+
 class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        self._request_started = time.perf_counter()
+        self._last_response_status = None
+        self._observability_fields = {}
+        self._stream_chunk_count = 0
+
+    def parse_request(self):
+        parsed = super().parse_request()
+        if parsed:
+            self._request_context = request_context(self.headers.get("X-Request-ID", ""))
+            self.request_id = self._request_context.__enter__()
+            log_event(
+                "http_request_started",
+                level="info",
+                method=self.command,
+                path=self.path.split("?", 1)[0],
+                headers=header_summary(self.headers),
+            )
+        return parsed
+
+    def _finish_log(self):
+        if not hasattr(self, "_request_context"):
+            return
+        log_event(
+            "http_request_finished",
+            level="info",
+            method=getattr(self, "command", ""),
+            path=getattr(self, "path", "").split("?", 1)[0],
+            status=self._last_response_status,
+            duration_ms=elapsed_ms(self._request_started),
+            stream_chunks=self._stream_chunk_count,
+            **self._observability_fields,
+        )
+        self._request_context.__exit__(None, None, None)
+
+    def finish(self):
+        try:
+            self._finish_log()
+        finally:
+            super().finish()
+
+    def send_response(self, code, message=None):
+        self._last_response_status = int(code)
+        return super().send_response(code, message)
+
     def _request_path(self):
         return self.path.split("?", 1)[0]
+
+    def _query_value(self, name):
+        values = parse_qs(urlparse(self.path).query).get(name, [])
+        return values[0] if values else ""
 
     def do_GET(self):
         request_path = self._request_path()
         if request_path == "/health":
             return send_json(self, 200, {"ok": True})
+        if request_path == "/doctor":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            runtime = self._query_value("runtime")
+            status = provider_status_payload(runtime)
+            if not status["runtime_valid"]:
+                return send_json(self, 400, {"error": {"message": "Unsupported runtime", "runtime": runtime, "supported": status["supported_runtimes"]}})
+            return send_json(self, 200, doctor_payload(runtime))
         if request_path == "/v1/models":
             if not proxy_authorized(self):
                 return send_json(self, 401, proxy_auth_error())
             return send_json(self, 200, models_payload())
+        if request_path == "/v1/providers":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            runtime = self._query_value("runtime")
+            status = provider_status_payload(runtime)
+            if not status["runtime_valid"]:
+                return send_json(self, 400, {"error": {"message": "Unsupported runtime", "runtime": runtime, "supported": status["supported_runtimes"]}})
+            return send_json(self, 200, status)
         if request_path.startswith("/v1/responses/"):
             if not proxy_authorized(self):
                 return send_json(self, 401, proxy_auth_error())
@@ -180,6 +258,14 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
 
+        self._observability_fields.update(
+            {
+                "provider": provider_id,
+                "model": payload.get("model"),
+                "stream": payload.get("stream", True) is not False,
+            }
+        )
+
         if request_path in {
             "/java/api/v1",
             "/java/api/v1/chat/completions",
@@ -223,18 +309,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                 self.send_header("Cache-Control", "no-cache, no-transform")
                 self.send_header("Connection", "close")
+                self.send_header("X-Request-ID", request_id())
                 self.end_headers()
                 stream_started = True
 
                 if first_event is not None:
                     self.wfile.write(sse_frame(first_event, response_format))
                     self.wfile.flush()
+                    self._stream_chunk_count += 1
 
                 for event in iterator:
                     self.wfile.write(sse_frame(event, response_format))
                     self.wfile.flush()
+                    self._stream_chunk_count += 1
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
+                self._observability_fields["stream_outcome"] = "complete"
                 self.close_connection = True
                 return
 
@@ -288,6 +378,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, no-transform")
             self.send_header("Connection", "close")
+            self.send_header("X-Request-ID", request_id())
             self.end_headers()
             stream_started = True
 
@@ -298,19 +389,35 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 )
                 self.wfile.flush()
+                self._stream_chunk_count += 1
 
             for chunk in iterator:
                 self.wfile.write(
                     f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8")
                 )
                 self.wfile.flush()
+                self._stream_chunk_count += 1
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
+            self._observability_fields["stream_outcome"] = "complete"
             self.close_connection = True
         except BrokenPipeError:
+            self._observability_fields["stream_outcome"] = "client_closed"
+            log_event(
+                "http_stream_aborted",
+                level="info",
+                provider=self._observability_fields.get("provider", ""),
+                chunks=self._stream_chunk_count,
+            )
             return
         except ProviderAuthError as exc:
             if stream_started:
+                self._observability_fields["stream_outcome"] = "provider_auth_error"
+                try:
+                    self.wfile.write(sse_error_frame(str(exc), "authentication_error"))
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             return send_json(
                 self,
@@ -319,6 +426,12 @@ class Handler(BaseHTTPRequestHandler):
             )
         except ProviderRateLimitError as exc:
             if stream_started:
+                self._observability_fields["stream_outcome"] = "provider_rate_limit"
+                try:
+                    self.wfile.write(sse_error_frame(str(exc), "rate_limit_error"))
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             return send_json(
                 self,
@@ -326,7 +439,19 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": {"message": str(exc), "type": "rate_limit_error"}},
             )
         except Exception as exc:
+            log_exception("local_request_error", exc, provider=provider_id)
             if stream_started:
+                self._observability_fields["stream_outcome"] = "error"
+                try:
+                    self.wfile.write(
+                        sse_error_frame(
+                            "Provider request failed; inspect server logs with the X-Request-ID",
+                            "server_error",
+                        )
+                    )
+                    self.wfile.flush()
+                except (BrokenPipeError, OSError):
+                    pass
                 return
             try:
                 raise_provider_rate_limit_if_needed(provider_id, exc)
@@ -357,7 +482,12 @@ class Handler(BaseHTTPRequestHandler):
             return send_json(
                 self,
                 502,
-                {"error": {"message": str(exc), "type": "invalid_request_error"}},
+                {
+                    "error": {
+                        "message": "Provider request failed; inspect server logs with the X-Request-ID",
+                        "type": "server_error",
+                    }
+                },
             )
 
 
