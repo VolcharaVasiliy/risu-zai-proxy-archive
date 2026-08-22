@@ -104,6 +104,22 @@ npm run codex:catalog -- --output "$env:USERPROFILE\.codex\risu-zai-model-catalo
 npm run check
 ```
 
+检查提供商就绪状态和免费的公共上游：
+
+```powershell
+npm run providers:check
+npm run providers:live
+```
+
+公共 endpoint 不稳定时，live 检查默认只输出警告。需要严格失败时运行
+`node scripts/provider-health.mjs --public --strict`。提供商目录和扩展 schema
+从注册表生成：
+
+```powershell
+npm run providers:generate
+npm run extension:i18n
+```
+
 ## 诊断与日志
 
 遇到异常上游响应时，可启用结构化 JSON 日志：
@@ -116,6 +132,11 @@ npm run dev
 每个请求都有 `request_id`。传入自己的 `X-Request-ID`，即可将客户端响应、请求生命周期、提供商日志和流式错误关联起来。凭据、Cookie 和令牌会自动脱敏；生命周期日志不会记录完整请求或响应正文。
 
 可用级别为 `debug`、`info`、`warning`、`error`、`off`。未设置 `PROXY_LOG_LEVEL` 时，旧的 `DEBUG_LOGGING=1` 仍等价于 `debug`。`PROXY_MAX_BODY_BYTES` 用于设置 JSON 请求体上限，默认 8 MiB。
+
+Responses 状态默认保存在本地 `run/responses-state.sqlite3`。无状态部署可设为
+`PROXY_STATE_BACKEND=memory`。免费的 serverless 选项使用
+`PROXY_STATE_BACKEND=http`、`PROXY_STATE_URL` 和 `PROXY_STATE_TOKEN`，指向
+Cloudflare Worker 的 `/internal/state/{key}`（可选 KV）。外部服务不是必需的。
 
 使用需要鉴权的 `GET /v1/providers` 查看提供商模型、runtime、鉴权方式和缺失的凭据名称；追加 `?runtime=local` 或 `?runtime=vercel` 可只检查一个部署目标。使用 `GET /doctor` 获取简要就绪状态。两个接口均不会返回凭据值。完整说明见 [docs/observability.md](docs/observability.md)。
 

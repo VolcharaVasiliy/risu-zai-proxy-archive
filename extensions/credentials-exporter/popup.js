@@ -845,7 +845,7 @@ const PROVIDERS = [
           const updatedAt = cap.updatedAt || Date.now();
           const ageMin = Math.max(0, Math.round((Date.now() - updatedAt) / 60000));
           bxInfo = "; " + tf("qwenBxFresh", { m: String(ageMin) });
-          qwenBx = { updatedAt, hasBx: true };
+          qwenBx = { updatedAt, hasBx: true, ageMin };
         }
       }
       lastQwenBx = qwenBx;
@@ -923,6 +923,34 @@ function refreshPreview() {
     $("jsonPanel").classList.add("open");
     $("jsonToggle").setAttribute("aria-expanded", "true");
   }
+  renderSelfCheck(data);
+}
+
+function credentialSetReady(data, credentialSets) {
+  if (!Array.isArray(credentialSets) || credentialSets.length === 0) return true;
+  return credentialSets.some((set) => Array.isArray(set) && set.every((key) => String(data[key] || "").trim()));
+}
+
+function renderSelfCheck(data) {
+  const root = $("selfCheck");
+  const schema = Array.isArray(window.PROVIDER_SCHEMA) ? window.PROVIDER_SCHEMA : [];
+  const relevant = schema.filter((item) => PROVIDERS.some((provider) => provider.id === item.extension_id));
+  const ready = relevant.filter((item) => item.auth_mode === "public" || credentialSetReady(data, item.credential_sets));
+  const partial = relevant.filter((item) => {
+    const keys = (item.credential_sets || []).flat();
+    return !ready.includes(item) && keys.some((key) => String(data[key] || "").trim());
+  });
+  const localOnly = ready.filter((item) => Array.isArray(item.runtimes) && item.runtimes.length === 1 && item.runtimes[0] === "local");
+  const stale = lastQwenBx && lastQwenBx.hasBx && lastQwenBx.ageMin > 30 ? 1 : 0;
+  if (!Object.keys(data).length && !partial.length) {
+    root.classList.add("hidden"); root.textContent = ""; return;
+  }
+  root.classList.remove("hidden");
+  root.innerHTML = `<strong>${escapeHtml(t("selfCheckTitle", "Export self-check"))}</strong>` +
+    `<span>${escapeHtml(tf("selfCheckReady", { count: ready.length }, "Ready providers: {count}"))}</span>` +
+    `<span>${escapeHtml(tf("selfCheckPartial", { count: partial.length }, "Partially configured: {count}"))}</span>` +
+    `<span>${escapeHtml(tf("selfCheckLocal", { count: localOnly.length }, "Local-only ready: {count}"))}</span>` +
+    `<span>${escapeHtml(tf("selfCheckStale", { count: stale }, "Stale session headers: {count}"))}</span>`;
 }
 
 function escapeHtml(s) {
@@ -1294,6 +1322,7 @@ $("clearBtn").addEventListener("click", () => {
   lastScanTime = null;
   updateLastScan();
   renderQwenWarn(null);
+  renderSelfCheck({});
   showHint("");
   chrome.storage.local.remove(STORE_KEY);
   refreshClearBtn();

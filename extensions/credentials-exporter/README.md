@@ -28,6 +28,10 @@ Collects cookies and tokens from all providers and exports a ready-to-use
   short detail line. Click a row to open that provider's site.
 - **Panels** (Manual API keys, credentials.json preview) expand and collapse with
   a smooth animation.
+- **Export self-check** summarizes ready, partially configured, local-only, and
+  stale-session providers before download. The provider schema is generated from
+  `py/provider_registry.py`, so new registry entries do not require a second
+  hardcoded extension list.
 
 ### localStorage providers
 

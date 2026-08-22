@@ -65,5 +65,10 @@
   "qwenBxFresh": { "message": "bx-* {m} мин назад" },
   "qwenBxStaleWarn": { "message": "Токены bx-* у Qwen привязаны к сессии/IP. Захвачены {m} мин назад — если прокси работает в другой сети (например, фиксированный IP Vercel), Qwen может отклонить их (RGV587_ERROR). Повторите сканирование на chat.qwen.ai в той же сети." },
   "hintAllOk": { "message": "Опрошены провайдеры с открытыми вкладками. Откройте сайт провайдера и отсканируйте снова, чтобы собрать больше." },
-  "lastScan": { "message": "Последнее сканирование: {t}" }
+  "lastScan": { "message": "Последнее сканирование: {t}" },
+  "selfCheckTitle": { "message": "Самопроверка экспорта" },
+  "selfCheckReady": { "message": "Готовых провайдеров: {count}" },
+  "selfCheckPartial": { "message": "Настроены частично: {count}" },
+  "selfCheckLocal": { "message": "Готовы только локально: {count}" },
+  "selfCheckStale": { "message": "Устаревших заголовков сессии: {count}" }
 }

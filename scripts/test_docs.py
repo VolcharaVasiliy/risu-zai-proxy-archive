@@ -38,6 +38,9 @@ for name in ("README.md", "README.ru.md", "README.zh.md"):
             fail(f"{name} does not mention {route}")
     if "observ" not in body.lower() and "диагност" not in body.lower() and "诊断" not in body:
         fail(f"{name} is missing the diagnostics/logging section")
+    for command in ("npm run providers:check", "npm run providers:live", "npm run providers:generate"):
+        if command not in body:
+            fail(f"{name} does not mention {command}")
 
 joined = "\n".join(text.values())
 for stale in ("zai:glm-4.5v", "glm-4.5v\",", "LM_ARENA_COOKIE = \"C:\\"):

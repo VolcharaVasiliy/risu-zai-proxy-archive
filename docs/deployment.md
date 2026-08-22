@@ -24,11 +24,43 @@ reports the Inception edge adapter through `/v1/providers`.
 
 `/v1/chat/completions` is the regular OpenAI-compatible chat path.
 `/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
-`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses in the short-lived state store. Local runs use SQLite (`run/responses-state.sqlite3`) so ordinary restarts preserve sessions; serverless instances should use `PROXY_STATE_BACKEND=memory` unless an external state adapter is supplied.
+`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses in the short-lived state store. Local runs use SQLite (`run/responses-state.sqlite3`) so ordinary restarts preserve sessions. Serverless instances can use `PROXY_STATE_BACKEND=memory` or the optional HTTP backend:
+
+```text
+PROXY_STATE_BACKEND=http
+PROXY_STATE_URL=https://<worker-host>/internal
+PROXY_STATE_TOKEN=<private-bearer-token>
+```
+
+The repository Cloudflare Worker implements the matching authenticated
+`/internal/state/{key}` API. Bind a free-tier Cloudflare KV namespace as
+`STATE_KV`, set `STATE_API_TOKEN`, and optionally `STATE_TTL_SECONDS`. Without
+the binding the endpoint returns `503`. Never commit the token. SQLite remains
+the default, so this integration is opt-in.
 `/v1/responses/chat/completions` is a compatibility route for clients that want response/session state but still expect a chat-completion-shaped response.
 
 Native function-tool passthrough is used for `Inflection / Pi API` and `UncloseAI`.
 For the chat-only providers, `AGENT_TOOL_MODE=auto` enables the prompt tool shim: the proxy prompts the model to request client-side tools as strict JSON, removes unsupported upstream `tools` fields, and converts successful JSON tool requests back into OpenAI `tool_calls`.
+
+## Free Operations Checks
+
+```powershell
+npm run check
+npm run providers:check
+npm run providers:live
+```
+
+The live command checks credential-free public model endpoints and is
+non-strict because free upstreams may be temporarily unavailable. Use
+`node scripts/provider-health.mjs --public --strict` for a release gate.
+
+After editing `py/provider_registry.py` or extension locale files, regenerate
+the derived files:
+
+```powershell
+npm run providers:generate
+npm run extension:i18n
+```
 
 ## OpenAI Codex CLI
 

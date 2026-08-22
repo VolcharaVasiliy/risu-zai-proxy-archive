@@ -104,6 +104,23 @@ npm run codex:catalog -- --output "$env:USERPROFILE\.codex\risu-zai-model-catalo
 npm run check
 ```
 
+Проверить готовность провайдеров и доступность бесплатных апстримов:
+
+```powershell
+npm run providers:check
+npm run providers:live
+```
+
+Live-проверка по умолчанию только предупреждает о нестабильных публичных
+endpoint. Для строгого режима используйте
+`node scripts/provider-health.mjs --public --strict`.
+Каталог провайдеров и схема расширения генерируются из реестра:
+
+```powershell
+npm run providers:generate
+npm run extension:i18n
+```
+
 ## Диагностика и логи
 
 Для поиска странных ответов включите подробные структурированные JSON-логи:
@@ -118,6 +135,12 @@ npm run dev
 Доступны уровни `debug`, `info`, `warning`, `error` и `off`. Старый `DEBUG_LOGGING=1` по-прежнему означает `debug`, если `PROXY_LOG_LEVEL` не задан. Размер входного JSON ограничен 8 MiB и настраивается через `PROXY_MAX_BODY_BYTES`. Полная памятка: [docs/observability.md](docs/observability.md).
 
 Для проверки настройки провайдеров используйте авторизованные `GET /v1/providers` и `GET /doctor`. Добавьте `?runtime=local` или `?runtime=vercel`, чтобы проверить только нужный runtime. Первый показывает режим авторизации, модели и отсутствующие имена переменных, второй даёт короткий итог готовности. Ни один из них не возвращает сами токены или cookies.
+
+Состояние Responses по умолчанию хранится в `run/responses-state.sqlite3`.
+Для эфемерного режима задайте `PROXY_STATE_BACKEND=memory`. Бесплатный
+serverless-вариант использует `PROXY_STATE_BACKEND=http`, `PROXY_STATE_URL` и
+`PROXY_STATE_TOKEN`; Cloudflare Worker поддерживает `/internal/state/{key}` с
+опциональным KV. Внешнее хранилище не обязательно.
 
 ## Локальная настройка
 

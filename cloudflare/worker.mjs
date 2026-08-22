@@ -787,6 +787,10 @@ function modelList() {
 async function handleRequest(request, env, requestIdValue) {
     const url = new URL(request.url);
 
+    if (url.pathname.startsWith("/internal/state/")) {
+      return stateResponse(request, env, url);
+    }
+
     if (url.pathname === "/health") {
       return jsonResponse({ ok: true, edge: "cloudflare", provider: "inception" });
     }
@@ -877,6 +881,41 @@ async function handleRequest(request, env, requestIdValue) {
     }
 
     return jsonResponse({ error: { message: "Not found" } }, 404);
+}
+
+function stateAuthorized(request, env) {
+  const expected = envToken(env.STATE_API_TOKEN);
+  if (!expected) return false;
+  return envToken(request.headers.get("Authorization")) === `Bearer ${expected}`;
+}
+
+async function stateResponse(request, env, url) {
+  if (!env.STATE_KV) return jsonResponse({ error: { message: "STATE_KV binding is not configured" } }, 503);
+  if (!stateAuthorized(request, env)) return jsonResponse({ error: { message: "Unauthorized" } }, 401);
+  let key = "";
+  try {
+    key = decodeURIComponent(url.pathname.slice("/internal/state/".length));
+  } catch {
+    return jsonResponse({ error: { message: "Invalid state key" } }, 400);
+  }
+  if (!key || key.length > 256) return jsonResponse({ error: { message: "Invalid state key" } }, 400);
+  if (request.method === "GET") {
+    const value = await env.STATE_KV.get(key, { type: "json" });
+    return value == null ? jsonResponse({ error: { message: "Not found" } }, 404) : jsonResponse(value);
+  }
+  if (request.method === "PUT") {
+    const payload = await request.json();
+    const configuredTtl = Number(env.STATE_TTL_SECONDS || 21600);
+    const expirationTtl = Number.isFinite(configuredTtl) ? Math.max(60, Math.floor(configuredTtl)) : 21600;
+    await env.STATE_KV.put(key, JSON.stringify(payload), { expirationTtl });
+    return jsonResponse({ ok: true });
+  }
+  if (request.method === "DELETE") {
+    const existed = await env.STATE_KV.get(key) !== null;
+    await env.STATE_KV.delete(key);
+    return jsonResponse({ deleted: existed });
+  }
+  return jsonResponse({ error: { message: "Method not allowed" } }, 405);
 }
 
 function edgeProviders(env) {

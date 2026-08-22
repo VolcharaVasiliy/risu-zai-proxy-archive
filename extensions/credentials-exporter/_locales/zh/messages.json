@@ -65,5 +65,10 @@
   "qwenBxFresh": { "message": "bx-* 已于 {m} 分钟前捕获" },
   "qwenBxStaleWarn": { "message": "Qwen 的 bx-* 与会话/IP 绑定，已于 {m} 分钟前捕获——若代理运行在不同网络（如 Vercel 的固定 IP），Qwen 可能拒绝（RGV587_ERROR）。请在同一出口网络下于 chat.qwen.ai 重新扫描。" },
   "hintAllOk": { "message": "已扫描有打开标签页的提供商。请打开对应网站并再次扫描以收集更多凭据。" },
-  "lastScan": { "message": "上次扫描：{t}" }
+  "lastScan": { "message": "上次扫描：{t}" },
+  "selfCheckTitle": { "message": "导出自检" },
+  "selfCheckReady": { "message": "可用提供商：{count}" },
+  "selfCheckPartial": { "message": "部分配置：{count}" },
+  "selfCheckLocal": { "message": "仅本地可用：{count}" },
+  "selfCheckStale": { "message": "过期会话标头：{count}" }
 }

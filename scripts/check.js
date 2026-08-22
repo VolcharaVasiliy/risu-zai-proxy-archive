@@ -19,6 +19,17 @@ const requiredFiles = [
   "py/metrics.py",
   "py/state_store.py",
   "py/bridge_manager.py",
+  "generated/provider-catalog.json",
+  "docs/provider-catalog.md",
+  "extensions/credentials-exporter/provider-schema.js",
+  ".github/workflows/check.yml",
+  "scripts/generate_provider_artifacts.py",
+  "scripts/generate_extension_i18n.py",
+  "scripts/provider-health.mjs",
+  "scripts/provider_health.py",
+  "scripts/test_state_http.py",
+  "scripts/test_generated_artifacts.py",
+  "scripts/test-cloudflare-state.mjs",
   "py/credentials_bootstrap.py",
   "py/agent_tools.py",
   "py/inflection_proxy.py",
@@ -136,6 +147,16 @@ if (cloudflareSyntax.status !== 0) {
   );
 }
 
+const cloudflareStateTest = spawnSync(process.execPath, ["scripts/test-cloudflare-state.mjs"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+});
+if (cloudflareStateTest.status !== 0) {
+  throw new Error(
+    `Cloudflare state tests failed:\n${cloudflareStateTest.stdout || ""}${cloudflareStateTest.stderr || ""}`,
+  );
+}
+
 const observabilityTest = spawnSync(python, ["scripts/test_observability.py"], {
   cwd: process.cwd(),
   encoding: "utf8",
@@ -146,7 +167,7 @@ if (observabilityTest.status !== 0) {
   );
 }
 
-for (const script of ["scripts/test_state_metrics.py", "scripts/test_extension.py", "scripts/test_provider_contracts.py"]) {
+for (const script of ["scripts/test_state_metrics.py", "scripts/test_state_http.py", "scripts/test_extension.py", "scripts/test_provider_contracts.py", "scripts/test_generated_artifacts.py"]) {
   const result = spawnSync(python, [script], { cwd: process.cwd(), encoding: "utf8" });
   if (result.status !== 0) throw new Error(`${script} failed:\n${result.stdout || ""}${result.stderr || ""}`);
 }
@@ -160,6 +181,14 @@ if (docsTest.status !== 0) {
     `Documentation tests failed:\n${docsTest.stdout || ""}${docsTest.stderr || ""}`,
   );
 }
+
+for (const script of ["scripts/generate_provider_artifacts.py", "scripts/generate_extension_i18n.py"]) {
+  const generated = spawnSync(python, [script, "--check"].filter(Boolean), { cwd: process.cwd(), encoding: "utf8" });
+  if (generated.status !== 0) throw new Error(`${script} is stale:\n${generated.stdout || ""}${generated.stderr || ""}`);
+}
+
+const providerHealth = spawnSync(python, ["scripts/provider_health.py"], { cwd: process.cwd(), encoding: "utf8" });
+if (providerHealth.status !== 0) throw new Error(`Provider health matrix failed:\n${providerHealth.stdout || ""}${providerHealth.stderr || ""}`);
 
 const codexCatalog = spawnSync(
   python,

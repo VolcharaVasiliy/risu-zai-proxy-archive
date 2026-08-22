@@ -68,7 +68,12 @@ window.I18N = {
     "qwenBxFresh": "bx-* {m}m ago",
     "qwenBxStaleWarn": "Qwen bx-* are session/IP-bound. Captured {m} min ago — if the proxy runs on a different network (e.g. Vercel's fixed IP) Qwen may reject them (RGV587_ERROR). Re-scan from chat.qwen.ai on the same egress.",
     "hintAllOk": "Scanned providers with open tabs. Open a provider site and scan again to collect more.",
-    "lastScan": "Last scan: {t}"
+    "lastScan": "Last scan: {t}",
+    "selfCheckTitle": "Export self-check",
+    "selfCheckReady": "Ready providers: {count}",
+    "selfCheckPartial": "Partially configured: {count}",
+    "selfCheckLocal": "Local-only ready: {count}",
+    "selfCheckStale": "Stale session headers: {count}"
   },
   "ru": {
     "extName": "RisuAI Proxy — Credentials Exporter",
@@ -137,7 +142,12 @@ window.I18N = {
     "qwenBxFresh": "bx-* {m} мин назад",
     "qwenBxStaleWarn": "Токены bx-* у Qwen привязаны к сессии/IP. Захвачены {m} мин назад — если прокси работает в другой сети (например, фиксированный IP Vercel), Qwen может отклонить их (RGV587_ERROR). Повторите сканирование на chat.qwen.ai в той же сети.",
     "hintAllOk": "Опрошены провайдеры с открытыми вкладками. Откройте сайт провайдера и отсканируйте снова, чтобы собрать больше.",
-    "lastScan": "Последнее сканирование: {t}"
+    "lastScan": "Последнее сканирование: {t}",
+    "selfCheckTitle": "Самопроверка экспорта",
+    "selfCheckReady": "Готовых провайдеров: {count}",
+    "selfCheckPartial": "Настроены частично: {count}",
+    "selfCheckLocal": "Готовы только локально: {count}",
+    "selfCheckStale": "Устаревших заголовков сессии: {count}"
   },
   "zh": {
     "extName": "RisuAI Proxy — 凭据导出器",
@@ -206,6 +216,11 @@ window.I18N = {
     "qwenBxFresh": "bx-* 已于 {m} 分钟前捕获",
     "qwenBxStaleWarn": "Qwen 的 bx-* 与会话/IP 绑定，已于 {m} 分钟前捕获——若代理运行在不同网络（如 Vercel 的固定 IP），Qwen 可能拒绝（RGV587_ERROR）。请在同一出口网络下于 chat.qwen.ai 重新扫描。",
     "hintAllOk": "已扫描有打开标签页的提供商。请打开对应网站并再次扫描以收集更多凭据。",
-    "lastScan": "上次扫描：{t}"
+    "lastScan": "上次扫描：{t}",
+    "selfCheckTitle": "导出自检",
+    "selfCheckReady": "可用提供商：{count}",
+    "selfCheckPartial": "部分配置：{count}",
+    "selfCheckLocal": "仅本地可用：{count}",
+    "selfCheckStale": "过期会话标头：{count}"
   }
 };

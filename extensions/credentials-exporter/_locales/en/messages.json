@@ -65,5 +65,10 @@
   "qwenBxFresh": { "message": "bx-* {m}m ago" },
   "qwenBxStaleWarn": { "message": "Qwen bx-* are session/IP-bound. Captured {m} min ago — if the proxy runs on a different network (e.g. Vercel's fixed IP) Qwen may reject them (RGV587_ERROR). Re-scan from chat.qwen.ai on the same egress." },
   "hintAllOk": { "message": "Scanned providers with open tabs. Open a provider site and scan again to collect more." },
-  "lastScan": { "message": "Last scan: {t}" }
+  "lastScan": { "message": "Last scan: {t}" },
+  "selfCheckTitle": { "message": "Export self-check" },
+  "selfCheckReady": { "message": "Ready providers: {count}" },
+  "selfCheckPartial": { "message": "Partially configured: {count}" },
+  "selfCheckLocal": { "message": "Local-only ready: {count}" },
+  "selfCheckStale": { "message": "Stale session headers: {count}" }
 }

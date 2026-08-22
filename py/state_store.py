@@ -10,13 +10,20 @@ import os
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 
 class StateStore:
     def __init__(self, backend=None, path=None):
         self.backend = (backend or os.environ.get("PROXY_STATE_BACKEND", "sqlite")).strip().lower()
-        if self.backend not in {"sqlite", "memory"}:
+        self.url = str(os.environ.get("PROXY_STATE_URL", "")).strip().rstrip("/")
+        self.token = str(os.environ.get("PROXY_STATE_TOKEN", "")).strip()
+        if self.backend == "http" and not self.url:
+            self.backend = "memory"
+        if self.backend not in {"sqlite", "memory", "http"}:
             self.backend = "memory"
         configured = path or os.environ.get("PROXY_STATE_PATH", "")
         self.path = configured or str(Path("run") / "responses-state.sqlite3")
@@ -41,6 +48,19 @@ class StateStore:
             return None
         cutoff = time.time() - float(ttl) if ttl else None
         with self._lock:
+            if self.backend == "http":
+                try:
+                    request = urllib.request.Request(f"{self.url}/state/{urllib.parse.quote(key, safe='')}", headers=self._headers())
+                    with urllib.request.urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                    value = payload.get("value") if isinstance(payload, dict) else None
+                    updated_at = float(payload.get("updated_at") or 0) if isinstance(payload, dict) else 0
+                    if cutoff is not None and updated_at and updated_at < cutoff:
+                        self.delete(key)
+                        return None
+                    return value
+                except Exception:
+                    return None
             if self.backend == "sqlite" and self._conn:
                 row = self._conn.execute("SELECT value, updated_at FROM state WHERE key=?", (key,)).fetchone()
                 if not row:
@@ -66,6 +86,13 @@ class StateStore:
         stamp = float(updated_at or time.time())
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         with self._lock:
+            if self.backend == "http":
+                request = urllib.request.Request(f"{self.url}/state/{urllib.parse.quote(key, safe='')}", data=json.dumps({"value": value, "updated_at": stamp}, ensure_ascii=False).encode("utf-8"), headers={**self._headers(), "Content-Type": "application/json"}, method="PUT")
+                try:
+                    urllib.request.urlopen(request, timeout=4).close()
+                except Exception:
+                    pass
+                return
             if self.backend == "sqlite" and self._conn:
                 self._conn.execute(
                     "INSERT INTO state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
@@ -78,6 +105,13 @@ class StateStore:
     def delete(self, key):
         key = str(key or "").strip()
         with self._lock:
+            if self.backend == "http":
+                request = urllib.request.Request(f"{self.url}/state/{urllib.parse.quote(key, safe='')}", headers=self._headers(), method="DELETE")
+                try:
+                    with urllib.request.urlopen(request, timeout=4) as response:
+                        return response.status in {200, 204}
+                except Exception:
+                    return False
             if self.backend == "sqlite" and self._conn:
                 cur = self._conn.execute("DELETE FROM state WHERE key=?", (key,))
                 self._conn.commit()
@@ -87,6 +121,8 @@ class StateStore:
     def prune(self, ttl):
         cutoff = time.time() - float(ttl)
         with self._lock:
+            if self.backend == "http":
+                return 0
             if self.backend == "sqlite" and self._conn:
                 cur = self._conn.execute("DELETE FROM state WHERE updated_at < ?", (cutoff,))
                 self._conn.commit()
@@ -98,11 +134,19 @@ class StateStore:
 
     def status(self):
         with self._lock:
+            if self.backend == "http":
+                return {"backend": "http", "url": self.url, "entries": None}
             if self.backend == "sqlite" and self._conn:
                 count = self._conn.execute("SELECT COUNT(*) FROM state").fetchone()[0]
             else:
                 count = len(self._memory)
             return {"backend": self.backend, "path": self.path if self.backend == "sqlite" else None, "entries": count}
+
+    def _headers(self):
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
 
     def close(self):
         with self._lock:

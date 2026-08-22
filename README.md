@@ -112,6 +112,22 @@ Run checks:
 npm run check
 ```
 
+Check provider readiness and free upstream availability:
+
+```powershell
+npm run providers:check
+npm run providers:live
+```
+
+The live check is non-blocking for unstable public endpoints; use
+`node scripts/provider-health.mjs --public --strict` for a strict gate.
+Provider catalogs and the extension schema are generated from the registry:
+
+```powershell
+npm run providers:generate
+npm run extension:i18n
+```
+
 ## Diagnostics And Logs
 
 Use structured JSON logs when an upstream response looks wrong:
@@ -127,7 +143,12 @@ Supported levels are `debug`, `info`, `warning`, `error`, and `off`. `DEBUG_LOGG
 
 Use authenticated `GET /v1/providers` for provider models, runtimes, auth mode, and missing credential names. Add `?runtime=local` or `?runtime=vercel` to focus the report. Use authenticated `GET /doctor` for a compact readiness summary. Neither endpoint returns credential values. Full details: [docs/observability.md](docs/observability.md).
 
-Responses state is persisted to `run/responses-state.sqlite3` locally. Select `PROXY_STATE_BACKEND=memory` for ephemeral deployments or override the file with `PROXY_STATE_PATH`. Optional same-provider model fallback chains are configured with `PROXY_FALLBACKS_JSON`, for example `{"deepseek-chat":["deepseek-reasoner"]}`; only temporary transport, 5xx, and rate-limit failures are eligible. `GET /metrics` exposes JSON or Prometheus text, and `GET /v1/bridges` reports local browser bridge health.
+Responses state is persisted to `run/responses-state.sqlite3` locally. Select
+`PROXY_STATE_BACKEND=memory` for ephemeral deployments or override the file with
+`PROXY_STATE_PATH`. A free serverless option is `PROXY_STATE_BACKEND=http` with
+`PROXY_STATE_URL` and `PROXY_STATE_TOKEN`, targeting the optional Cloudflare KV
+endpoint `/internal/state/{key}`. SQLite remains the default; no external
+service is required. Optional fallback chains use `PROXY_FALLBACKS_JSON`.
 
 ## Local Path Configuration
 
