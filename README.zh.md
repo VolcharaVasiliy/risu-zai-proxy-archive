@@ -22,6 +22,7 @@
 - `rzai` 启动器，用一条简短命令即可通过代理运行 Codex
 - 提供商注册表，带别名、模型目录生成，以及为 Codex 清理重复模型
 - 面向纯聊天提供商的提示词工具垫片，使 Qwen/Mistral/Gemini Web 等模型仍能驱动 Codex 工具
+- 通过 `deepseek-vision` 支持 DeepSeek 原生图像理解，并提供上传/处理日志和大小限制
 - 常见浏览器/会话提供商的凭据辅助工具
 - Vercel 部署路径、本地 Python 服务，以及 Inception 的 Cloudflare 备用方案
 

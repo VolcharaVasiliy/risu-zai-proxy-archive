@@ -46,10 +46,21 @@ def _caption_api_key() -> str:
     return ""
 
 
+def _deepseek_token(credentials: dict | None = None) -> str:
+    value = str((credentials or {}).get("token") or "").strip()
+    if value:
+        return value
+    return os.environ.get("DEEPSEEK_TOKEN", "").strip()
+
+
 def provider_accepts_native_images(provider_id: str, model: str = "") -> bool:
     provider = str(provider_id or "").strip().lower()
     request_model = str(model or "").strip().lower()
-    return provider in _NATIVE_IMAGE_PROVIDERS or request_model in _NATIVE_IMAGE_MODELS
+    return (
+        provider in _NATIVE_IMAGE_PROVIDERS
+        or request_model in _NATIVE_IMAGE_MODELS
+        or (provider == "deepseek" and request_model in {"deepseek-vision", "deepseek-vl"})
+    )
 
 
 def _item_type(item: dict) -> str:
@@ -186,16 +197,23 @@ def _caption_context(messages: list) -> str:
     return "\n".join(chunks)[-6000:]
 
 
-def _describe_images(images: list[dict], context: str) -> list[str]:
+def _describe_images(
+    images: list[dict], context: str, provider_id: str = "", credentials: dict | None = None
+) -> list[str]:
     mode = _mode()
     if mode in {"off", "none", "false", "0", "passthrough", "placeholder"}:
         return [""] * len(images)
 
-    api_key = _caption_api_key()
+    provider = str(provider_id or "").strip().lower()
+    provider_deepseek_token = _deepseek_token(credentials) if provider == "deepseek" else ""
+    api_key = provider_deepseek_token or _caption_api_key()
     if not api_key:
         return [""] * len(images)
 
-    is_deepseek = os.environ.get("DEEPSEEK_TOKEN", "").strip() == api_key
+    env_deepseek_token = os.environ.get("DEEPSEEK_TOKEN", "").strip()
+    is_deepseek = bool(provider_deepseek_token) or (
+        bool(env_deepseek_token) and env_deepseek_token == api_key
+    )
 
     try:
         if is_deepseek:
@@ -290,7 +308,12 @@ def prepare_payload_for_provider(
 
     max_images = _env_int("MULTIMODAL_MAX_IMAGES", default=8, minimum=0, maximum=64)
     capped_images = images[:max_images]
-    descriptions = _describe_images(capped_images, _caption_context(messages))
+    descriptions = _describe_images(
+        capped_images,
+        _caption_context(messages),
+        provider_id=provider_id,
+        credentials=credentials,
+    )
     if len(descriptions) < len(images):
         descriptions.extend([""] * (len(images) - len(descriptions)))
 

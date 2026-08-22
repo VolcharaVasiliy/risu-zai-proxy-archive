@@ -30,6 +30,7 @@ One `/v1` endpoint routes each model through a provider registry to the right ba
 - `rzai` launcher for running Codex against the proxy with one short command
 - Provider registry with aliases, model catalog generation, and duplicate-model cleanup for Codex
 - Prompt-tool shim for chat-only providers, so models such as Qwen/Mistral/Gemini Web can still drive Codex tools
+- Native DeepSeek vision through `deepseek-vision`, including upload/processing diagnostics and image-size limits
 - Credential helpers for common browser/session providers
 - Vercel deploy path, local Python server, and Cloudflare fallback for Inception
 

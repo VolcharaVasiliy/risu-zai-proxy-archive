@@ -32,7 +32,7 @@ from py.responses_api import _chat_payload_from_request  # noqa: E402
 from py.responses_api import _normalize_message_item  # noqa: E402
 from py.responses_api import _output_items_from_result  # noqa: E402
 from py.responses_api import _stream_response_api_events  # noqa: E402
-from py import gemini_web_proxy, provider_registry, qwen_ai_proxy  # noqa: E402
+from py import deepseek_proxy, gemini_web_proxy, provider_registry, qwen_ai_proxy  # noqa: E402
 from py import zai_proxy  # noqa: E402
 
 CATALOG_SCRIPT = os.path.join(ROOT_DIR, "scripts", "generate-codex-catalog.py")
@@ -619,6 +619,85 @@ def test_multimodal_preprocess_keeps_native_image_payloads():
     assert prepare_payload_for_provider("google-ai-studio", {}, payload) is payload
 
 
+def test_deepseek_vision_keeps_native_image_payloads():
+    payload = {
+        "model": "deepseek-vision",
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "Read the photo"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+        ]}],
+    }
+    assert provider_accepts_native_images("deepseek", "deepseek-vision") is True
+    assert provider_accepts_native_images("deepseek", "deepseek-chat") is False
+    assert prepare_payload_for_provider("deepseek", {"token": "test"}, payload) is payload
+    deepseek_model = next(
+        item for item in provider_registry.MODEL_SPECS if item["id"] == "deepseek-vision"
+    )
+    assert deepseek_model["capabilities"]["native_images"] is True
+
+
+def test_deepseek_image_resolver_accepts_openai_image_shapes():
+    original = deepseek_proxy._upload_and_wait
+    uploads = []
+    try:
+        deepseek_proxy._upload_and_wait = lambda token, raw, filename, mime: uploads.append(
+            (token, raw, filename, mime)
+        ) or f"file-{len(uploads)}"
+        png = "data:image/png;base64,aGVsbG8="
+        file_ids = deepseek_proxy._resolve_image_ids("access", [
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": png}},
+                {"type": "input_image", "image_url": png},
+            ]}
+        ])
+        assert file_ids == ["file-1"]
+        assert uploads[0][1] == b"hello"
+        assert uploads[0][2:] == ("image.png", "image/png")
+    finally:
+        deepseek_proxy._upload_and_wait = original
+
+
+def test_deepseek_image_size_limit_is_enforced():
+    previous = os.environ.get("DEEPSEEK_MAX_IMAGE_BYTES")
+    try:
+        os.environ["DEEPSEEK_MAX_IMAGE_BYTES"] = "4"
+        try:
+            deepseek_proxy._validate_image_bytes(b"12345")
+        except ValueError as exc:
+            assert "exceeds 4 bytes" in str(exc)
+        else:
+            raise AssertionError("expected DeepSeek image size error")
+    finally:
+        if previous is None:
+            os.environ.pop("DEEPSEEK_MAX_IMAGE_BYTES", None)
+        else:
+            os.environ["DEEPSEEK_MAX_IMAGE_BYTES"] = previous
+
+
+def test_deepseek_content_empty_is_a_ready_image_status():
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"data": {"biz_data": {"files": [{
+                "id": "image-id",
+                "status": "CONTENT_EMPTY",
+                "is_image": True,
+            }]}}}
+
+    original_get = deepseek_proxy.requests.get
+    original_sleep = deepseek_proxy.time.sleep
+    try:
+        deepseek_proxy.requests.get = lambda *args, **kwargs: Response()
+        deepseek_proxy.time.sleep = lambda _seconds: None
+        info = deepseek_proxy._fetch_file_sync("access", "image-id", max_polls=1)
+        assert info["status"] == "CONTENT_EMPTY"
+    finally:
+        deepseek_proxy.requests.get = original_get
+        deepseek_proxy.time.sleep = original_sleep
+
+
 def test_google_ai_studio_request_body_supports_images_and_tools():
     nullable_tool = json.loads(json.dumps(READ_TOOL))
     nullable_tool["function"]["parameters"]["properties"]["path"]["type"] = [
@@ -975,6 +1054,10 @@ def main():
     test_google_ai_studio_uses_native_tools_not_prompt_shim()
     test_multimodal_preprocess_converts_images_for_text_providers()
     test_multimodal_preprocess_keeps_native_image_payloads()
+    test_deepseek_vision_keeps_native_image_payloads()
+    test_deepseek_image_resolver_accepts_openai_image_shapes()
+    test_deepseek_image_size_limit_is_enforced()
+    test_deepseek_content_empty_is_a_ready_image_status()
     test_google_ai_studio_request_body_supports_images_and_tools()
     test_google_ai_studio_function_call_extraction()
     test_google_ai_studio_tool_history_includes_function_response_id()

@@ -30,6 +30,8 @@ DEEPSEEK_API_BASE = "https://chat.deepseek.com/api"
 OWNED_BY = "chat.deepseek.com"
 
 _DATA_URL_RE = re.compile(r"^data:image/(?P<ext>\w+);base64,(?P<data>.+)$", re.DOTALL)
+DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+FILE_READY_STATUSES = {"SUCCESS", "CONTENT_EMPTY", "READY", "COMPLETED"}
 
 SUPPORTED_MODELS = [
     "deepseek-chat",
@@ -89,6 +91,22 @@ def _cache_set(cache: dict, key: str, value, ttl_seconds: int):
 
 def _random_string(length: int, alphabet: str = "0123456789abcdefghijklmnopqrstuvwxyz") -> str:
     return "".join(random.choice(alphabet) for _ in range(length))
+
+
+def _max_image_bytes() -> int:
+    try:
+        return max(1, int(os.environ.get("DEEPSEEK_MAX_IMAGE_BYTES", DEFAULT_MAX_IMAGE_BYTES)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_IMAGE_BYTES
+
+
+def _validate_image_bytes(raw: bytes) -> bytes:
+    if not raw:
+        raise ValueError("DeepSeek image is empty")
+    limit = _max_image_bytes()
+    if len(raw) > limit:
+        raise ValueError(f"DeepSeek image exceeds {limit} bytes")
+    return raw
 
 
 def _cookie() -> str:
@@ -222,12 +240,19 @@ def _fetch_file_sync(access_token: str, file_id: str, max_polls: int = 60) -> di
                     status = str(f.get("status") or "").upper()
                     if status == "FAILED":
                         return f
-                    if status == "SUCCESS":
+                    if status in FILE_READY_STATUSES:
                         return f
     raise RuntimeError(f"DeepSeek file {file_id} did not become ready within {max_polls * 2}s")
 
 
 def _upload_and_wait(access_token: str, raw: bytes, filename: str, mime: str) -> str:
+    _validate_image_bytes(raw)
+    debug_log(
+        "deepseek_vision_upload_started",
+        filename=filename,
+        mime=mime,
+        bytes=len(raw),
+    )
     target = "/api/v0/file/upload_file"
     challenge = get_challenge(access_token, target_path=target)
     pow_response = build_pow_response(challenge, target_path=target)
@@ -261,7 +286,7 @@ def _upload_and_wait(access_token: str, raw: bytes, filename: str, mime: str) ->
     status = str(info.get("status") or "").upper()
     if status == "FAILED":
         raise RuntimeError(f"DeepSeek file {file_id} processing failed: {info.get('error_code')}")
-    if status != "SUCCESS":
+    if status not in FILE_READY_STATUSES:
         raise RuntimeError(f"DeepSeek file {file_id} unexpected status: {status}")
 
     if info.get("is_image"):
@@ -291,10 +316,12 @@ def _upload_and_wait(access_token: str, raw: bytes, filename: str, mime: str) ->
         vstatus = str(vinfo.get("status") or "").upper()
         if vstatus == "FAILED":
             raise RuntimeError(f"DeepSeek vision file {vision_id} processing failed: {vinfo.get('error_code')}")
-        if vstatus != "SUCCESS":
+        if vstatus not in FILE_READY_STATUSES:
             raise RuntimeError(f"DeepSeek vision file {vision_id} unexpected status: {vstatus}")
+        debug_log("deepseek_vision_upload_ready", file_id=vision_id, bytes=len(raw))
         return vision_id
 
+    debug_log("deepseek_vision_upload_ready", file_id=file_id, bytes=len(raw))
     return file_id
 
 
@@ -322,12 +349,12 @@ def describe_image_item(credentials: dict, item: dict, context_text: str = "", i
         access_token = acquire_access_token(token)
         m = _DATA_URL_RE.match(url)
         if m:
-            raw = base64.b64decode(re.sub(r"\s+", "", m.group("data")))
+            raw = _validate_image_bytes(base64.b64decode(re.sub(r"\s+", "", m.group("data")), validate=True))
             ext = m.group("ext") or "png"
         elif url.startswith(("http://", "https://")):
             resp = requests.get(url, headers={"User-Agent": FAKE_HEADERS["User-Agent"]}, timeout=30)
             resp.raise_for_status()
-            raw = resp.content
+            raw = _validate_image_bytes(resp.content)
             ext = "jpg"
         else:
             return ""
@@ -412,9 +439,9 @@ def _resolve_image_ids(access_token: str, messages: list) -> list:
         if not isinstance(content, list):
             continue
         for item in content:
-            if not isinstance(item, dict) or item.get("type") not in ("image_url", "image"):
+            if not isinstance(item, dict) or item.get("type") not in ("image_url", "image", "input_image"):
                 continue
-            if item["type"] == "image_url":
+            if item["type"] in ("image_url", "input_image"):
                 iv = item.get("image_url")
                 url = ""
                 if isinstance(iv, dict):
@@ -422,17 +449,24 @@ def _resolve_image_ids(access_token: str, messages: list) -> list:
                 elif isinstance(iv, str):
                     url = iv
             elif item["type"] == "image":
-                url = str(item.get("file_data") or item.get("image_url", {}).get("url") or "")
+                iv = item.get("image_url")
+                url = str(
+                    item.get("file_data")
+                    or (iv.get("url") if isinstance(iv, dict) else iv)
+                    or item.get("url")
+                    or ""
+                )
             else:
                 continue
             if url and url not in seen:
                 seen.add(url)
     if not seen:
         return file_ids
+    debug_log("deepseek_vision_images_detected", image_count=len(seen))
     for url in seen:
         m = _DATA_URL_RE.match(url)
         if m:
-            raw = base64.b64decode(re.sub(r"\s+", "", m.group("data")))
+            raw = _validate_image_bytes(base64.b64decode(re.sub(r"\s+", "", m.group("data")), validate=True))
             ext = m.group("ext") or "png"
             filename = f"image.{ext}"
         elif url.startswith(("http://", "https://")):
@@ -442,7 +476,7 @@ def _resolve_image_ids(access_token: str, messages: list) -> list:
                 timeout=30,
             )
             resp.raise_for_status()
-            raw = resp.content
+            raw = _validate_image_bytes(resp.content)
             raw_ext = url.rsplit(".", 1)[-1].split("?")[0].lower() if "." in url else ""
             ext = raw_ext if raw_ext in {"png", "jpg", "jpeg", "gif", "webp", "bmp"} else "png"
             filename = f"image.{ext}"
@@ -464,6 +498,10 @@ def chat_completion(token: str, payload: dict):
     pow_response = build_pow_response(challenge)
     request_model = str(payload.get("model") or "deepseek-chat")
     _, model_type, search_enabled, thinking_enabled = _flags_for(request_model, payload)
+    if file_ids:
+        model_type = "vision"
+        search_enabled = False
+        thinking_enabled = False
     prompt = _prompt_from_messages(messages)
 
     response = requests.post(
@@ -498,6 +536,8 @@ def chat_completion(token: str, payload: dict):
         model=request_model,
         session_id=session_id,
         prompt_length=len(prompt),
+        image_count=len(file_ids),
+        model_type=model_type,
         search=search_enabled,
         thinking=thinking_enabled,
     )
