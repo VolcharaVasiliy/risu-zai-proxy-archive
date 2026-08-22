@@ -22,6 +22,11 @@ def main():
     assert proxy._parse_stream_line('ad:{"finishReason":"stop"}') == {"finishReason": "stop"}
     assert "keyPath" in (ROOT / "extensions" / "credentials-exporter" / "popup.js").read_text(encoding="utf-8")
     assert "store.keyPath == null" in (ROOT / "scripts" / "lmarena-recaptcha-bridge.mjs").read_text(encoding="utf-8")
+    bridge_source = (ROOT / "scripts" / "lmarena-recaptcha-bridge.mjs").read_text(encoding="utf-8")
+    assert "LM_ARENA_BROWSER_CDP_URL" in bridge_source
+    assert "taskkill" in bridge_source
+    assert "LM_ARENA_ALLOW_TEMP_BROWSER" in bridge_source
+    assert "LM_ARENA_ALLOW_TEMP_BROWSER" in (ROOT / "scripts" / "fetch-lmarena-recaptcha.mjs").read_text(encoding="utf-8")
     payload = proxy._build_payload("019cc543-573d-7a3f-b155-ad9cc5733aa6", "hello", "token")
     assert payload["recaptchaV3Token"] == "token"
     assert payload["modelAId"].startswith("019")

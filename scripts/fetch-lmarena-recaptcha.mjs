@@ -10,6 +10,7 @@ const EDGE = process.env.EDGE_PATH || "C:\\Program Files (x86)\\Microsoft\\Edge\
 const DEBUG_PORT = 9231;
 const SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const ACTION = "chat_submit";
+const ALLOW_TEMP_BROWSER = /^(1|true|yes|on)$/i.test(String(process.env.LM_ARENA_ALLOW_TEMP_BROWSER || ""));
 const SESSION_FILE = process.env.LM_ARENA_SESSION_FILE || path.join(PROJECT_ROOT, "lmarena-session.json");
 
 function argValue(n, f = "") { const i = process.argv.indexOf(n); return i >= 0 && i + 1 < process.argv.length ? String(process.argv[i + 1] || "") : f; }
@@ -59,6 +60,11 @@ class CDP {
 async function waitDbg(port, t) { const dl = Date.now() + t; while (Date.now() < dl) { try { if ((await fetch(`http://127.0.0.1:${port}/json/version`)).ok) return true; } catch {} await sleep(300); } return false; }
 
 async function main() {
+  if (!ALLOW_TEMP_BROWSER) {
+    console.error("LM Arena grabber will not open a temporary browser by default. Use the logged-in browser extension/CDP path, or explicitly set LM_ARENA_ALLOW_TEMP_BROWSER=1.");
+    process.exitCode = 2;
+    return;
+  }
   const cookieFile = argValue("--cookie-file", process.env.LM_ARENA_COOKIE_FILE || "C:\\Users\\gamer\\Desktop\\lmarena-cookie.txt");
   const outFile = argValue("--out", process.env.LM_ARENA_CAPTCHA_FILE || path.join(PROJECT_ROOT, "lmarena-recaptcha.json"));
   const headless = hasArg("--headless");

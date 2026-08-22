@@ -9,6 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.dirname(__dirname);
 const EDGE = process.env.EDGE_PATH || "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const DEBUG_PORT = parseInt(process.env.LM_ARENA_BRIDGE_DEBUG_PORT || "9234", 10);
+const BROWSER_CDP_URL = String(process.env.LM_ARENA_BROWSER_CDP_URL || "").replace(/\/$/, "");
+const ALLOW_TEMP_BROWSER = /^(1|true|yes|on)$/i.test(String(process.env.LM_ARENA_ALLOW_TEMP_BROWSER || ""));
 const SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const ACTION = "chat_submit";
 const PORT = parseInt(process.env.LM_ARENA_BRIDGE_PORT || "8772", 10);
@@ -67,6 +69,30 @@ async function waitDbg(port, t) { const dl = Date.now() + t; while (Date.now() <
 
 let cdp = null;
 let browserProc = null;
+let ownedBrowser = false;
+let userDataDir = "";
+
+async function connectBrowserTarget(requireArena = false) {
+  const base = BROWSER_CDP_URL || `http://127.0.0.1:${DEBUG_PORT}`;
+  const list = await (await fetch(`${base}/json/list`)).json();
+  let target = (list || []).find((item) => item.type === "page" && /arena\.ai/i.test(String(item.url || "")));
+  if (!target && !requireArena) target = (list || []).find((item) => item.type === "page");
+  if (!target || !target.webSocketDebuggerUrl) throw new Error("no browser page available for LM Arena CDP");
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error("browser CDP websocket failed")); });
+  return new CDP(ws);
+}
+
+function killBrowserTree() {
+  if (!browserProc || !browserProc.pid) return;
+  try {
+    if (process.platform === "win32") {
+      spawn("taskkill", ["/PID", String(browserProc.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    } else {
+      browserProc.kill("SIGKILL");
+    }
+  } catch {}
+}
 
 async function restoreStorage() {
   const snapshot = storageSnapshot();
@@ -162,22 +188,29 @@ const server = http.createServer(async (req, res) => {
 
 async function main() {
   const cookies = loadCookies(cookieFile);
+  if (!BROWSER_CDP_URL && !ALLOW_TEMP_BROWSER) {
+    throw new Error("LM Arena bridge will not open a temporary browser by default. Set LM_ARENA_BROWSER_CDP_URL to an existing logged-in browser, or explicitly set LM_ARENA_ALLOW_TEMP_BROWSER=1.");
+  }
   const ud = path.join(os.tmpdir(), `arena-bridge-${Date.now()}`);
   fs.rmSync(ud, { recursive: true, force: true });
-  browserProc = spawn(EDGE, [`--remote-debugging-port=${DEBUG_PORT}`, `--proxy-server=${proxy}`, "--no-first-run", "--no-default-browser-check", "--disable-blink-features=AutomationControlled", "--start-maximized", `--user-data-dir=${ud}`, "about:blank"], { stdio: "ignore", detached: true });
-  if (!(await waitDbg(DEBUG_PORT, 30000))) { console.error("no debugger"); process.exit(1); }
-  const ti = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new`, { method: "PUT" })).json();
-  const ws = new WebSocket(ti.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = () => rej(new Error("ws")); });
-  cdp = new CDP(ws);
-  await cdp.send("Network.enable"); await cdp.send("Page.enable"); await cdp.send("Runtime.enable");
-  for (const ck of cookies) { try { await cdp.send("Network.setCookie", ck); } catch {} }
-  await restoreStorage();
-  await cdp.send("Page.navigate", { url: "https://arena.ai/text/direct" });
-  await sleep(9000);
+  if (BROWSER_CDP_URL) {
+    cdp = await connectBrowserTarget(true);
+    await cdp.send("Network.enable"); await cdp.send("Page.enable"); await cdp.send("Runtime.enable");
+  } else {
+    userDataDir = ud;
+    browserProc = spawn(EDGE, [`--remote-debugging-port=${DEBUG_PORT}`, `--proxy-server=${proxy}`, "--no-first-run", "--no-default-browser-check", "--disable-blink-features=AutomationControlled", "--start-maximized", `--user-data-dir=${ud}`, "about:blank"], { stdio: "ignore", detached: true, windowsHide: true });
+    ownedBrowser = true;
+    if (!(await waitDbg(DEBUG_PORT, 30000))) { console.error("no debugger"); killBrowserTree(); process.exit(1); }
+    cdp = await connectBrowserTarget(false);
+    await cdp.send("Network.enable"); await cdp.send("Page.enable"); await cdp.send("Runtime.enable");
+    for (const ck of cookies) { try { await cdp.send("Network.setCookie", ck); } catch {} }
+    await restoreStorage();
+    await cdp.send("Page.navigate", { url: "https://arena.ai/text/direct" });
+    await sleep(9000);
+  }
   server.listen(PORT, "127.0.0.1", () => console.log(`lmarena recaptcha bridge on http://127.0.0.1:${PORT}`));
-  const shutdown = () => { try { cdp.close(); } catch {} try { browserProc.kill("SIGKILL"); } catch {} process.exit(0); };
+  const shutdown = () => { try { cdp && cdp.close(); } catch {} if (ownedBrowser) killBrowserTree(); if (userDataDir) { try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch {} } process.exit(0); };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
-main().catch((e) => { console.error(e.stack || e); try { browserProc && browserProc.kill("SIGKILL"); } catch {} process.exit(1); });
+main().catch((e) => { console.error(e.stack || e); if (ownedBrowser) killBrowserTree(); process.exit(1); });
