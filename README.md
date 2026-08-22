@@ -250,6 +250,11 @@ Skip the manual scripts — the browser extension collects cookies/tokens from a
 
 Progress is saved between popup opens, so you can scan sites one by one — collected values are never overwritten. Details: [extensions/credentials-exporter/README.md](extensions/credentials-exporter/README.md).
 
+For LM Arena, open `arena.ai/text/direct`, wait for the page to finish loading,
+and scan with that tab active. The extension captures cookies plus a bounded
+auth-only (24 KiB capped) `localStorage`/`sessionStorage`/IndexedDB snapshot and request headers;
+this covers sessions where cookies alone produce `Login required`.
+
 ## Codex Notes
 
 Codex can talk to this proxy directly:

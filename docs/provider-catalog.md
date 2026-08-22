@@ -14,7 +14,7 @@ This file is generated from `py/provider_registry.py`. Do not edit it manually.
 | `inception` | 2 | local, vercel, cloudflare | browser_session | INCEPTION_SESSION_TOKEN or INCEPTION_COOKIE |
 | `inflection` | 5 | local, vercel | api_key | INFLECTION_API_KEY or PI_INFLECTION_API_KEY |
 | `kimi` | 4 | local, vercel | browser_session | KIMI_TOKEN |
-| `lmarena` | 998 | local | browser_session | LM_ARENA_COOKIE |
+| `lmarena` | 998 | local | browser_session | LM_ARENA_COOKIE or LM_ARENA_STORAGE |
 | `longcat` | 3 | local, vercel | browser_session | LONGCAT_COOKIE |
 | `mimo` | 3 | local, vercel | browser_session | MIMO_SERVICE_TOKEN + MIMO_USER_ID + MIMO_PH_TOKEN or MIMO_COOKIE |
 | `mistral` | 9 | local, vercel | browser_session | MISTRAL_COOKIE |

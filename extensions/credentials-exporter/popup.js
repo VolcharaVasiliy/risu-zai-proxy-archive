@@ -92,6 +92,8 @@ const REPO_KEYS = [
   "GLM_REFRESH_TOKEN",
   // LM Arena — cookies from arena.ai (incl. arena-auth-prod-v1.1)
   "LM_ARENA_COOKIE",
+  "LM_ARENA_STORAGE",
+  "LM_ARENA_HEADERS",
 ];
 
 const LS_READER = (wanted) => {
@@ -393,7 +395,7 @@ const PROVIDERS = [
     id: "lmarena",
     name: "LM Arena",
     url: "https://arena.ai/",
-    keys: ["LM_ARENA_COOKIE"],
+    keys: ["LM_ARENA_COOKIE", "LM_ARENA_STORAGE", "LM_ARENA_HEADERS"],
     async run() {
       let cookie = await cookieHeader("https://arena.ai/");
       const cdp = await readCookiesViaCdp("arena.ai");
@@ -406,11 +408,16 @@ const PROVIDERS = [
           }
         }
       }
+      const storage = await readArenaStorage();
+      const captured = capturedHeaders(await readHeaderCapture("arena.ai"));
       setCred("LM_ARENA_COOKIE", cookie);
-      const detail = cookie
-        ? t("detailCookiesOk", "cookies present")
-        : t("detailNoCookies", "no cookies — open arena.ai and log in");
-      return { ok: !!cookie, detail };
+      if (storage && (Object.keys(storage.local || {}).length || Object.keys(storage.session || {}).length || (storage.indexedDB || []).length)) {
+        setCred("LM_ARENA_STORAGE", JSON.stringify(storage));
+      }
+      if (Object.keys(captured).length) setCred("LM_ARENA_HEADERS", JSON.stringify(captured));
+      const hasStorage = !!creds.LM_ARENA_STORAGE;
+      const detail = `${cookie ? t("detailCookiesOk", "cookies present") : t("detailNoCookies", "no cookies")}; storage ${hasStorage ? t("detailYes", "present") : t("detailNo", "missing")}`;
+      return { ok: !!(cookie || hasStorage), detail };
     },
   },
   {
@@ -910,6 +917,97 @@ function cleanCreds() {
   for (const k of REPO_KEYS) {
     const value = String(creds[k] == null ? "" : creds[k]).trim();
     if (value) out[k] = value;
+  }
+  return out;
+}
+
+const ARENA_STORAGE_READER = async () => {
+  /* Keep the exported snapshot below common environment-variable limits. */
+  const MAX_TOTAL = 24 * 1024;
+  const MAX_VALUE = 8 * 1024;
+  const interesting = /auth|session|token|user|account|identity|supabase|firebase|clerk/i;
+  let used = 0;
+  const safeValue = (value) => {
+    let text = "";
+    try { text = typeof value === "string" ? value : JSON.stringify(value); } catch { return null; }
+    if (!text || text.length > MAX_VALUE || used + text.length > MAX_TOTAL) return null;
+    used += text.length;
+    try { return JSON.parse(text); } catch { return text; }
+  };
+  const readStorage = (storage) => {
+    const out = {};
+    try {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        const value = key == null ? null : storage.getItem(key);
+        if (key != null && value != null && (interesting.test(key) || interesting.test(value.slice(0, 512)))) {
+          const safe = safeValue(value);
+          if (safe != null) out[key] = safe;
+        }
+      }
+    } catch {}
+    return out;
+  };
+  const snapshot = { version: 1, origin: location.origin, local: readStorage(localStorage), session: readStorage(sessionStorage), indexedDB: [] };
+  try {
+    const databases = typeof indexedDB.databases === "function" ? await indexedDB.databases() : [];
+    for (const info of databases || []) {
+      if (!info.name || used >= MAX_TOTAL) continue;
+      const db = await new Promise((resolve) => {
+        const request = indexedDB.open(info.name);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+      });
+      if (!db) continue;
+      const dbOut = { name: info.name, version: db.version, stores: [] };
+      for (const storeName of Array.from(db.objectStoreNames)) {
+        /* Store names are often generic ("kv", "data"); inspect a bounded
+           sample and keep only records whose key/value looks auth-related. */
+        const records = await new Promise((resolve) => {
+          try {
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            const keysReq = store.getAllKeys(null, 100);
+            const valuesReq = store.getAll(null, 100);
+            tx.oncomplete = () => resolve((keysReq.result || []).map((key, index) => ({ key, value: valuesReq.result[index] })));
+            tx.onerror = () => resolve([]);
+          } catch { resolve([]); }
+        });
+        const safeRecords = [];
+        for (const record of records) {
+          const label = `${String(record.key)} ${JSON.stringify(record.value).slice(0, 512)}`;
+          if (!interesting.test(label)) continue;
+          const value = safeValue(record.value);
+          if (value != null) safeRecords.push({ key: record.key, value });
+        }
+        if (safeRecords.length) dbOut.stores.push({
+          name: storeName,
+          keyPath: db.transaction(storeName, "readonly").objectStore(storeName).keyPath,
+          records: safeRecords,
+        });
+      }
+      db.close();
+      if (dbOut.stores.length) snapshot.indexedDB.push(dbOut);
+    }
+  } catch {}
+  return snapshot;
+};
+
+async function readArenaStorage() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.url || !String(tab.url).includes("arena.ai")) return null;
+  try {
+    const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: ARENA_STORAGE_READER });
+    return result && result[0] ? result[0].result : null;
+  } catch { return null; }
+}
+
+function capturedHeaders(entry) {
+  const blocked = /^(cookie|host|content-length|accept-encoding|origin|referer|sec-|connection)/i;
+  const out = {};
+  for (const [name, record] of Object.entries((entry && entry.headers) || {})) {
+    if (blocked.test(name) || !record || !record.value) continue;
+    out[name] = String(record.value);
   }
   return out;
 }

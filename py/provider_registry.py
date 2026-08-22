@@ -256,9 +256,9 @@ PROVIDER_MANIFEST = [
     _provider(
         "lmarena",
         lmarena_proxy,
-        ["LM_ARENA_COOKIE"],
+        ["LM_ARENA_COOKIE or LM_ARENA_STORAGE"],
         runtimes=("local",),
-        credential_sets=(("LM_ARENA_COOKIE",),),
+        credential_sets=(("LM_ARENA_COOKIE",), ("LM_ARENA_STORAGE",)),
     ),
     _provider("opencode-zen", zen_proxy, [], auth_mode="public"),
 ]
@@ -875,7 +875,9 @@ def resolve_credentials(handler, provider_id: str):
         cookie = env_or_kv_token("LM_ARENA_COOKIE") or header_token(
             handler, "x-lmarena-cookie"
         )
-        return {"cookie": cookie} if cookie else None
+        storage = env_or_kv_token("LM_ARENA_STORAGE")
+        headers = env_or_kv_token("LM_ARENA_HEADERS")
+        return {"cookie": cookie, "storage": storage, "headers": headers} if cookie or storage else None
 
     if provider_id == "opencode-zen":
         return {"public": True}
@@ -982,7 +984,7 @@ PROVIDER_ADAPTERS = {
     "qwen-ai": {"complete": lambda c, p: _complete_with_credentials(qwen_ai_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(qwen_ai_proxy, c, p)},
     "glm-web": {"complete": lambda c, p: _complete_with_token(glm_web_proxy, c, p, "refresh_token"), "stream": lambda c, p: _stream_with_token(glm_web_proxy, c, p, "refresh_token")},
     "uncloseai": {"complete": lambda c, p: _complete_with_credentials(uncloseai_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(uncloseai_proxy, c, p)},
-    "lmarena": {"complete": lambda c, p: _complete_with_token(lmarena_proxy, c, p, "cookie"), "stream": lambda c, p: _stream_with_token(lmarena_proxy, c, p, "cookie"), "normalize": False},
+    "lmarena": {"complete": lambda c, p: lmarena_proxy.complete_non_stream(c, p), "stream": lambda c, p: lmarena_proxy.stream_chunks(c, p), "normalize": False},
     "opencode-zen": {"complete": lambda c, p: _complete_with_credentials(zen_proxy, c, p), "stream": lambda c, p: _stream_with_credentials(zen_proxy, c, p)},
 }
 

@@ -32,6 +32,10 @@ Collects cookies and tokens from all providers and exports a ready-to-use
   stale-session providers before download. The provider schema is generated from
   `py/provider_registry.py`, so new registry entries do not require a second
   hardcoded extension list.
+- **LM Arena browser-state capture** exports cookies, a bounded auth-only snapshot
+  of `localStorage`/`sessionStorage`/selected IndexedDB records (capped at 24 KiB), and captured
+  request headers. Open `arena.ai/text/direct`, wait for it to load, and scan
+  with that tab active when cookies alone result in `Login required`.
 
 ### localStorage providers
 
@@ -71,6 +75,7 @@ popup. For `CountTokens`, cookies alone are sufficient.
 | Mistral | console.mistral.ai | MISTRAL_COOKIE, MISTRAL_CSRF_TOKEN (cookie `csrf_token_*`) |
 | MiMo | aistudio.xiaomimimo.com / xiaomimimo.com | MIMO_SERVICE_TOKEN, MIMO_USER_ID, MIMO_PH_TOKEN, MIMO_COOKIE |
 | ChatGPT | chatgpt.com | OPENAI_WEB_COOKIE, OPENAI_WEB_ACCESS_TOKEN (from `/api/auth/session`), OPENAI_WEB_SENTINEL_TURNSTILE (captured `openai-sentinel-turnstile-token` header) |
+| LM Arena | arena.ai | LM_ARENA_COOKIE, LM_ARENA_STORAGE, LM_ARENA_HEADERS |
 | Perplexity | www.perplexity.ai | PERPLEXITY_COOKIE, PERPLEXITY_SESSION_TOKEN (`__Secure-next-auth.session-token`) |
 | Phind | phindai.org (primary), www.phind.com | PHIND_COOKIE, PHIND_NONCE (from `phindai.org/phind-chat/` HTML) |
 | Qwen | chat.qwen.ai / qwen.ai | QWEN_AI_COOKIE, QWEN_AI_TOKEN, QWEN_AI_BX_* (header capture) |

@@ -20,6 +20,7 @@ GRABBER_SCRIPT = os.path.join(PROJECT_ROOT, "scripts", "fetch-lmarena-recaptcha.
 GRABBER_LOG = os.path.join(PROJECT_ROOT, "lmarena-recaptcha.log")
 BRIDGE_SCRIPT = os.path.join(PROJECT_ROOT, "scripts", "lmarena-recaptcha-bridge.mjs")
 BRIDGE_LOG = os.path.join(PROJECT_ROOT, "lmarena-bridge.log")
+SESSION_FILE = os.environ.get("LM_ARENA_SESSION_FILE", os.path.join(PROJECT_ROOT, "lmarena-session.json"))
 BRIDGE_URL = os.environ.get("LM_ARENA_BRIDGE_URL", "http://127.0.0.1:8772").rstrip("/")
 COOKIE_FILE = os.environ.get("LM_ARENA_COOKIE_FILE", r"C:\Users\gamer\Desktop\lmarena-cookie.txt")
 
@@ -27,6 +28,7 @@ _grabber_lock = threading.Lock()
 _active_grabber = None
 _bridge_lock = threading.Lock()
 _bridge_spawned = False
+_bridge_cookie = ""
 
 
 def debug_log(message: str, **fields):
@@ -98,15 +100,35 @@ def _http_get_json(url: str, timeout: float):
 
 
 def _bridge_mint(max_wait: float = 60.0):
+    global _bridge_cookie
     deadline = time.time() + max_wait
     while time.time() < deadline:
         data = _http_get_json(f"{BRIDGE_URL}/mint", 20)
         if data and isinstance(data, dict) and data.get("token"):
             tok = str(data["token"])
             if len(tok) >= 100:
+                # The bridge persists refreshed cookies in SESSION_FILE and does
+                # not return them over its local HTTP endpoint.
                 return tok
         time.sleep(1.0)
     return None
+
+
+def effective_cookie(fallback=""):
+    if _bridge_cookie:
+        return _bridge_cookie
+    try:
+        with open(SESSION_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict):
+            cookie = str(payload.get("cookie") or "").strip()
+            captured_at = int(payload.get("captured_at") or 0)
+            max_age = max(60.0, float(os.environ.get("LM_ARENA_SESSION_TTL_SECONDS", "3600")))
+            if cookie and (not captured_at or time.time() - captured_at / 1000.0 <= max_age):
+                return cookie
+    except (OSError, ValueError, TypeError):
+        pass
+    return str(fallback or "")
 
 
 def _ensure_bridge():

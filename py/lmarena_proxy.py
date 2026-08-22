@@ -35,10 +35,12 @@ UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 try:
     from py.lmarena_captcha import get_token as _get_recaptcha_token
     from py.lmarena_captcha import force_refresh as _refresh_recaptcha_token
+    from py.lmarena_captcha import effective_cookie as _effective_cookie
     from py.openai_stream import openai_chunk
 except ImportError:
     from lmarena_captcha import get_token as _get_recaptcha_token
     from lmarena_captcha import force_refresh as _refresh_recaptcha_token
+    from lmarena_captcha import effective_cookie as _effective_cookie
     from openai_stream import openai_chunk
 
 _MODEL_MAP = {}
@@ -178,17 +180,46 @@ def _parse_stream_line(line: str):
     return None
 
 
-def _post(cookie: str, payload: dict, timeout: float = 180.0):
+def _credentials(value):
+    if isinstance(value, dict):
+        return str(value.get("cookie") or ""), value.get("headers") or {}
+    return str(value or ""), {}
+
+
+def _apply_browser_state(credentials):
+    if not isinstance(credentials, dict):
+        return
+    storage = credentials.get("storage")
+    headers = credentials.get("headers")
+    if storage:
+        os.environ["LM_ARENA_STORAGE"] = storage if isinstance(storage, str) else json.dumps(storage, ensure_ascii=False, separators=(",", ":"))
+    if headers:
+        os.environ["LM_ARENA_HEADERS"] = headers if isinstance(headers, str) else json.dumps(headers, ensure_ascii=False, separators=(",", ":"))
+
+
+def _post(credentials, payload: dict, timeout: float = 180.0):
     import requests
 
+    cookie, extra_headers = _credentials(credentials)
     headers = dict(FAKE_HEADERS)
+    if isinstance(extra_headers, str):
+        try:
+            extra_headers = json.loads(extra_headers)
+        except ValueError:
+            extra_headers = {}
+    if isinstance(extra_headers, dict):
+        blocked = {"cookie", "host", "content-length", "accept-encoding", "connection"}
+        for name, value in extra_headers.items():
+            if str(name).lower() not in blocked and value:
+                headers[str(name)] = str(value)
     if cookie:
         headers["Cookie"] = cookie
     resp = requests.post(CREATE_EVALUATION, headers=headers, json=payload, stream=True, timeout=timeout)
     return resp
 
 
-def _stream_text(cookie: str, payload: dict):
+def _stream_text(credentials, payload: dict):
+    _apply_browser_state(credentials)
     attempt = 0
     try:
         max_attempts = max(1, int(os.environ.get("LM_ARENA_MAX_RETRIES", "6")))
@@ -203,7 +234,8 @@ def _stream_text(cookie: str, payload: dict):
         if not recaptcha_token:
             raise RuntimeError("lmarena: failed to obtain reCAPTCHA token")
         payload["recaptchaV3Token"] = recaptcha_token
-        resp = _post(cookie, payload)
+        cookie, headers = _credentials(credentials)
+        resp = _post({"cookie": _effective_cookie(cookie), "headers": headers}, payload)
         if resp.status_code != 200:
             body = resp.text
             if resp.status_code == 403 and "recaptcha" in body.lower() and attempt < max_attempts:
@@ -224,20 +256,20 @@ def _stream_text(cookie: str, payload: dict):
     raise RuntimeError("lmarena: reCAPTCHA validation failed after retries")
 
 
-def complete_non_stream(cookie: str, payload: dict):
+def complete_non_stream(credentials, payload: dict):
     model_a_id = _resolve_model(payload.get("model"))
     content = _extract_prompt(payload.get("messages"))
     body = _build_payload(model_a_id, content, "")
-    text = "".join(delta for kind, delta in _stream_text(cookie, body) if kind == "delta")
+    text = "".join(delta for kind, delta in _stream_text(credentials, body) if kind == "delta")
     return text, {"provider": "lmarena", "model": model_a_id}
 
 
-def stream_chunks(cookie: str, payload: dict):
+def stream_chunks(credentials, payload: dict):
     model_a_id = _resolve_model(payload.get("model"))
     content = _extract_prompt(payload.get("messages"))
     body = _build_payload(model_a_id, content, "")
     yield openai_chunk(system_fingerprint="lmarena", model=str(payload.get("model") or model_a_id))
-    for kind, delta in _stream_text(cookie, body):
+    for kind, delta in _stream_text(credentials, body):
         if kind == "delta":
             yield openai_chunk(delta=delta, model=str(payload.get("model") or model_a_id))
     yield openai_chunk(finish_reason="stop", model=str(payload.get("model") or model_a_id))

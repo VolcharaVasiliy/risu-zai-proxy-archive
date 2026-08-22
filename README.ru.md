@@ -240,6 +240,12 @@ python .\scripts\get-qwen-creds.py
 
 Прогресс сохраняется между открытиями попапа, поэтому можно сканировать сайты по одному — собранные значения никогда не перезаписываются. Подробности: [extensions/credentials-exporter/README.md](extensions/credentials-exporter/README.md).
 
+Для LM Arena откройте `arena.ai/text/direct`, дождитесь загрузки страницы и
+запустите сканирование при активной вкладке. Расширение сохраняет cookies,
+ограниченный auth-snapshot (до 24 KiB) `localStorage`/`sessionStorage`/IndexedDB и request
+headers — это покрывает случаи, когда одних cookies недостаточно и Arena
+отвечает `Login required`.
+
 ## Codex и Zed
 
 Codex может общаться с этим прокси напрямую:

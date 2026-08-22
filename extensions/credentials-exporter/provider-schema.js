@@ -1307,6 +1307,9 @@ window.PROVIDER_SCHEMA = [
     "credential_sets": [
       [
         "LM_ARENA_COOKIE"
+      ],
+      [
+        "LM_ARENA_STORAGE"
       ]
     ],
     "extension_id": "lmarena"

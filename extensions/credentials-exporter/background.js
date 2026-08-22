@@ -36,6 +36,7 @@ const HOST_HEADERS = {
 /* Hosts where, for diagnostics/completeness, we capture ALL request headers to the API */
 const HOST_FULL_HEADERS = {
   "chat.qwen.ai": /(chat\/completions|chats\/new)/,
+  "arena.ai": /nextjs-api\/stream\/create-evaluation/,
 };
 
 /* bx-ua differs between the create phase (/api/v2/chats/new) and the chat phase (/chat/completions) */

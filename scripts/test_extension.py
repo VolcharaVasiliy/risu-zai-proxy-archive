@@ -14,9 +14,11 @@ def main():
     assert 'window.PROVIDER_SCHEMA' in schema
     assert 'renderSelfCheck' in popup
     assert 'credentialSetReady' in popup
-    assert manifest["version"] == "1.2.0"
+    assert manifest["version"] == "1.3.0"
     assert "if (value) out[k] = value" in popup
     assert "out.headerCapture = Object.fromEntries" in popup
+    assert '"LM_ARENA_STORAGE"' in popup and '"LM_ARENA_HEADERS"' in popup
+    assert "ARENA_STORAGE_READER" in popup and "readArenaStorage" in popup
     for locale in ("en", "ru", "zh"):
         messages = json.loads((EXT / "_locales" / locale / "messages.json").read_text(encoding="utf-8"))
         assert "extName" in messages and "extDescription" in messages

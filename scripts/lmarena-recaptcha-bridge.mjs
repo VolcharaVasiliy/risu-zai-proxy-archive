@@ -13,6 +13,7 @@ const SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const ACTION = "chat_submit";
 const PORT = parseInt(process.env.LM_ARENA_BRIDGE_PORT || "8772", 10);
 const RECAPTCHA_FILE = process.env.LM_ARENA_CAPTCHA_FILE || path.join(PROJECT_ROOT, "lmarena-recaptcha.json");
+const SESSION_FILE = process.env.LM_ARENA_SESSION_FILE || path.join(PROJECT_ROOT, "lmarena-session.json");
 const COOKIE_FILE = process.env.LM_ARENA_COOKIE_FILE || "C:\\Users\\gamer\\Desktop\\lmarena-cookie.txt";
 const cookieFile = process.argv.includes("--cookie-file")
   ? process.argv[process.argv.indexOf("--cookie-file") + 1]
@@ -21,9 +22,27 @@ const proxy = process.env.ARENA_PROXY || process.env.HTTPS_PROXY || "http://127.
 
 function argValue(n, f = "") { const i = process.argv.indexOf(n); return i >= 0 && i + 1 < process.argv.length ? String(process.argv[i + 1] || "") : f; }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function storageSnapshot() { try { const value = JSON.parse(process.env.LM_ARENA_STORAGE || "null"); return value && typeof value === "object" ? value : null; } catch { return null; } }
 function loadCookies(f) {
   const out = [];
-  for (const c of JSON.parse(fs.readFileSync(f, "utf8"))) {
+  let source = [];
+  const header = String(process.env.LM_ARENA_COOKIE || "").trim();
+  if (header) {
+    source = header.split(";").map((part) => {
+      const i = part.indexOf("=");
+      return i > 0 ? { name: part.slice(0, i).trim(), value: part.slice(i + 1).trim(), domain: "arena.ai", path: "/" } : null;
+    }).filter(Boolean);
+  } else {
+    source = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : [];
+    if (!Array.isArray(source) && source && typeof source === "object") {
+      const raw = String(source.LM_ARENA_COOKIE || source.lm_arena_cookie || "");
+      source = raw.split(";").map((part) => {
+        const i = part.indexOf("=");
+        return i > 0 ? { name: part.slice(0, i).trim(), value: part.slice(i + 1).trim(), domain: "arena.ai", path: "/" } : null;
+      }).filter(Boolean);
+    }
+  }
+  for (const c of source) {
     if (!c || !c.name) continue;
     out.push({ name: c.name, value: c.value, domain: c.domain || "arena.ai", path: c.path || "/",
       secure: !!c.secure, httpOnly: !!c.httpOnly,
@@ -48,6 +67,56 @@ async function waitDbg(port, t) { const dl = Date.now() + t; while (Date.now() <
 
 let cdp = null;
 let browserProc = null;
+
+async function restoreStorage() {
+  const snapshot = storageSnapshot();
+  if (!snapshot) return;
+  const source = `(() => {
+    const snapshot = ${JSON.stringify(snapshot)};
+    const put = (storage, values) => { for (const [key, value] of Object.entries(values || {})) storage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); };
+    try { put(localStorage, snapshot.local); put(sessionStorage, snapshot.session); } catch {}
+  })()`;
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source });
+  await cdp.send("Page.navigate", { url: "https://arena.ai/" });
+  await sleep(3500);
+  await cdp.send("Runtime.evaluate", { expression: `(() => new Promise(async (resolve) => {
+    const snapshot = ${JSON.stringify(snapshot)};
+    try {
+      for (const dbInfo of snapshot.indexedDB || []) {
+        const db = await new Promise((res) => { const request = indexedDB.open(dbInfo.name); request.onsuccess = () => res(request.result); request.onerror = () => res(null); });
+        if (!db) continue;
+        for (const storeInfo of dbInfo.stores || []) {
+          if (!db.objectStoreNames.contains(storeInfo.name)) continue;
+          await new Promise((res) => {
+            const tx = db.transaction(storeInfo.name, 'readwrite');
+            const store = tx.objectStore(storeInfo.name);
+            for (const record of storeInfo.records || []) {
+              try {
+                /* Inline keyPath stores reject a separate key argument. */
+                if (store.keyPath == null) store.put(record.value, record.key);
+                else store.put(record.value);
+              } catch {}
+            }
+            tx.oncomplete = res; tx.onerror = res;
+          });
+        }
+        db.close();
+      }
+    } catch {}
+    resolve(true);
+  }))()`, awaitPromise: true, returnByValue: true });
+}
+
+async function currentCookieHeader() {
+  try {
+    const result = await cdp.send("Network.getAllCookies");
+    const map = new Map();
+    for (const cookie of result.cookies || []) {
+      if (cookie.value && String(cookie.domain || "").includes("arena.ai")) map.set(cookie.name, cookie.value);
+    }
+    return [...map.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+  } catch { return ""; }
+}
 
 async function mintToken() {
   if (!cdp) throw new Error("browser not ready");
@@ -83,7 +152,9 @@ const server = http.createServer(async (req, res) => {
       if (!token) return json(503, { error: "no_token" });
       const payload = { token, captured_at: Date.now() };
       try { fs.writeFileSync(RECAPTCHA_FILE, JSON.stringify(payload), "utf8"); } catch {}
-      return json(200, payload);
+      const cookie = await currentCookieHeader();
+      if (cookie) try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ cookie, captured_at: Date.now() }), "utf8"); } catch {}
+      return json(200, { ...payload, cookie_updated: !!cookie });
     } catch (e) { return json(500, { error: String(e && e.message || e) }); }
   }
   return json(404, { error: "not found" });
@@ -101,6 +172,7 @@ async function main() {
   cdp = new CDP(ws);
   await cdp.send("Network.enable"); await cdp.send("Page.enable"); await cdp.send("Runtime.enable");
   for (const ck of cookies) { try { await cdp.send("Network.setCookie", ck); } catch {} }
+  await restoreStorage();
   await cdp.send("Page.navigate", { url: "https://arena.ai/text/direct" });
   await sleep(9000);
   server.listen(PORT, "127.0.0.1", () => console.log(`lmarena recaptcha bridge on http://127.0.0.1:${PORT}`));

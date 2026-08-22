@@ -1266,6 +1266,9 @@
       "credential_sets": [
         [
           "LM_ARENA_COOKIE"
+        ],
+        [
+          "LM_ARENA_STORAGE"
         ]
       ]
     },
