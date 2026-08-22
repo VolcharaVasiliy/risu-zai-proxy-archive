@@ -28,7 +28,9 @@ FAKE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 YaBrowser/26.3.0.0 Safari/537.36",
 }
 
-UUIDV7_RE = re.compile(r"^019[0-9a-f]{5}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Arena has historically used UUIDv7 ids, but a few catalog entries are older
+# UUIDs. Accept any canonical UUID so clients can pass catalog ids directly.
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 try:
     from py.lmarena_captcha import get_token as _get_recaptcha_token
@@ -85,7 +87,7 @@ def _find_id(model: str):
         head, _, tail = model.partition(":")
         if head in ("lmarena", "arena"):
             model = tail
-    if UUIDV7_RE.match(model):
+    if UUID_RE.match(model):
         return model
     lowered = model.lower()
     if lowered in _MODEL_MAP:
@@ -188,7 +190,10 @@ def _post(cookie: str, payload: dict, timeout: float = 180.0):
 
 def _stream_text(cookie: str, payload: dict):
     attempt = 0
-    max_attempts = 6
+    try:
+        max_attempts = max(1, int(os.environ.get("LM_ARENA_MAX_RETRIES", "6")))
+    except ValueError:
+        max_attempts = 6
     while attempt < max_attempts:
         attempt += 1
         if attempt == 1:

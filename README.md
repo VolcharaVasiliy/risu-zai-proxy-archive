@@ -225,7 +225,7 @@ The full provider matrix lives in [docs/providers.md](docs/providers.md). Common
 | GLM Web | `chatglm-web` or `chatglm-web-thinking` |
 | Native-tool Gemini API | `google-ai-studio` |
 | Native-tool public fallback | `uncloseai-hermes` |
-| LM Arena chat-direct | `qwen3-max` (any `arena/*` catalog model) |
+| LM Arena chat-direct | `qwen3-max` (any `arena/*` model from the bundled catalog) |
 
 Browser/session providers usually need cookies or tokens from a logged-in browser session. API providers need ordinary API keys.
 

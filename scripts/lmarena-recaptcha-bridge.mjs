@@ -12,7 +12,7 @@ const DEBUG_PORT = parseInt(process.env.LM_ARENA_BRIDGE_DEBUG_PORT || "9234", 10
 const SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const ACTION = "chat_submit";
 const PORT = parseInt(process.env.LM_ARENA_BRIDGE_PORT || "8772", 10);
-const RECAPTCHA_FILE = path.join(PROJECT_ROOT, "lmarena-recaptcha.json");
+const RECAPTCHA_FILE = process.env.LM_ARENA_CAPTCHA_FILE || path.join(PROJECT_ROOT, "lmarena-recaptcha.json");
 const COOKIE_FILE = process.env.LM_ARENA_COOKIE_FILE || "C:\\Users\\gamer\\Desktop\\lmarena-cookie.txt";
 const cookieFile = process.argv.includes("--cookie-file")
   ? process.argv[process.argv.indexOf("--cookie-file") + 1]

@@ -41,7 +41,7 @@ async function waitDbg(port, t) { const dl = Date.now() + t; while (Date.now() <
 
 async function main() {
   const cookieFile = argValue("--cookie-file", process.env.LM_ARENA_COOKIE_FILE || "C:\\Users\\gamer\\Desktop\\lmarena-cookie.txt");
-  const outFile = argValue("--out", path.join(PROJECT_ROOT, "lmarena-recaptcha.json"));
+  const outFile = argValue("--out", process.env.LM_ARENA_CAPTCHA_FILE || path.join(PROJECT_ROOT, "lmarena-recaptcha.json"));
   const headless = hasArg("--headless");
   const cookies = loadCookies(cookieFile);
   const proxy = process.env.ARENA_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy || "http://127.0.0.1:7897";

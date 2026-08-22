@@ -28,6 +28,7 @@ const requiredFiles = [
   "scripts/provider-health.mjs",
   "scripts/provider_health.py",
   "scripts/test_state_http.py",
+  "scripts/test_lmarena_contract.py",
   "scripts/test_generated_artifacts.py",
   "scripts/test-cloudflare-state.mjs",
   "py/credentials_bootstrap.py",
@@ -167,7 +168,7 @@ if (observabilityTest.status !== 0) {
   );
 }
 
-for (const script of ["scripts/test_state_metrics.py", "scripts/test_state_http.py", "scripts/test_extension.py", "scripts/test_provider_contracts.py", "scripts/test_generated_artifacts.py"]) {
+for (const script of ["scripts/test_state_metrics.py", "scripts/test_state_http.py", "scripts/test_lmarena_contract.py", "scripts/test_extension.py", "scripts/test_provider_contracts.py", "scripts/test_generated_artifacts.py"]) {
   const result = spawnSync(python, [script], { cwd: process.cwd(), encoding: "utf8" });
   if (result.status !== 0) throw new Error(`${script} failed:\n${result.stdout || ""}${result.stderr || ""}`);
 }

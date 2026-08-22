@@ -27,7 +27,7 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 | Inflection / Pi API | `pi-api`, `pi-3.1`, aliases `inflection-pi`, `inflection_3_pi`, `pi-3-1` | `INFLECTION_API_KEY` or `PI_INFLECTION_API_KEY` | `INFLECTION_API_BASE` | `https://developers.inflection.ai/keys` | Manual only | Official API path, works on Vercel. |
 | Pi Web Local | `pi-web-local` | none | `PI_LOCAL_*` | Local `pi.ai` browser profile | `scripts/launch-pi-auth.ps1`, `scripts/pi-browser-bridge.mjs` | Local-only browser automation path. |
 | UncloseAI | `uncloseai-hermes`, `uncloseai-hermes-8b`, `uncloseai-qwen-vl`, `uncloseai-gpt-oss`, `uncloseai-r1-distill` | none | none | Public endpoint | none | Intentionally credential-free. |
-| LM Arena | 965 models from `arena.ai/text/direct` (e.g. `gpt-5`, `claude-3.7-sonnet`, `gemini-3-pro`, `llama-3.1-8b-instruct`, `qwen3-max`), exposed as a large catalog via `py/lmarena_models.json` | `LM_ARENA_COOKIE` | `x-lmarena-cookie` header | Logged-in `arena.ai` cookie session | `scripts/get-provider-creds.py`, supply cookie via `LM_ARENA_COOKIE` | **Local-only**: each `POST /nextjs-api/stream/create-evaluation` needs a Google reCAPTCHA Enterprise v3 token (`recaptchaV3Token`), minted by `scripts/fetch-lmarena-recaptcha.mjs` against siteKey `6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0`, action `chat_submit`. The token is score-gated and IP/fingerprint-bound to the solving browser, so the grabber and proxy must share the egress IP — it does not work on Vercel. See [LM Arena reCAPTCHA (Local-Only)](#lm-arena-recaptcha-local-only). |
+| LM Arena | Current bundled `arena.ai/text/direct` catalog (998 aliases / 966 scraped entries; e.g. `gpt-5.2`, `gemini-3-pro`, `qwen3-max`), exposed via `py/lmarena_models.json` | `LM_ARENA_COOKIE` | `x-lmarena-cookie` header | Logged-in `arena.ai` cookie session | `scripts/get-provider-creds.py`, supply cookie via `LM_ARENA_COOKIE` | **Local-only**: each `POST /nextjs-api/stream/create-evaluation` needs a Google reCAPTCHA Enterprise v3 token (`recaptchaV3Token`), minted by `scripts/fetch-lmarena-recaptcha.mjs` against siteKey `6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0`, action `chat_submit`. The token is score-gated and IP/fingerprint-bound to the solving browser, so the grabber and proxy must share the egress IP — it does not work on Vercel. See [LM Arena reCAPTCHA (Local-Only)](#lm-arena-recaptcha-local-only). |
 
 
 ## OpenCode Zen (Codex models)
@@ -72,6 +72,12 @@ This project exposes a uniform OpenAI-compatible API, but each upstream provider
 3. `LM_ARENA_CAPTCHA` env — static fallback for manual paste (the raw token string) when the file is missing/empty.
 4. On-demand grabber — spawned automatically when the file is missing/expired, bridge is disabled, and `LM_ARENA_CAPTCHA_MODE != off`.
 
+Configuration notes: `LM_ARENA_CAPTCHA_FILE` changes the token file path;
+`LM_ARENA_CAPTCHA_MODE=file` disables browser spawning and uses the file (or
+`LM_ARENA_CAPTCHA`) only; `off` disables automatic acquisition;
+`LM_ARENA_CAPTCHA` accepts a manually supplied raw token; and
+`LM_ARENA_MAX_RETRIES` controls reCAPTCHA retry attempts (default `6`).
+
 **Extension / manual integration.** Any external process may write `lmarena-recaptcha.json` (or `LM_ARENA_CAPTCHA_FILE`) with `{ "token": "<enterprise v3 token>", "captured_at": <epoch ms> }` and the proxy will pick it up on the next request. With `LM_ARENA_CAPTCHA_MODE=file` the grabber never spawns and the file is the only source.
 
 **Set the token via API (works on Vercel too).** `POST /api/?route=lmarena-recaptcha` with body `{"token": "..."}` writes the file:
@@ -83,7 +89,7 @@ curl -X POST "https://<your-deploy>/api/?route=lmarena-recaptcha" \
 ```
 Set `LM_ARENA_CAPTCHA_FILE=/tmp/lmarena-recaptcha.json` and `LM_ARENA_CAPTCHA_MODE=file` on Vercel, then push the token from a browser session whose egress IP matches the deployed server.
 
-**Model catalog.** The 965 selectable models (and their `019…` UUIDv7 ids) are scraped from the RSC payload of `/text/direct` and bundled into `py/lmarena_models.json` (`{ "<model name>": "<uuidv7>", ... }`). The proxy lowercases and matches names with a graceful fallback to substring search, so either the exact `arena.ai` display name or the upstream model slug both resolve to the correct UUID. Re-run `scripts/extract-arena-models.mjs` (reads `%TMP%/arena-direct.html` or `--html <file>`) to refresh the catalog after arena updates its model list.
+**Model catalog.** The bundled file currently contains 998 selectable aliases backed by 966 scraped entries (and their `019…` UUIDv7 ids). It is stored in `py/lmarena_models.json` (`{ "<model name>": "<uuidv7>", ... }`). The proxy lowercases and matches names with a graceful fallback to substring search, so either the exact `arena.ai` display name or the upstream model slug can resolve to the correct UUID. Re-run `scripts/extract-arena-models.mjs` (reads `%TMP%/arena-direct.html` or `--html <file>`) to refresh the catalog after arena updates.
 
 ## OpenAI Web Sentinel Turnstile
 

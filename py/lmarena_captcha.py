@@ -13,7 +13,9 @@ except ImportError:
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
-RECAPTCHA_FILE = os.path.join(PROJECT_ROOT, "lmarena-recaptcha.json")
+RECAPTCHA_FILE = os.environ.get(
+    "LM_ARENA_CAPTCHA_FILE", os.path.join(PROJECT_ROOT, "lmarena-recaptcha.json")
+)
 GRABBER_SCRIPT = os.path.join(PROJECT_ROOT, "scripts", "fetch-lmarena-recaptcha.mjs")
 GRABBER_LOG = os.path.join(PROJECT_ROOT, "lmarena-recaptcha.log")
 BRIDGE_SCRIPT = os.path.join(PROJECT_ROOT, "scripts", "lmarena-recaptcha-bridge.mjs")
@@ -46,7 +48,13 @@ def grabber_timeout_seconds() -> float:
 
 
 def bridge_enabled() -> bool:
+    if os.environ.get("LM_ARENA_CAPTCHA_MODE", "").strip().lower() in {"file", "off"}:
+        return False
     return os.environ.get("LM_ARENA_BRIDGE_MODE", "auto").strip().lower() in {"auto", "on", "true", "1"}
+
+
+def captcha_mode() -> str:
+    return os.environ.get("LM_ARENA_CAPTCHA_MODE", "auto").strip().lower() or "auto"
 
 
 def _read_file_param():
@@ -54,6 +62,8 @@ def _read_file_param():
         with open(RECAPTCHA_FILE, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
     except (OSError, ValueError):
+        return None, 0
+    if not isinstance(payload, dict):
         return None, 0
     token = str(payload.get("token") or "")
     captured_at = int(payload.get("captured_at") or 0)
@@ -70,6 +80,11 @@ def fresh_token():
             debug_log("recaptcha_expired", age_seconds=round(age, 1))
             return None
     return token
+
+
+def manual_token():
+    token = str(os.environ.get("LM_ARENA_CAPTCHA", "")).strip()
+    return token if len(token) >= 100 else None
 
 
 def _http_get_json(url: str, timeout: float):
@@ -125,7 +140,7 @@ def _spawn_grabber():
     with _grabber_lock:
         if _active_grabber is not None and _active_grabber.poll() is None:
             return _active_grabber
-        if not os.path.exists(GRABBER_SCRIPT):
+        if captcha_mode() in {"off", "file"} or not os.path.exists(GRABBER_SCRIPT):
             debug_log("grabber_script_missing", path=GRABBER_SCRIPT)
             return None
         node = os.environ.get("LM_ARENA_NODE", "node")
@@ -149,6 +164,11 @@ def get_token(wait_seconds=None):
     token = fresh_token()
     if token:
         return token
+    token = manual_token()
+    if token:
+        return token
+    if captcha_mode() in {"off", "file"}:
+        return None
     return _grab_and_wait(wait_seconds)
 
 
@@ -158,6 +178,8 @@ def force_refresh(wait_seconds=None):
         tok = _bridge_mint()
         if tok:
             return tok
+    if captcha_mode() in {"off", "file"}:
+        return manual_token() or fresh_token()
     return _grab_and_wait(wait_seconds)
 
 
