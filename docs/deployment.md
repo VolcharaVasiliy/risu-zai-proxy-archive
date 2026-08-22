@@ -24,7 +24,7 @@ reports the Inception edge adapter through `/v1/providers`.
 
 `/v1/chat/completions` is the regular OpenAI-compatible chat path.
 `/v1/responses` returns an OpenAI Responses-style object with `output`, `function_call`, and `function_call_output` support.
-`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses still present in the proxy's in-memory short-lived response state.
+`GET /v1/responses/{response_id}` and `DELETE /v1/responses/{response_id}` work for responses in the short-lived state store. Local runs use SQLite (`run/responses-state.sqlite3`) so ordinary restarts preserve sessions; serverless instances should use `PROXY_STATE_BACKEND=memory` unless an external state adapter is supplied.
 `/v1/responses/chat/completions` is a compatibility route for clients that want response/session state but still expect a chat-completion-shaped response.
 
 Native function-tool passthrough is used for `Inflection / Pi API` and `UncloseAI`.

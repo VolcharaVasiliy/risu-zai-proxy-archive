@@ -36,6 +36,14 @@ try:
     from py.observability import elapsed_ms, header_summary, log_event, log_exception, request_context, request_id
 except ImportError:
     from observability import elapsed_ms, header_summary, log_event, log_exception, request_context, request_id
+try:
+    from py.metrics import metrics
+except ImportError:
+    from metrics import metrics
+try:
+    from py.bridge_manager import status_payload as bridge_status
+except ImportError:
+    from bridge_manager import status_payload as bridge_status
 
 
 def sse_frame(event, response_format: str = "chat") -> bytes:
@@ -85,6 +93,7 @@ class Handler(BaseHTTPRequestHandler):
             stream_chunks=self._stream_chunk_count,
             **self._observability_fields,
         )
+        metrics.observe_request(elapsed_ms(self._request_started), self._last_response_status, self._observability_fields.get("provider"), self._observability_fields.get("stream", False), self._stream_chunk_count)
         self._request_context.__exit__(None, None, None)
 
     def finish(self):
@@ -108,6 +117,22 @@ class Handler(BaseHTTPRequestHandler):
         request_path = self._request_path()
         if request_path == "/health":
             return send_json(self, 200, {"ok": True})
+        if request_path == "/metrics":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            if "text/plain" in self.headers.get("Accept", ""):
+                body = metrics.prometheus().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            return send_json(self, 200, metrics.snapshot())
+        if request_path == "/v1/bridges":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            return send_json(self, 200, {"object": "list", "data": bridge_status()})
         if request_path == "/doctor":
             if not proxy_authorized(self):
                 return send_json(self, 401, proxy_auth_error())

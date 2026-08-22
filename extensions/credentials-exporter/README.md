@@ -6,9 +6,8 @@ Collects cookies and tokens from all providers and exports a ready-to-use
 
 ## Installation
 
-1. Open `chrome://extensions` (in Firefox: `about:debugging#/runtime/this-firefox`).
-2. Enable "Developer mode".
-3. "Load unpacked" → select this folder.
+1. Open `chrome://extensions` and enable Developer mode. The extension targets Chromium MV3; Firefox support is experimental because `chrome.debugger` and MV3 service-worker behavior differ.
+2. "Load unpacked" → select this folder.
 
 ## Usage
 
@@ -84,8 +83,8 @@ connected through the same egress the proxy uses.
 | Inflection | developers.inflection.ai | INFLECTION_API_KEY (manual) |
 
 Only filled keys end up in `credentials.json` — empty values are not exported, so
-the file stays clean. Unused placeholder keys (`UNCLOSEAI_*`, `PI_LOCAL_TOKEN`)
-were removed from the extension.
+the file stays clean. The Diagnostics action deliberately reports header names,
+ages, domains and counts, never captured header values.
 
 ## Contents
 

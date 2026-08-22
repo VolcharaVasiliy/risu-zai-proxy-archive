@@ -97,6 +97,13 @@ def _bridge_mint(max_wait: float = 60.0):
 def _ensure_bridge():
     global _bridge_spawned
     with _bridge_lock:
+        try:
+            from py.bridge_manager import ensure as manager_ensure
+        except ImportError:
+            from bridge_manager import ensure as manager_ensure
+        if manager_ensure("lmarena"):
+            _bridge_spawned = True
+            return
         if _bridge_spawned:
             return
         if _http_get_json(f"{BRIDGE_URL}/health", 2):

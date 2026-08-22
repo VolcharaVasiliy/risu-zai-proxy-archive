@@ -54,6 +54,14 @@ For rare malformed upstream responses, set `PROXY_LOG_UPSTREAM_PREVIEW=1`. The C
 
 `PROXY_MAX_BODY_BYTES` limits JSON request bodies. The default is 8 MiB; set it to `0` to disable the limit. Oversized bodies are rejected before provider code runs.
 
+## Metrics and bridge health
+
+Authenticated `GET /metrics` returns a bounded JSON snapshot. Send `Accept: text/plain`
+for Prometheus text. Labels are limited to provider, status and streaming mode; prompt
+content, credentials and arbitrary model strings are never emitted. `GET /v1/bridges`
+reports local Grok and LM Arena bridge health and ownership without exposing process
+arguments or cookies.
+
 ```powershell
 $env:PROXY_MAX_BODY_BYTES = "16777216"
 ```

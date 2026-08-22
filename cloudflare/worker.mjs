@@ -793,23 +793,30 @@ async function handleRequest(request, env, requestIdValue) {
 
     if (url.pathname === "/doctor") {
       const ready = Boolean(env.INCEPTION_SESSION_TOKEN || env.INCEPTION_COOKIE);
+      const edge = edgeProviderList(env);
       return jsonResponse({
-        ok: ready,
+        ok: ready && edge.every((item) => item.ready),
         runtime: "cloudflare",
-        providers_total: 1,
-        providers_ready: ready ? 1 : 0,
-        providers_missing_credentials: ready ? 0 : 1,
-        missing_credentials: ready ? [] : ["inception"],
+        providers_total: 1 + edge.length,
+        providers_ready: (ready ? 1 : 0) + edge.filter((item) => item.ready).length,
+        providers_missing_credentials: (ready ? 0 : 1) + edge.filter((item) => !item.ready).length,
+        missing_credentials: [...(ready ? [] : ["inception"]), ...edge.filter((item) => !item.ready).map((item) => item.id)],
         runtimes: ["cloudflare"],
       });
     }
 
     if (url.pathname === "/v1/models") {
-      return jsonResponse(modelList());
+      const result = modelList();
+      for (const item of edgeProviders(env)) for (const model of item.models) result.data.push({ id: model, object: "model", created: 0, owned_by: item.owned_by, provider: item.id, requires_env: item.token_env ? [item.token_env] : [] });
+      return jsonResponse(result);
     }
 
     if (url.pathname === "/v1/providers") {
-      return jsonResponse(providerList(env));
+      const result = providerList(env);
+      result.data.push(...edgeProviderList(env));
+      result.providers_total = result.data.length;
+      result.providers_ready = result.data.filter((item) => item.ready).length;
+      return jsonResponse(result);
     }
 
     if (url.pathname === "/v1/chat/completions" && request.method === "POST") {
@@ -853,6 +860,8 @@ async function handleRequest(request, env, requestIdValue) {
       }
 
       if (!supportsModel(payload.model)) {
+        const edge = edgeProviderForModel(env, payload.model);
+        if (edge) return edgeResponse(request, env, payload, edge, requestIdValue);
         return jsonResponse(
           {
             error: {
@@ -868,6 +877,24 @@ async function handleRequest(request, env, requestIdValue) {
     }
 
     return jsonResponse({ error: { message: "Not found" } }, 404);
+}
+
+function edgeProviders(env) {
+  try {
+    const parsed = JSON.parse(String(env.EDGE_PROVIDERS_JSON || "[]"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => item && item.id && item.base_url && Array.isArray(item.models)).slice(0, 32).map((item) => ({ id: String(item.id), base_url: String(item.base_url).replace(/\/$/, ""), models: item.models.map(String).slice(0, 128), token_env: String(item.token_env || ""), owned_by: String(item.owned_by || item.id) }));
+  } catch { return []; }
+}
+function edgeProviderForModel(env, model) { return edgeProviders(env).find((item) => item.models.includes(String(model))) || null; }
+function edgeProviderList(env) { return edgeProviders(env).map((item) => { const ready = !item.token_env || Boolean(env[item.token_env]); return { id: item.id, owned_by: item.owned_by, models: item.models, runtimes: ["cloudflare"], auth_mode: item.token_env ? "api_key" : "public", requires_env: item.token_env ? [item.token_env] : [], credential_sets: item.token_env ? [[item.token_env]] : [], configured_env: ready && item.token_env ? [item.token_env] : [], missing_env: ready ? [] : [item.token_env], ready }; }); }
+async function edgeResponse(request, env, payload, provider, rid) {
+  const token = provider.token_env ? envToken(env[provider.token_env]) : "";
+  if (provider.token_env && !token) return jsonResponse({ error: { message: `${provider.token_env} is required`, type: "authentication_error", request_id: rid } }, 401);
+  const headers = new Headers({ "Content-Type": "application/json", "Accept": "application/json, text/event-stream" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const upstream = await fetch(`${provider.base_url}/chat/completions`, { method: "POST", headers, body: JSON.stringify(payload) });
+  return new Response(upstream.body, { status: upstream.status, headers: { "Content-Type": upstream.headers.get("Content-Type") || "application/json", "Cache-Control": "no-cache, no-transform" } });
 }
 
 function providerList(env) {

@@ -368,6 +368,11 @@ def _bridge_parse(data: str):
 def _bridge_post(request_model: str, prompt: str):
     if not prompt:
         raise RuntimeError("Grok prompt is empty")
+    try:
+        from py.bridge_manager import ensure
+    except ImportError:
+        from bridge_manager import ensure
+    ensure("grok")
     url = _grok_bridge_url() + "/chat"
     try:
         response = requests.post(

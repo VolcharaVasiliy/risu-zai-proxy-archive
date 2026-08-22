@@ -903,12 +903,13 @@ function refreshClearBtn() {
   $("clearBtn").classList.toggle("hidden", !hasData);
 }
 
-/* Emits the full REPO_KEYS template — filled keys keep their value,
-   empty ones are written as "" (full credentials.json layout). */
+/* Export only populated keys; this keeps credentials.json portable and avoids
+   suggesting that an empty field is configured. */
 function cleanCreds() {
   const out = {};
   for (const k of REPO_KEYS) {
-    out[k] = String(creds[k] == null ? "" : creds[k]).trim();
+    const value = String(creds[k] == null ? "" : creds[k]).trim();
+    if (value) out[k] = value;
   }
   return out;
 }
@@ -916,7 +917,7 @@ function cleanCreds() {
 function refreshPreview() {
   const data = cleanCreds();
   $("jsonOut").value = JSON.stringify(data, null, 2);
-  const hasData = Object.keys(data).length > 0;
+  const hasData = Object.keys(data).some((key) => String(data[key] || "").trim());
   $("dlBtn").disabled = !hasData;
   if (hasData) {
     $("jsonPanel").classList.add("open");
@@ -1141,7 +1142,15 @@ $("debugBtn").addEventListener("click", async () => {
         resolve(data.rzaiHeaderCapture || {})
       );
     });
-    out.headerCapture = headerCapture;
+    out.headerCapture = Object.fromEntries(Object.entries(headerCapture).map(([host, entry]) => [host, {
+      updatedAt: entry && entry.updatedAt,
+      headers: Object.fromEntries(Object.entries((entry && entry.headers) || {}).map(([name, rec]) => [name, {
+        at: rec && rec.at,
+        ageSeconds: rec && rec.at ? Math.max(0, Math.round((Date.now() - rec.at) / 1000)) : null,
+        phase: rec && rec.phase,
+        urlHost: (() => { try { return new URL(rec.url).hostname; } catch (_) { return null; } })(),
+      }]))
+    }]));
     $("jsonPanel").classList.add("open");
     $("jsonToggle").setAttribute("aria-expanded", "true");
     $("jsonOut").value = JSON.stringify(out, null, 2);

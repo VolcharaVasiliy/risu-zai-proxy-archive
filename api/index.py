@@ -50,6 +50,8 @@ from py.observability import (
     request_context,
     request_id,
 )
+from py.metrics import metrics
+from py.bridge_manager import status_payload as bridge_status
 
 ZAI_SESSION_SECRET = hashlib.sha256(
     (os.environ.get("ZAI_TOKEN") or "zai-session-secret").encode("utf-8")
@@ -147,6 +149,7 @@ class handler(BaseHTTPRequestHandler):
             stream_chunks=self._stream_chunk_count,
             **self._observability_fields,
         )
+        metrics.observe_request(elapsed_ms(self._request_started), self._last_response_status, self._observability_fields.get("provider"), self._observability_fields.get("stream", False), self._stream_chunk_count)
         self._request_context.__exit__(None, None, None)
 
     def finish(self):
@@ -171,6 +174,23 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         route = self._route()
+
+        if route == "metrics":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            if "text/plain" in self.headers.get("Accept", ""):
+                body = metrics.prometheus().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            return send_json(self, 200, metrics.snapshot())
+        if route == "bridges":
+            if not proxy_authorized(self):
+                return send_json(self, 401, proxy_auth_error())
+            return send_json(self, 200, {"object": "list", "data": bridge_status()})
 
         if route == "health":
             import time as _time

@@ -16,6 +16,9 @@ const requiredFiles = [
   "py/google_ai_studio_web_proxy.py",
   "py/http_helpers.py",
   "py/observability.py",
+  "py/metrics.py",
+  "py/state_store.py",
+  "py/bridge_manager.py",
   "py/credentials_bootstrap.py",
   "py/agent_tools.py",
   "py/inflection_proxy.py",
@@ -141,6 +144,11 @@ if (observabilityTest.status !== 0) {
   throw new Error(
     `Observability tests failed:\n${observabilityTest.stdout || ""}${observabilityTest.stderr || ""}`,
   );
+}
+
+for (const script of ["scripts/test_state_metrics.py", "scripts/test_extension.py", "scripts/test_provider_contracts.py"]) {
+  const result = spawnSync(python, [script], { cwd: process.cwd(), encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`${script} failed:\n${result.stdout || ""}${result.stderr || ""}`);
 }
 
 const docsTest = spawnSync(python, ["scripts/test_docs.py"], {

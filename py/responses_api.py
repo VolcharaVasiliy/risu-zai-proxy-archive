@@ -3,6 +3,10 @@ import re
 import threading
 import time
 import uuid
+try:
+    from py.state_store import store as _STATE_STORE
+except ImportError:
+    from state_store import store as _STATE_STORE
 
 try:
     from py.agent_tools import tool_request_supported, unsupported_tool_message, _repair_json
@@ -18,7 +22,6 @@ except ImportError:
 
 _STATE_LOCK = threading.RLock()
 _STATE_TTL_SECONDS = 6 * 60 * 60
-_RESPONSE_STATE = {}
 _TOOL_CALL_RE = re.compile(
     r"^\s*tool_call\s*:\s*(?P<name>[A-Za-z0-9_.:-]+)(?:\s+for\s+(?P<args>.*))?\s*$",
     re.IGNORECASE,
@@ -426,15 +429,7 @@ def _session_key(payload: dict) -> str:
 
 
 def _prune_state():
-    cutoff = time.time() - _STATE_TTL_SECONDS
-    with _STATE_LOCK:
-        stale_keys = [
-            key
-            for key, state in _RESPONSE_STATE.items()
-            if float(state.get("updated_at") or 0) < cutoff
-        ]
-        for key in stale_keys:
-            _RESPONSE_STATE.pop(key, None)
+    _STATE_STORE.prune(_STATE_TTL_SECONDS)
 
 
 def _load_state(payload: dict):
@@ -443,8 +438,8 @@ def _load_state(payload: dict):
         return "", {}
 
     _prune_state()
-    with _STATE_LOCK:
-        return key, dict(_RESPONSE_STATE.get(key) or {})
+    value = _STATE_STORE.get(key, ttl=_STATE_TTL_SECONDS)
+    return key, dict(value or {})
 
 
 def _save_state(response_id: str, state: dict):
@@ -453,8 +448,7 @@ def _save_state(response_id: str, state: dict):
 
     state = dict(state)
     state["updated_at"] = time.time()
-    with _STATE_LOCK:
-        _RESPONSE_STATE[response_id] = state
+    _STATE_STORE.put(response_id, state)
 
 
 def get_stored_response(response_id: str) -> dict | None:
@@ -462,18 +456,16 @@ def get_stored_response(response_id: str) -> dict | None:
     if not response_id:
         return None
     _prune_state()
-    with _STATE_LOCK:
-        state = _RESPONSE_STATE.get(response_id) or {}
-        response = state.get("response")
-        return dict(response) if isinstance(response, dict) else None
+    state = _STATE_STORE.get(response_id, ttl=_STATE_TTL_SECONDS) or {}
+    response = state.get("response")
+    return dict(response) if isinstance(response, dict) else None
 
 
 def delete_stored_response(response_id: str) -> bool:
     response_id = str(response_id or "").strip()
     if not response_id:
         return False
-    with _STATE_LOCK:
-        return _RESPONSE_STATE.pop(response_id, None) is not None
+    return _STATE_STORE.delete(response_id)
 
 
 def _request_config_from_payload(payload: dict, state: dict | None = None) -> dict:

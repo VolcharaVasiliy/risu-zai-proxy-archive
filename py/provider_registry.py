@@ -42,6 +42,8 @@ try:
         header_token,
     )
     from py.openai_stream import OpenAIStreamBuilder, openai_chunk
+    from py.zai_proxy import debug_log
+    from py.credential_adapters import resolve as resolve_declarative_credentials
 except ImportError:
     import arcee_proxy
     import deepseek_proxy
@@ -79,9 +81,11 @@ except ImportError:
     )
     from http_helpers import cookie_value, env_or_header_token, env_token, header_token
     from openai_stream import OpenAIStreamBuilder, openai_chunk
+    from zai_proxy import debug_log
+    from credential_adapters import resolve as resolve_declarative_credentials
 
-import json
 import os
+import json
 
 
 class ProviderAuthError(RuntimeError):
@@ -511,6 +515,9 @@ def raise_provider_auth_if_needed(provider_id: str, error: Exception):
 
 
 def resolve_credentials(handler, provider_id: str):
+    declarative, handled = resolve_declarative_credentials(handler, provider_id)
+    if handled:
+        return declarative
     def _normalized(value):
         text = str(value or "").strip()
         if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
@@ -980,6 +987,29 @@ PROVIDER_ADAPTERS = {
 }
 
 
+def _fallback_map():
+    raw = os.environ.get("PROXY_FALLBACKS_JSON", "").strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _fallback_candidates(provider_id, model):
+    mapping = _fallback_map()
+    values = mapping.get(model) or mapping.get(f"provider:{provider_id}") or []
+    if isinstance(values, str):
+        values = [values]
+    return [str(item).strip() for item in values if str(item).strip() and str(item).strip() != model][:3]
+
+
+def _fallback_allowed(error):
+    return not is_provider_auth_error(error) and not ("invalid request" in str(error).lower() or "400" in str(error).lower()) and (is_provider_rate_limit_error(error) or any(mark in str(error).lower() for mark in ("500", "502", "503", "504", "timeout", "temporarily", "connection")))
+
+
 def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     payload = multimodal.prepare_payload_for_provider(provider_id, credentials, payload)
     request_config = request_config_from_payload(payload)
@@ -1003,7 +1033,28 @@ def complete_non_stream(provider_id: str, credentials: dict, payload: dict):
     adapter = PROVIDER_ADAPTERS.get(provider_id)
     if not adapter or not adapter.get("complete"):
         raise RuntimeError(f"Unsupported provider: {provider_id}")
-    result, meta = adapter["complete"](credentials, payload)
+    try:
+        result, meta = adapter["complete"](credentials, payload)
+    except Exception as error:
+        if not _fallback_allowed(error):
+            raise
+        original_model = payload.get("model")
+        for fallback_model in _fallback_candidates(provider_id, original_model):
+            fallback_provider = resolve_provider_id(fallback_model)
+            if fallback_provider != provider_id:
+                continue
+            fallback_payload = dict(payload)
+            fallback_payload["model"] = fallback_model
+            try:
+                result, meta = adapter["complete"](credentials, fallback_payload)
+                meta = dict(meta or {})
+                meta.update({"fallback": True, "requested_model": original_model, "actual_model": fallback_model})
+                result = dict(result or {})
+                result.setdefault("model", fallback_model)
+                return result, meta
+            except Exception as fallback_error:
+                debug_log("provider_fallback_failed", provider=provider_id, requested_model=original_model, fallback_model=fallback_model, error_type=type(fallback_error).__name__)
+        raise
     if adapter.get("normalize", True):
         result = normalize_tool_result(result, request_config)[0]
     return result, meta

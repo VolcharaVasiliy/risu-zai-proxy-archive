@@ -25,7 +25,7 @@ One `/v1` endpoint routes each model through a provider registry to the right ba
 
 ## What You Get
 
-- OpenAI-compatible routes: `/v1/models`, `/v1/providers`, `/v1/chat/completions`, `/v1/responses`, `/health`, `/doctor`
+- OpenAI-compatible routes: `/v1/models`, `/v1/providers`, `/v1/chat/completions`, `/v1/responses`, `/health`, `/doctor`, `/metrics`, `/v1/bridges`
 - Codex-ready Responses API support, so `api2codex` is not needed for this proxy
 - `rzai` launcher for running Codex against the proxy with one short command
 - Provider registry with aliases, model catalog generation, and duplicate-model cleanup for Codex
@@ -126,6 +126,8 @@ Every request gets a `request_id`. Send your own `X-Request-ID` to correlate the
 Supported levels are `debug`, `info`, `warning`, `error`, and `off`. `DEBUG_LOGGING=1` is retained as a compatibility alias for `debug` when `PROXY_LOG_LEVEL` is unset. `PROXY_MAX_BODY_BYTES` sets the JSON body limit (8 MiB by default).
 
 Use authenticated `GET /v1/providers` for provider models, runtimes, auth mode, and missing credential names. Add `?runtime=local` or `?runtime=vercel` to focus the report. Use authenticated `GET /doctor` for a compact readiness summary. Neither endpoint returns credential values. Full details: [docs/observability.md](docs/observability.md).
+
+Responses state is persisted to `run/responses-state.sqlite3` locally. Select `PROXY_STATE_BACKEND=memory` for ephemeral deployments or override the file with `PROXY_STATE_PATH`. Optional same-provider model fallback chains are configured with `PROXY_FALLBACKS_JSON`, for example `{"deepseek-chat":["deepseek-reasoner"]}`; only temporary transport, 5xx, and rate-limit failures are eligible. `GET /metrics` exposes JSON or Prometheus text, and `GET /v1/bridges` reports local browser bridge health.
 
 ## Local Path Configuration
 
