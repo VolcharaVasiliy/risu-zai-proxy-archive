@@ -4,6 +4,13 @@ compatibility_date = "2026-04-15"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+[[kv_namespaces]]
+binding = "STATE_KV"
+id = "7210771693754369b17f736e6bfc4af0"
+
+[vars]
+STATE_TTL_SECONDS = "21600"
+
 [browser]
 binding = "MYBROWSER"
 remote = true
